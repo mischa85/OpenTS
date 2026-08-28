@@ -21,6 +21,7 @@ class BreakingChangeTests(unittest.TestCase):
             "category": "feature",
             "release": "1.0.0",
             "targets": [],
+            "credit": ["Programmer"],
             **overrides,
         }
 
@@ -74,6 +75,7 @@ class BreakingChangeTests(unittest.TestCase):
                 "release: 1.0.0\n"
                 "breaking: true\n"
                 "targets: []\n"
+                "credit: [Programmer]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -95,6 +97,7 @@ class BreakingChangeTests(unittest.TestCase):
                 "migration:\n"
                 "  - Use the replacement workflow.\n"
                 "targets: []\n"
+                "credit: [Programmer]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -119,6 +122,46 @@ class BreakingChangeTests(unittest.TestCase):
                 "released lifecycle field migration is immutable" in error
                 for error in errors
             ))
+    def test_schema_and_validation_require_an_author(self):
+        without_author = self.change()
+        without_author.pop("credit")
+        missing = schema_validation.errors_for(
+            without_author, "authored-change.schema.json", "missing credit")
+        self.assertTrue(any("credit" in error for error in missing))
+
+        empty = schema_validation.errors_for(
+            self.change(credit=[]),
+            "authored-change.schema.json",
+            "empty credit",
+        )
+        self.assertTrue(any("credit" in error for error in empty))
+
+        registry = {
+            "development": "1.0.0",
+            "by_version": {
+                "1.0.0": {"version": "1.0.0", "status": "development"},
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            manual = Path(temporary)
+            changes = manual / "changes"
+            changes.mkdir()
+            (changes / "unattributed.md").write_text(
+                "---\n"
+                "title: Unattributed change\n"
+                "category: fix\n"
+                "release: 1.0.0\n"
+                "targets: []\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            errors = []
+            versioning.validate_changes(
+                errors, manual, registry, {}, {}, {}, [])
+        self.assertTrue(any(
+            "credit must name at least one author" in error
+            for error in errors))
+
     def test_change_id_cannot_equal_release_version(self):
         registry = {
             "development": "1.0.0",
@@ -136,6 +179,7 @@ class BreakingChangeTests(unittest.TestCase):
                 "category: internal\n"
                 "release: 1.0.0\n"
                 "targets: []\n"
+                "credit: [Programmer]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -204,6 +248,7 @@ class LifecycleEntityExpansionTests(unittest.TestCase):
                 "  - type: command\n"
                 "    id: NewCommand\n"
                 "    effect: added\n"
+                "credit: [Programmer]\n"
                 "---\n",
                 encoding="utf-8",
             )

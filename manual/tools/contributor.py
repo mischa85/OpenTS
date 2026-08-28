@@ -129,8 +129,7 @@ def scaffold_change(arguments):
         frontmatter["migration"] = migration or [
             "TODO: replace with a concrete migration step"
         ]
-    if arguments.credit:
-        frontmatter["credit"] = arguments.credit
+    frontmatter["credit"] = arguments.credit or ["TODO: name the author"]
     _engine._write(
         path,
         frontmatter,

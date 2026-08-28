@@ -4,7 +4,7 @@
   "title": "Authored lifecycle change frontmatter",
   "type": "object",
   "additionalProperties": false,
-  "required": ["title", "category", "release", "targets"],
+  "required": ["title", "category", "release", "targets", "credit"],
   "properties": {
     "title": { "type": "string", "minLength": 1 },
     "category": { "enum": ["feature", "fix", "balance", "performance", "internal"] },
@@ -21,6 +21,7 @@
     },
     "credit": {
       "type": "array",
+      "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     }
   },

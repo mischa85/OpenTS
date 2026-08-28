@@ -145,9 +145,16 @@ Behavior changes need focused, reproducible evidence. Automated checks must not
 depend on proprietary game assets or original executables.
 
 Continuous integration builds Win32 Debug and Release and runs the CTest suite
-for every pull request that touches the engine. It reports the same class of
-result a local build does, so it does not replace the runtime evidence a
+for every pull request that touches the engine and is ready for review; a draft
+pull request runs no checks until it is marked ready. It reports the same class
+of result a local build does, so it does not replace the runtime evidence a
 behavior change needs.
+
+Continuous integration also requires the change record that
+[Documentation](#documentation) calls for on every pull request that touches
+`code/`. Mechanical work that no player or modder can observe — a refactor, a
+formatting pass, a comment correction — is waived by the `no change record`
+label, and applying the label re-runs the check.
 
 ## Pull request content
 

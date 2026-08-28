@@ -216,6 +216,9 @@ list. Non-breaking records must not carry migration steps. A removed entity
 requires a matching tombstone; removing one scope of a still-active key requires
 a scoped removal target but no tombstone for the parent.
 
+Every record carries an author: `credit` names at least one person, followed by
+anyone else the change credits. The published change page renders the list.
+
 New records target the current development release. Released lifecycle data and
 existing change IDs are immutable. Release and route maintenance are described
 in [Maintaining](MAINTAINING.md).

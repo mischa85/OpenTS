@@ -520,7 +520,7 @@ def validate_changes(
             errors.append(f"{context}: frontmatter must be a mapping")
             continue
         unexpected = set(data) - CHANGE_FIELDS
-        missing = {"title", "category", "release", "targets"} - set(data)
+        missing = {"title", "category", "release", "targets", "credit"} - set(data)
         if unexpected:
             errors.append(f"{context}: unexpected fields {sorted(unexpected)}")
         if missing:
@@ -590,10 +590,12 @@ def validate_changes(
                     f"{target_description(target)}")
             normalized_targets.append(target)
         data["targets"] = normalized_targets
-        credits = data.get("credit", [])
-        if not isinstance(credits, list) or not all(
-                isinstance(value, str) and value for value in credits):
-            errors.append(f"{context}: credit must be an array of non-empty strings")
+        credits = data.get("credit")
+        if (not isinstance(credits, list) or not credits or not all(
+                isinstance(value, str) and value for value in credits)):
+            errors.append(
+                f"{context}: credit must name at least one author "
+                "as a non-empty array of strings")
 
         base_change = (base_changes or {}).get(change_id)
         if base_registry and base_change is None and release != development:

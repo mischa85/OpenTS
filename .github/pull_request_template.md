@@ -22,5 +22,6 @@ determinism, COM, or ABI boundaries. For a break, give the version and migration
 
 - [ ] The change is focused; unrelated mechanical cleanup is separate
 - [ ] Compatibility effects and any migration are explicit
+- [ ] A player- or modder-visible engine change carries its change record
 - [ ] Validation distinguishes what passed, failed, and was not run
 - [ ] No prohibited assets, binaries, SDKs, credentials, or generated output are included

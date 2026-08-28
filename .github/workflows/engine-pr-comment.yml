@@ -31,12 +31,13 @@ jobs:
 
           # The run's own pull_requests list is empty for fork branches, so
           # find the pull request by its current head commit instead. A run
-          # whose commit is no longer any open pull request's head is stale;
-          # the newer push has its own run and its own comment.
+          # whose commit is no longer the head of an open pull request that
+          # is ready for review is stale, or belongs to a draft; the newer
+          # push, or marking the draft ready, has its own run and comment.
           number="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-            --paginate --jq ".[] | select(.head.sha == \"${HEAD_SHA}\") | .number" | head -n 1)"
+            --paginate --jq ".[] | select(.head.sha == \"${HEAD_SHA}\" and .draft == false) | .number" | head -n 1)"
           if [ -z "${number}" ]; then
-            echo "No open pull request currently at ${HEAD_SHA}; skipping."
+            echo "No open pull request ready for review at ${HEAD_SHA}; skipping."
             exit 0
           fi
 

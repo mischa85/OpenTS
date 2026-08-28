@@ -2,6 +2,7 @@ name: Manual
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "manual/**"
       - "README.md"
@@ -32,6 +33,9 @@ permissions:
 jobs:
   validate-and-build:
     name: Validate and build manual
+    # A draft pull request validates nothing; the ready_for_review trigger above
+    # starts the check when the pull request is marked ready.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     concurrency:
       group: manual-validation-${{ github.event.pull_request.number || github.ref }}

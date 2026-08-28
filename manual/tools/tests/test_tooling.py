@@ -322,6 +322,27 @@ class ScaffoldTests(unittest.TestCase):
         self.assertIn("scope: global-rules", result)
         self.assertIn("credit:", result)
 
+    def test_change_scaffold_marks_missing_credit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manual, data = self._paths(root)
+            (data / "releases.yaml").write_text(
+                "releases:\n  - version: 0.2.0\n    status: development\n",
+                encoding="utf-8")
+            arguments = argparse.Namespace(
+                identifier="fix-unattributed", title=None, category="fix",
+                target_type="key", target_id="FastMode", scope=None,
+                effect="changed", credit=[])
+            with (
+                mock.patch.object(contributor, "ROOT", root),
+                mock.patch.object(contributor, "MANUAL", manual),
+                mock.patch.object(contributor, "DATA", data),
+            ):
+                contributor.scaffold_change(arguments)
+            result = (manual / "changes" / "fix-unattributed.md").read_text(
+                encoding="utf-8")
+        self.assertIn("TODO: name the author", result)
+
 
 if __name__ == "__main__":
     unittest.main()

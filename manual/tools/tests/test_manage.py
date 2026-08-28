@@ -397,7 +397,7 @@ class DeltaTests(unittest.TestCase):
                 "category: feature\n"
                 "release: 1.1.0\n"
                 "targets: []\n"
-                "credit: []\n"
+                "credit: [Author]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -407,7 +407,7 @@ class DeltaTests(unittest.TestCase):
                 "category: fix\n"
                 "release: 1.0.0\n"
                 "targets: []\n"
-                "credit: []\n"
+                "credit: [Author]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -421,7 +421,7 @@ class DeltaTests(unittest.TestCase):
                 "    id: Scoped\n"
                 "    scope: unittype\n"
                 "    effect: removed\n"
-                "credit: []\n"
+                "credit: [Author]\n"
                 "---\n",
                 encoding="utf-8",
             )
@@ -453,21 +453,21 @@ class DeltaTests(unittest.TestCase):
                     "category": "feature",
                     "release": "1.0.0",
                     "targets": [],
-                    "credit": [],
+                    "credit": ["Author"],
                 },
                 "frozen": {
                     "title": "Frozen",
                     "category": "feature",
                     "release": "1.0.0",
                     "targets": [],
-                    "credit": [],
+                    "credit": ["Author"],
                 },
                 "removed-change-id": {
                     "title": "Gone",
                     "category": "internal",
                     "release": "1.0.0",
                     "targets": [],
-                    "credit": [],
+                    "credit": ["Author"],
                 },
             }
             errors = []

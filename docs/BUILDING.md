@@ -113,20 +113,21 @@ without one.
 
 ## Continuous integration
 
-The `Engine` workflow builds every pull request and every push to `main` that
-touches the engine, its build files, or the workflows themselves. The `Engine
-nightly` workflow builds on a daily schedule; when nothing has been committed
-since the last one, the scheduled run cancels itself so that the latest
-successful nightly is always one that produced artifacts, which keeps the
-nightly download links resolvable. Both call the same reusable
-`Engine build` workflow, which on a Windows runner with Visual Studio 2022
-configures and builds Win32 Debug and Release with the commands above, runs the
-CTest suite, and uploads each configuration's executable, language library, and
-symbol file as an artifact named for the configuration and the short commit. The
-linker map is not uploaded, because the symbol file covers the same ground.
-After a successful pull-request build, the `Engine build comment` workflow
-keeps one comment on the pull request with direct nightly.link downloads of
-that build's artifacts.
+The `Engine` workflow builds every pull request that is ready for review and
+every push to `main` that touches the engine, its build files, or the workflows
+themselves. A draft pull request builds nothing until it is marked ready, which
+starts the build for the commit it then carries. The `Engine nightly` workflow
+builds on a daily schedule; when nothing has been committed since the last one,
+the scheduled run cancels itself so that the latest successful nightly is
+always one that produced artifacts, which keeps the nightly download links
+resolvable. Both call the same reusable `Engine build` workflow, which on a
+Windows runner with Visual Studio 2022 configures and builds Win32 Debug and
+Release with the commands above, runs the CTest suite, and uploads each
+configuration's executable, language library, and symbol file as an artifact
+named for the configuration and the short commit. The linker map is not
+uploaded, because the symbol file covers the same ground. After a successful
+pull-request build, the `Engine build comment` workflow keeps one comment on
+the pull request with direct nightly.link downloads of that build's artifacts.
 
 The `Engine release` workflow runs when a GitHub release is published. It
 builds the release's commit with `-DOPENTS_OFFICIAL_BUILD=ON`, packages
