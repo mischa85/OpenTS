@@ -88,7 +88,7 @@ class DSAudio
 		bool Lock_Global_Mutex(void);
 		void Unlock_Global_Mutex(void);
 
-		static void CALLBACK Sound_Timer_Callback(UINT, UINT, DWORD, DWORD, DWORD);
+		static void CALLBACK Sound_Timer_Callback(UINT, UINT, DWORD_PTR, DWORD_PTR, DWORD_PTR);
 		int Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short, short int *, void **, int *), int volume, int handle);
 		void File_Stream_Preload(int handle);
 		static bool File_Callback(short int id, short int *odd, void **buffer, int *size);

@@ -27,7 +27,7 @@
 /// </summary>
 /// <returns>Returns with a pointer to the block allocated, or NULL if the heap is
 /// exhausted.</returns>
-void * __cdecl operator new(unsigned int size)
+void * __cdecl operator new(size_t size)
 {
 	if (size == 0) size = 1;
 	void * ptr = _malloc_dbg(size, _NORMAL_BLOCK, __FILE__, __LINE__);

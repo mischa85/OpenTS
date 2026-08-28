@@ -2168,7 +2168,7 @@ bool FootClass::Restore_Mission(void)
  * HISTORY:                                                                                    *
  *   05/14/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-RadioMessageType FootClass::Receive_Message(RadioClass * from, RadioMessageType message, int & param)
+RadioMessageType FootClass::Receive_Message(RadioClass * from, RadioMessageType message, intptr_t & param)
 {
 	BuildingClass const * building = NULL;
 	ObjectClass *object = NULL;
@@ -2222,7 +2222,7 @@ RadioMessageType FootClass::Receive_Message(RadioClass * from, RadioMessageType 
 		**	then it doesn't need further movement instructions.
 		*/
 		case RADIO_NEED_TO_MOVE:
-			param = (int)NavCom;
+			param = (intptr_t)NavCom;
 			if (NavCom == NULL || !Locomotion->Is_Moving()) {
 				return(RADIO_ROGER);
 			}

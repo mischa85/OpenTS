@@ -46,7 +46,7 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes);
-void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD);
+void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR);
 _STATIC unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
 _STATIC BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap);
@@ -140,7 +140,7 @@ unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *c
 }
 
 
-long __cdecl Stream_Audio_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes)
+intptr_t __cdecl Stream_Audio_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config;
@@ -285,7 +285,7 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 		if (timeBeginPeriod(1000/VQA_TIMETICKS) != TIMERR_NOCANDO) {
 			DebugString("Creating VQ audio timer thread\n");
 			// Set orf 60hz timer
-			handle->TimerHandle = timeSetEvent ( 1000/VQA_TIMETICKS , 1 , AudioCallback , (DWORD)vqap , TIME_PERIODIC);
+			handle->TimerHandle = timeSetEvent ( 1000/VQA_TIMETICKS , 1 , AudioCallback , (DWORD_PTR)vqap , TIME_PERIODIC);
 			DebugString("VQ audio handler opened OK\n");
 			if (handle->TimerHandle != 0) {
 				return(VQAERR_NONE);
@@ -535,7 +535,7 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 *     NONE
 *
 ****************************************************************************/
-void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
+void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR )
 {
 	Ahandle  	*audio;
 	DWORD			play_cursor;		//Position that direct sound is reading from

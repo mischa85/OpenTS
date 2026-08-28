@@ -1171,7 +1171,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	//
 	// Decompress the sample into the direct sound buffer
 	//
-	st->DestPtr=(void*)Sample_Copy ( 	st,
+	st->DestPtr=Sample_Copy ( 	st,
 								&st->Source,
 								&st->Remainder,
 								&st->QueueBuffer,
@@ -1199,7 +1199,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 		if (SECONDARY_BUFFER_SIZE - size > SECONDARY_BUFFER_SIZE/4) {
 			left = SECONDARY_BUFFER_SIZE/4;
 		}
-		memset ( (char*)( (unsigned)play_buffer_ptr + (unsigned)st->DestPtr ), 0 , left);
+		memset ( (char*)play_buffer_ptr + st->DestPtr, 0 , left);
 	}
 
 	st->PlayBuffer->Unlock(	play_buffer_ptr,
@@ -1428,7 +1428,7 @@ void DSAudio::Unlock_Mutex(void)
  *    11/2/95 4:01PM ST : Created                                                              *
  *=============================================================================================*/
 
-void CALLBACK DSAudio::Sound_Timer_Callback ( UINT, UINT, DWORD, DWORD, DWORD )
+void CALLBACK DSAudio::Sound_Timer_Callback ( UINT, UINT, DWORD_PTR, DWORD_PTR, DWORD_PTR )
 {
 	HANDLE mutex = Audio.TimerMutex;
 	if (WaitForSingleObject(mutex, 0) == 0) {
@@ -1521,8 +1521,8 @@ void DSAudio::maintenance_callback(void)
 				 	*/
 					write_more = FALSE;
 
-					if ( play_cursor < (unsigned)st->DestPtr ){
-						if ( (unsigned)st->DestPtr - (unsigned)play_cursor <= SECONDARY_BUFFER_SIZE/4 ){
+					if ( play_cursor < st->DestPtr ){
+						if ( st->DestPtr - (unsigned)play_cursor <= SECONDARY_BUFFER_SIZE/4 ){
 							write_more=TRUE;
 						}
 					} else {
@@ -1542,7 +1542,7 @@ void DSAudio::maintenance_callback(void)
 						/*
 						**	Lock a 1/2 of the direct sound buffer so we can write to it
 						*/
-						if ( DS_OK== st->PlayBuffer->Lock (	(DWORD)st->DestPtr ,
+						if ( DS_OK== st->PlayBuffer->Lock (	st->DestPtr ,
 															(DWORD)SECONDARY_BUFFER_SIZE/2,
 															&play_buffer_ptr,
 															&lock_length1,
@@ -1572,7 +1572,7 @@ void DSAudio::maintenance_callback(void)
 								**	Clear out an extra area in the buffer ahead of the play cursor
 								**	to give us a quiet period of grace in which to stop the buffer playing
 								*/
-								if ( (unsigned)st->DestPtr == SECONDARY_BUFFER_SIZE*3/4 ){
+								if ( st->DestPtr == SECONDARY_BUFFER_SIZE*3/4 ){
 									if ( dummy_buffer_ptr && lock_length2 ){
 										memset (dummy_buffer_ptr , 0 , lock_length2);
 									}
@@ -1585,10 +1585,10 @@ void DSAudio::maintenance_callback(void)
 							**	Update our pointer into the direct sound buffer
 							**
 							*/
-							st->DestPtr = Audio_Add_Long_To_Pointer (st->DestPtr,bytes_copied);
+							st->DestPtr += bytes_copied;
 
-							if ( (unsigned)st->DestPtr >= (unsigned)SECONDARY_BUFFER_SIZE ){
-								st->DestPtr = Audio_Add_Long_To_Pointer (st->DestPtr,(int)-SECONDARY_BUFFER_SIZE);
+							if ( st->DestPtr >= (unsigned)SECONDARY_BUFFER_SIZE ){
+								st->DestPtr -= SECONDARY_BUFFER_SIZE;
 							}
 
 
@@ -1609,8 +1609,8 @@ void DSAudio::maintenance_callback(void)
 					**	no more source to write - check if the buffer play
 					**	has overrun the end of the sample and stop it if it has
 					*/
-					if ( ( (play_cursor >= (unsigned)st->DestPtr) && ( ((unsigned)play_cursor - (unsigned)st->DestPtr) <SECONDARY_BUFFER_SIZE/4) ) ||
-						(!st->OneShot &&( (play_cursor < (unsigned)st->DestPtr) && ( ((unsigned)st->DestPtr - (unsigned)play_cursor) >(SECONDARY_BUFFER_SIZE*3/4) ) ))	 ){
+					if ( ( (play_cursor >= st->DestPtr) && ( ((unsigned)play_cursor - st->DestPtr) <SECONDARY_BUFFER_SIZE/4) ) ||
+						(!st->OneShot &&( (play_cursor < st->DestPtr) && ( (st->DestPtr - (unsigned)play_cursor) >(SECONDARY_BUFFER_SIZE*3/4) ) ))	 ){
 							//st->PlayBuffer->Stop();
 							st->Service = FALSE;
 							Stop_Sample( index );

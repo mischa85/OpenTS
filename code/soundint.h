@@ -145,11 +145,11 @@ struct SampleTrackerType {
 //	short int Index;
 
 	/*
-	**	Pointer into the play buffer for writing the next
+	**	Byte offset into the play buffer for writing the next
 	**	chunk of sample to
 	**
 	*/
-	void *DestPtr;
+	unsigned int DestPtr;
 
 	/*
 	**	This flag indicates that there is more source data
