@@ -28,7 +28,6 @@ file(GLOB_RECURSE OPENTS_RAW CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hh"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.rc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.asm"
 
     # Submodules of OpenTS
     "${CMAKE_CURRENT_SOURCE_DIR}/wolapi/*"
@@ -112,10 +111,6 @@ set(OPENTS_COMPILE_OPTIONS
             /Zi /Od /RTC1 /MP /Oy- /arch:SSE2 /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 
     # ================= RELEASE =================
@@ -133,10 +128,6 @@ set(OPENTS_COMPILE_OPTIONS
             /Zi /O2 /GF /MP /arch:SSE2 /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 )
 
@@ -198,16 +189,12 @@ message(STATUS "${PROJECT_NAME}: Applying linker options...")
 #  + all Win32 libs
 #
 
-# The bgfx targets are linked by file rather than by name. Their interface settings
-# include compiler switches and a directory of headers that shadow the system ones, and
-# the Visual Studio generator would hand all of that to ML.EXE as well, which fails.
-add_dependencies(OpenTS bgfx bx bimg)
 target_link_libraries(OpenTS PRIVATE
     VQALib
 
-    $<TARGET_FILE:bgfx>
-    $<TARGET_FILE:bx>
-    $<TARGET_FILE:bimg>
+    bgfx
+    bx
+    bimg
     comctl32
     dbghelp
     dsound
@@ -238,25 +225,6 @@ endif()
 
 #
 # ---------------------------------------------------------
-# MASM assembly support
-# ---------------------------------------------------------
-#
-message(STATUS "${PROJECT_NAME}: Adding MASM support...")
-
-enable_language(ASM_MASM)
-
-# All .asm files compile automatically using ML.EXE with appropriate flags.
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        set_source_files_properties(${f} PROPERTIES
-            LANGUAGE ASM_MASM
-            COMPILE_FLAGS "-Zi -c -coff -Cx"
-        )
-    endif()
-endforeach()
-
-#
-# ---------------------------------------------------------
 # Visual Studio source groups
 # ---------------------------------------------------------
 #
@@ -280,13 +248,6 @@ endforeach()
 foreach(f ${OPENTS_SRC})
     if(f MATCHES "\\.hh$")
         source_group("Header Files\\Define Header Files" FILES ${f})
-    endif()
-endforeach()
-
-# Assembly Files
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        source_group("Assembly Files" FILES ${f})
     endif()
 endforeach()
 
