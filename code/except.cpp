@@ -327,10 +327,13 @@ static void Capture_Module_Table(void)
 			slot.Base = (DWORD_PTR)entry.modBaseAddr;
 			slot.End = slot.Base + entry.modBaseSize;
 
+			#ifdef _WIN64
+		    #else
 			strncpy(slot.Name, entry.szModule, sizeof(slot.Name) - 1);
 			slot.Name[sizeof(slot.Name) - 1] = '\0';
 			strncpy(slot.Path, entry.szExePath, sizeof(slot.Path) - 1);
 			slot.Path[sizeof(slot.Path) - 1] = '\0';
+			#endif
 
 			ModuleCount++;
 		} while (ModuleCount < MAX_MODULE_COUNT && Module32Next(snapshot, &entry));
@@ -606,9 +609,15 @@ static void Append_Exception_Description(EXCEPTION_RECORD const * record)
 static void Append_Registers(CONTEXT const * context)
 {
 	Exception_Printf("\r\nRegisters\r\n---------\r\n");
+	#ifdef _WIN64
+	Exception_Printf("Eip:%08X  Esp:%08X  Ebp:%08X\r\n", context->Rip, context->Rsp, context->Rbp);
+	Exception_Printf("Eax:%08X  Ebx:%08X  Ecx:%08X\r\n", context->Rax, context->Rbx, context->Rcx);
+	Exception_Printf("Edx:%08X  Esi:%08X  Edi:%08X\r\n", context->Rdx, context->Rsi, context->Rdi);
+	#else
 	Exception_Printf("Eip:%08X  Esp:%08X  Ebp:%08X\r\n", context->Eip, context->Esp, context->Ebp);
 	Exception_Printf("Eax:%08X  Ebx:%08X  Ecx:%08X\r\n", context->Eax, context->Ebx, context->Ecx);
 	Exception_Printf("Edx:%08X  Esi:%08X  Edi:%08X\r\n", context->Edx, context->Esi, context->Edi);
+	#endif
 	Exception_Printf("EFlags:%08X\r\n", context->EFlags);
 	Exception_Printf("CS:%04X  SS:%04X  DS:%04X  ES:%04X  FS:%04X  GS:%04X\r\n",
 				context->SegCs, context->SegSs, context->SegDs, context->SegEs, context->SegFs, context->SegGs);
@@ -629,6 +638,9 @@ static void Append_Floating_Point(CONTEXT const * context)
 	if ((context->ContextFlags & CONTEXT_FLOATING_POINT) != CONTEXT_FLOATING_POINT) {
 		return;
 	}
+
+	#ifdef _WIN64
+	#else
 
 	FLOATING_SAVE_AREA const & save = context->FloatSave;
 
@@ -663,6 +675,7 @@ static void Append_Floating_Point(CONTEXT const * context)
 			Exception_Printf("XMM%u: %08X %08X %08X %08X\r\n", index, word[3], word[2], word[1], word[0]);
 		}
 	}
+    #endif
 }
 
 
@@ -671,7 +684,11 @@ static void Append_Floating_Point(CONTEXT const * context)
 /// </summary>
 static void Append_Code_Bytes(CONTEXT const * context)
 {
+	#ifdef _WIN64
+	BYTE const * const code = (BYTE const *)context->Rip;
+	#else
 	BYTE const * const code = (BYTE const *)context->Eip;
+	#endif
 
 	Exception_Printf("Bytes       : ");
 	for (unsigned index = 0; index < NUM_CODE_BYTES; index++) {
@@ -699,9 +716,16 @@ static void Append_Frame_Chain(CONTEXT const * context)
 
 	// The chain records return addresses, so the faulting instruction is not in it and is
 	// listed here for the two walks to start from the same place.
+	#ifdef _WIN64
+	Append_Address((DWORD_PTR)context->Rip, "  ");
+	#else
 	Append_Address((DWORD_PTR)context->Eip, "  ");
-
+	#endif
+	#ifdef _WIN64
+	DWORD_PTR const * frame = (DWORD_PTR const *)context->Rbp;
+	#else
 	DWORD_PTR const * frame = (DWORD_PTR const *)context->Ebp;
+	#endif
 	DWORD_PTR previous = 0;
 
 	for (unsigned depth = 0; depth < MAX_FRAME_DEPTH; depth++) {
@@ -742,13 +766,21 @@ static void Append_Call_Stack(CONTEXT const * context)
 
 	STACKFRAME64 frame;
 	memset(&frame, 0, sizeof(frame));
+	#ifdef _WIN64
+	frame.AddrPC.Offset = working.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = working.Rbp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = working.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+	#else
 	frame.AddrPC.Offset = working.Eip;
 	frame.AddrPC.Mode = AddrModeFlat;
 	frame.AddrFrame.Offset = working.Ebp;
 	frame.AddrFrame.Mode = AddrModeFlat;
 	frame.AddrStack.Offset = working.Esp;
 	frame.AddrStack.Mode = AddrModeFlat;
-
+	#endif
 	for (unsigned depth = 0; depth < MAX_FRAME_DEPTH; depth++) {
 		EnterCriticalSection(&DbgHelpLock);
 		BOOL const walked = Guarded_Stack_Walk(&frame, &working);
@@ -809,7 +841,11 @@ static void Append_Stack_Dump(CONTEXT const * context)
 	Exception_Printf("\r\nStack dump (* marks a possible code address)\r\n");
 	Exception_Printf("-------------------------------------------\r\n");
 
+	#ifdef _WIN64
+	DWORD_PTR const * const stack = (DWORD_PTR const *)context->Rsp;
+	#else
 	DWORD_PTR const * const stack = (DWORD_PTR const *)context->Esp;
+	#endif
 
 	for (unsigned index = 0; index < MAX_STACK_DUMP; index++) {
 		DWORD_PTR const * const slot = stack + index;
@@ -851,7 +887,11 @@ static void Guarded_Crash_Site(CONTEXT const * context)
 {
 	__try {
 		Exception_Printf("\r\nCrash site\r\n----------\r\n");
+		#ifdef _WIN64
+		Append_Address((DWORD_PTR)context->Rip, "Address     : ");
+		#else
 		Append_Address((DWORD_PTR)context->Eip, "Address     : ");
+		#endif
 		Append_Code_Bytes(context);
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		Exception_Printf("  <crash site faulted>\r\n");
@@ -1243,15 +1283,15 @@ static INT_PTR CALLBACK Exception_Dialog_Proc(HWND window, UINT message, WPARAM 
 			int const height = -MulDiv(9, GetDeviceCaps(dc, LOGPIXELSY), 72);
 			ReleaseDC(window, dc);
 
-			HFONT const font = CreateFont(height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+			HFONT const font = CreateFontA(height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
 						DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
 						FIXED_PITCH | FF_MODERN, "Consolas");
 			if (font != NULL) {
 				SendDlgItemMessage(window, IDC_EXCEPTION_DETAILS, WM_SETFONT, (WPARAM)font, TRUE);
 			}
 
-			SetDlgItemText(window, IDC_EXCEPTION_FOLDER, ArtifactFolder);
-			SetDlgItemText(window, IDC_EXCEPTION_DETAILS,
+			SetDlgItemTextA(window, IDC_EXCEPTION_FOLDER, ArtifactFolder);
+			SetDlgItemTextA(window, IDC_EXCEPTION_DETAILS,
 						ExceptionReportFinished ? ExceptionReport : "The report could not be generated.");
 
 			RECT work;
@@ -1282,7 +1322,7 @@ static INT_PTR CALLBACK Exception_Dialog_Proc(HWND window, UINT message, WPARAM 
 					bool const written = Write_Mini_Dump(FullDumpPath, true);
 
 					SetCursor(previous);
-					SetDlgItemText(window, IDC_EXCEPTION_FULLDUMP, written ? "Dump saved" : "Dump failed");
+					SetDlgItemTextA(window, IDC_EXCEPTION_FULLDUMP, written ? "Dump saved" : "Dump failed");
 					return(TRUE);
 				}
 
