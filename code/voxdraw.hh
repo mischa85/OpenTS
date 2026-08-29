@@ -22,6 +22,7 @@
 #define VOXEL_BITMAP_WIDTH 256
 #define VOXEL_BITMAP_HEIGHT 256
 #define VOXEL_BITMAP_BPP 1
+#define VOXEL_BITMAP_SIZE (VOXEL_BITMAP_WIDTH * VOXEL_BITMAP_HEIGHT * VOXEL_BITMAP_BPP)
 
 
 /*
@@ -73,6 +74,24 @@ extern unsigned char VoxelDrawBuffer[];
 extern unsigned char VoxelDrawZBuffer[];
 extern short VoxelPixelDeltaTable[VOXEL_BITMAP_WIDTH][2];
 extern unsigned char VoxelNormalTranslateTable[VOXEL_PALETTE_SIZE];
+}
+
+
+/// <summary>
+/// Stores one value across the pair of buffer bytes that a voxel covers.
+/// </summary>
+/// <param name="buffer">The draw or depth buffer being written.</param>
+/// <param name="index">The buffer byte the voxel projects onto.</param>
+/// <param name="value">The color index or depth to store.</param>
+/// <remarks>A voxel that lands on the buffer's last byte covers that byte alone, since the
+/// second byte of the pair falls outside the buffer.</remarks>
+inline void Put_Voxel_Pair(unsigned char * buffer, unsigned int index, unsigned char value)
+{
+	buffer[index] = value;
+
+	if (index + 1 < VOXEL_BITMAP_SIZE) {
+		buffer[index + 1] = value;
+	}
 }
 
 

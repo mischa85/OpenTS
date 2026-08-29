@@ -32,10 +32,20 @@
 ** The drawers reach these through voxdraw.hh. The engine defines them in voxdrsys.cpp and
 ** voxlib.cpp, both of which are Win32 bound, so the harness supplies its own.
 */
+
+/*
+ * Both buffers carry a run of guard bytes past the end of the buffer proper. A drawer that
+ * covers a pair of bytes reaches one byte beyond the one a voxel projects onto, so a voxel
+ * on the buffer's last byte is the one position where the pair leaves the buffer. Only the
+ * first VOXEL_BITMAP_SIZE bytes are the buffer, and everything that clears, digests or
+ * reads it keeps to them.
+ */
+static size_t const VOXEL_GUARD_BYTES = 16;
+
 extern "C" {
 unsigned char VoxelPaletteTranslateTable[MAX_PALETTE_LOOKUP_ENTRIES][VOXEL_PALETTE_SIZE];
-unsigned char VoxelDrawBuffer[VOXEL_BITMAP_WIDTH * VOXEL_BITMAP_HEIGHT * VOXEL_BITMAP_BPP];
-unsigned char VoxelDrawZBuffer[VOXEL_BITMAP_WIDTH * VOXEL_BITMAP_HEIGHT * VOXEL_BITMAP_BPP];
+unsigned char VoxelDrawBuffer[VOXEL_BITMAP_SIZE + VOXEL_GUARD_BYTES];
+unsigned char VoxelDrawZBuffer[VOXEL_BITMAP_SIZE + VOXEL_GUARD_BYTES];
 short VoxelPixelDeltaTable[VOXEL_BITMAP_WIDTH][2];
 unsigned char VoxelNormalTranslateTable[VOXEL_PALETTE_SIZE];
 }
@@ -200,6 +210,18 @@ static unsigned int Pixel_At(int column, int row)
 static unsigned int Depth_At(int column, int row)
 {
 	return VoxelDrawZBuffer[(size_t)(row * VOXEL_BITMAP_WIDTH + column)];
+}
+
+
+static int Guard_Written(unsigned char const * buffer)
+{
+	int written = 0;
+
+	for (size_t i = 0; i < VOXEL_GUARD_BYTES; i++) {
+		if (buffer[VOXEL_BITMAP_SIZE + i] != 0) written++;
+	}
+
+	return written;
 }
 
 
@@ -625,8 +647,8 @@ static void Test_Layer_Digests(void)
 
 		item.Draw(&state);
 
-		unsigned int color_digest = Digest(VoxelDrawBuffer, sizeof(VoxelDrawBuffer));
-		unsigned int depth_digest = Digest(VoxelDrawZBuffer, sizeof(VoxelDrawZBuffer));
+		unsigned int color_digest = Digest(VoxelDrawBuffer, VOXEL_BITMAP_SIZE);
+		unsigned int depth_digest = Digest(VoxelDrawZBuffer, VOXEL_BITMAP_SIZE);
 
 		Checks += 2;
 
@@ -640,6 +662,73 @@ static void Test_Layer_Digests(void)
 }
 
 
+/// <summary>
+/// Checks that a voxel on the buffer's last byte leaves the guard bytes alone.
+/// Every drawer that covers a pair of buffer bytes writes the byte after the one the voxel
+/// projects onto, and the last byte of the buffer is the single position where that byte is
+/// outside it. The depth buffered drawers are given a cleared depth buffer so that the
+/// voxel wins its depth test and both of its stores are made.
+/// </summary>
+static void Test_Buffer_End_Clip(void)
+{
+	static struct {
+		char const * Name;
+		VoxelFuncPtr Draw;
+		bool WithNormals;
+		bool Reversed;
+		bool Shaded;
+		bool Depth;
+	} const cases[] = {
+		{ "Draw_Voxel_Regular_Normals", &Draw_Voxel_Regular_Normals, true, false, false, false },
+		{ "Draw_Voxel_Reverse_Normals", &Draw_Voxel_Reverse_Normals, true, true, false, false },
+		{ "Draw_Voxel_Regular_Normals_ZBuffer", &Draw_Voxel_Regular_Normals_ZBuffer, true, false, false, true },
+		{ "Draw_Voxel_Reverse_Normals_ZBuffer", &Draw_Voxel_Reverse_Normals_ZBuffer, true, true, false, true },
+		{ "Draw_Voxel_Regular_Normals_Lighting", &Draw_Voxel_Regular_Normals_Lighting, true, false, true, false },
+		{ "Draw_Voxel_Reverse_Normals_Lighting", &Draw_Voxel_Reverse_Normals_Lighting, true, true, true, false },
+		{ "Draw_Voxel_Regular_Normals_ZBuffer_Lighting", &Draw_Voxel_Regular_Normals_ZBuffer_Lighting, true, false, true, true },
+		{ "Draw_Voxel_Reverse_Normals_ZBuffer_Lighting", &Draw_Voxel_Reverse_Normals_ZBuffer_Lighting, true, true, true, true },
+		{ "Draw_Voxel_Regular_ZBuffer", &Draw_Voxel_Regular_ZBuffer, false, false, false, true },
+		{ "Draw_Voxel_Reverse_ZBuffer", &Draw_Voxel_Reverse_ZBuffer, false, true, false, true },
+	};
+
+	for (auto const & item : cases) {
+		int const column = VOXEL_BITMAP_WIDTH - 1;
+		int const row = VOXEL_BITMAP_HEIGHT - 1;
+		int const depth = 12;
+		unsigned char const color = 0x6D;
+		unsigned char const normal = 0x17;
+
+		unsigned char expected = color;
+		if (item.Shaded) {
+			expected = VoxelPaletteTranslateTable[VoxelNormalTranslateTable[normal]][color];
+		}
+
+		Clear_Buffers();
+
+		VoxelLayer layer;
+		VoxelFuncArgumentStruct state;
+		Build_Single_Voxel(layer, state, item.WithNormals, item.Reversed, column, row, depth, color, normal);
+		item.Draw(&state);
+
+		char label[160];
+
+		snprintf(label, sizeof(label), "%s last byte", item.Name);
+		Check_Equal(label, (int)Pixel_At(column, row), expected);
+
+		if (item.Depth) {
+			snprintf(label, sizeof(label), "%s last depth", item.Name);
+			Check_Equal(label, (int)Depth_At(column, row), depth);
+		}
+
+		snprintf(label, sizeof(label), "%s draw guard", item.Name);
+		Check_Equal(label, Guard_Written(VoxelDrawBuffer), 0);
+
+		snprintf(label, sizeof(label), "%s depth guard", item.Name);
+		Check_Equal(label, Guard_Written(VoxelDrawZBuffer), 0);
+	}
+}
+
+
 int main(void)
 {
 	Init_Lighting_Tables();
@@ -648,6 +737,7 @@ int main(void)
 	Test_Depth_Buffer();
 	Test_Lighting_Remap();
 	Test_Delta_Table_Skip();
+	Test_Buffer_End_Clip();
 	Test_Layer_Digests();
 
 	printf("%d checks, %d failures\n", Checks, Failures);

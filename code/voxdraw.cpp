@@ -159,8 +159,7 @@ void __cdecl Draw_Voxel_Regular_Normals(VoxelFuncArgumentStruct * state)
 
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -246,8 +245,7 @@ void __cdecl Draw_Voxel_Reverse_Normals(VoxelFuncArgumentStruct * state)
 
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -361,10 +359,8 @@ void __cdecl Draw_Voxel_Regular_Normals_ZBuffer(VoxelFuncArgumentStruct * state)
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							if ((pixel_z >> 8) > VoxelDrawZBuffer[buffer_index]) {
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = value;
-								VoxelDrawBuffer[buffer_index + 1] = value;
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, value);
 							}
 
 							pixel_x += state->TransformMatrix[3].I;
@@ -464,10 +460,8 @@ void __cdecl Draw_Voxel_Reverse_Normals_ZBuffer(VoxelFuncArgumentStruct * state)
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							if ((pixel_z >> 8) > VoxelDrawZBuffer[buffer_index]) {
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = value;
-								VoxelDrawBuffer[buffer_index + 1] = value;
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, value);
 							}
 
 							pixel_x += state->TransformMatrix[3].I;
@@ -584,8 +578,7 @@ void __cdecl Draw_Voxel_Regular_Normals_Lighting(VoxelFuncArgumentStruct * state
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							color_index = VoxelPaletteTranslateTable[table_index][color_index];
 
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -675,8 +668,7 @@ void __cdecl Draw_Voxel_Reverse_Normals_Lighting(VoxelFuncArgumentStruct * state
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							color_index = VoxelPaletteTranslateTable[table_index][color_index];
 
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -794,10 +786,8 @@ void __cdecl Draw_Voxel_Regular_Normals_ZBuffer_Lighting(VoxelFuncArgumentStruct
 
 								color_index = VoxelPaletteTranslateTable[table_index][color_index];
 
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = color_index;
-								VoxelDrawBuffer[buffer_index + 1] = color_index;
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 							} else {
 								/*
 								 * Byte 2 - color index
@@ -906,10 +896,8 @@ void __cdecl Draw_Voxel_Reverse_Normals_ZBuffer_Lighting(VoxelFuncArgumentStruct
 
 								color_index = VoxelPaletteTranslateTable[table_index][color_index];
 
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = color_index;
-								VoxelDrawBuffer[buffer_index + 1] = color_index;
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 							} else {
 
 								/*
@@ -1222,10 +1210,8 @@ void __cdecl Draw_Voxel_Regular_ZBuffer(VoxelFuncArgumentStruct * state)
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							if ((pixel_z >> 8) > VoxelDrawZBuffer[buffer_index]) {
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = value;
-								VoxelDrawBuffer[buffer_index + 1] = value;
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, value);
 							}
 
 							pixel_x += state->TransformMatrix[3].I;
@@ -1320,10 +1306,8 @@ void __cdecl Draw_Voxel_Reverse_ZBuffer(VoxelFuncArgumentStruct * state)
 							/// Compute buffer index and write color
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							if ((pixel_z >> 8) > VoxelDrawZBuffer[buffer_index]) {
-								VoxelDrawZBuffer[buffer_index] = (pixel_z >> 8);
-								VoxelDrawBuffer[buffer_index] = value;
-								VoxelDrawBuffer[buffer_index + 1] = value;
-								VoxelDrawZBuffer[buffer_index + 1] = (pixel_z >> 8);
+								Put_Voxel_Pair(VoxelDrawZBuffer, buffer_index, (unsigned char)(pixel_z >> 8));
+								Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, value);
 							}
 
 							pixel_x += state->TransformMatrix[3].I;

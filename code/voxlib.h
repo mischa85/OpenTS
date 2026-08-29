@@ -185,8 +185,3 @@ class VoxelPaletteLibrary
 		VPL_NUM_ENTRIES = 32,
 	};
 };
-
-extern "C" {
-extern short VoxelPixelDeltaTable[VOXEL_BITMAP_WIDTH][2];
-extern unsigned char VoxelNormalTranslateTable[VOXEL_PALETTE_SIZE];
-}

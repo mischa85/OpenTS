@@ -841,8 +841,7 @@ static void __cdecl _voxel_draw_shadow(VoxelFuncArgumentStruct * state)
 			if (data_offset != UINT_MAX) {
 				unsigned char color_index = 1;
 				unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-				VoxelDrawBuffer[buffer_index] = color_index;
-				VoxelDrawBuffer[buffer_index + 1] = color_index;
+				Put_Voxel_Pair(VoxelDrawBuffer, buffer_index, color_index);
 			}
 
 			/// Advance to next voxel in X direction

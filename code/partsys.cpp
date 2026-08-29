@@ -426,7 +426,12 @@ void ParticleSystemClass::Smoke_AI(void)
 {
 	int i;
 
-	if (Source->As_ObjectClass() != NULL && Source->What_Am_I() != RTTI_BUILDING) {
+	/*
+	 * A smoke system need not have a source at all, and Detach clears the source out
+	 * from under a system that outlives the object it was rising from. The cast helpers
+	 * are members, so they may only be reached through a source that is really there.
+	 */
+	if (Source != NULL && Source->As_ObjectClass() != NULL && Source->What_Am_I() != RTTI_BUILDING) {
 		Set_Coord(Source->Center_Coord() + CoordOffset);
 	}
 
@@ -493,7 +498,7 @@ void ParticleSystemClass::Smoke_AI(void)
 	}
 
 	if (!IsMarkedForDeletion && IsActive && (Frame % (int)SpawnFrames) == 0) {
-		FootClass *foot = Source->As_FootClass();
+		FootClass *foot = (Source != NULL) ? Source->As_FootClass() : NULL;
 		if (foot == NULL || foot->CurrentTube < 0) {
 			int xrand = Scen->RandomNumber();
 			int yrand = Scen->RandomNumber();
