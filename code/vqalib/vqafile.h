@@ -38,9 +38,7 @@
 
 #include "iff.h"
 
-#if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(push,1)
-#endif
 
 /*---------------------------------------------------------------------------
  * STRUCTURE DEFINITIONS AND RELATED DEFINES.
@@ -236,9 +234,7 @@ typedef struct _VQAHeader {
 #define ID_VPKZ MAKE_ID('V','P','K','Z')
 #define ID_VPDZ MAKE_ID('V','P','D','Z')
 
-#if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(pop)
-#endif
 
 #endif /* VQAFILE_H */
 

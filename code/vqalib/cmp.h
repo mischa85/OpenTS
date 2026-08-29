@@ -16,9 +16,7 @@
 
 #pragma once
 
-#if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(push,1)
-#endif
 
 struct _VQA_SOS_COMPRESS_INFO
 
@@ -49,8 +47,6 @@ void __cdecl VQA_sosCODECDecompressData(void *src, void *dst, unsigned short wBi
 
 //#define VQA_sosCODECDecompressData sosCODECDecompressData
 
-#if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(pop)
-#endif
 
 #endif //VQACMP_H
