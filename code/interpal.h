@@ -26,5 +26,4 @@ void Increase_Palette_Luminance (PaletteClass & palette , double percentage);
 extern "C"{
 	extern unsigned char PaletteInterpolationTable[SIZE_OF_PALETTE][SIZE_OF_PALETTE];
 	extern unsigned char *InterpolationPalette;
-	void __cdecl Asm_Create_Palette_Interpolation_Table(void);
 }

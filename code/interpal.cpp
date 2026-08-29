@@ -48,28 +48,9 @@
 #include "surface.h"
 
 #include <algorithm>
+#include <cstring>
 
 bool	InterpolationPaletteChanged = false;
-extern "C" {
-extern void __cdecl Asm_Interpolate (unsigned char* src_ptr ,
-						 						unsigned char* dest_ptr ,
-												int				lines ,
-												int				src_width ,
-												int				dest_width);
-
-extern void __cdecl Asm_Interpolate_Line_Double (unsigned char* src_ptr ,
-						 						unsigned char* dest_ptr ,
-												int				lines ,
-												int				src_width ,
-												int				dest_width);
-
-extern void __cdecl Asm_Interpolate_Line_Interpolate (unsigned char* src_ptr ,
-						 						unsigned char* dest_ptr ,
-												int				lines ,
-												int				src_width ,
-												int				dest_width);
-
-}
 
 extern "C"{
 	unsigned char PaletteInterpolationTable[SIZE_OF_PALETTE][SIZE_OF_PALETTE];
@@ -149,8 +130,6 @@ void Write_Interpolation_Palette (char const * palette_file_name)
  *=========================================================================*/
 void Create_Palette_Interpolation_Table( void )
 {
-
-//	Asm_Create_Palette_Interpolation_Table();
 
 	#if (1)
 
@@ -282,6 +261,151 @@ void Increase_Palette_Luminance (PaletteClass & palette , double percentage)
 
 int	CopyType	=0;
 
+/*
+ * Each output line is staged here before it reaches the destination, so a scaler reads a
+ * source line once and never reads back what it has written. The size caps the source
+ * width the scalers accept.
+ */
+int const MAX_INTERPOLATED_LINE = 2560;
+
+static unsigned char TopLine[MAX_INTERPOLATED_LINE];
+static unsigned char BottomLine[MAX_INTERPOLATED_LINE];
+static unsigned char LineBuffer[MAX_INTERPOLATED_LINE];
+
+
+/// <summary>
+/// Stretches one source line to twice its width.
+/// Each source pixel is copied and followed by the palette entry closest to the blend of
+/// it with its right hand neighbour. The final pixel has no neighbour to blend with, so
+/// the line ends on a zero.
+/// </summary>
+/// <param name="source">The source line, whose width must be even and at least two.</param>
+/// <param name="dest">The output line, which takes twice the source width in bytes.</param>
+/// <param name="source_width">The width of the source line in pixels.</param>
+static void Interpolate_Line(unsigned char const * source, unsigned char * dest, int source_width)
+{
+	int pairs = (source_width - 2) >> 1;
+
+	for (int i = 0; i < pairs; i++) {
+		dest[0] = source[0];
+		dest[1] = PaletteInterpolationTable[source[1]][source[0]];
+		dest[2] = source[1];
+		dest[3] = PaletteInterpolationTable[source[2]][source[1]];
+		source += 2;
+		dest += 4;
+	}
+
+	dest[0] = source[0];
+	dest[1] = PaletteInterpolationTable[source[1]][source[0]];
+	dest[2] = source[1];
+	dest[3] = 0;
+}
+
+
+/// <summary>
+/// Blends two stretched lines into the line that sits between them.
+/// </summary>
+/// <param name="first">The stretched line above.</param>
+/// <param name="second">The stretched line below.</param>
+/// <param name="dest">The output line.</param>
+/// <param name="source_width">The width of the unstretched source line in pixels.</param>
+static void Interpolate_Between_Lines(unsigned char const * first, unsigned char const * second, unsigned char * dest, int source_width)
+{
+	int width = source_width * 2;
+
+	for (int i = 0; i < width; i++) {
+		dest[i] = PaletteInterpolationTable[second[i]][first[i]];
+	}
+}
+
+
+/// <summary>
+/// Stretches a source image horizontally into every other destination line.
+/// The destination lines in between are left as they are, so the result is a doubled
+/// image drawn through a scanline comb.
+/// </summary>
+/// <param name="src_ptr">The source image.</param>
+/// <param name="dest_ptr">The destination image.</param>
+/// <param name="lines">The height of the source image.</param>
+/// <param name="src_width">The width of the source image in pixels.</param>
+/// <param name="dest_width">The distance between the destination lines that are written.</param>
+static void Interpolate(unsigned char const * src_ptr, unsigned char * dest_ptr, int lines, int src_width, int dest_width)
+{
+	for (int line = 0; line < lines; line++) {
+		Interpolate_Line(src_ptr, dest_ptr, src_width);
+		src_ptr += src_width;
+		dest_ptr += dest_width;
+	}
+}
+
+
+/// <summary>
+/// Stretches a source image horizontally and repeats each line to fill the height.
+/// </summary>
+/// <param name="src_ptr">The source image.</param>
+/// <param name="dest_ptr">The destination image.</param>
+/// <param name="lines">The height of the source image.</param>
+/// <param name="src_width">The width of the source image in pixels.</param>
+/// <param name="dest_width">Twice the destination stride.</param>
+static void Interpolate_Line_Double(unsigned char const * src_ptr, unsigned char * dest_ptr, int lines, int src_width, int dest_width)
+{
+	int stride = dest_width >> 1;
+	int line_size = src_width * 2;
+
+	for (int line = 0; line < lines; line++) {
+		Interpolate_Line(src_ptr, LineBuffer, src_width);
+		memcpy(dest_ptr, LineBuffer, line_size);
+		memcpy(dest_ptr + stride, LineBuffer, line_size);
+		src_ptr += src_width;
+		dest_ptr += stride * 2;
+	}
+}
+
+
+/// <summary>
+/// Stretches a source image horizontally and blends the lines it inserts between the
+/// stretched ones, so the image is smoothed in both directions.
+/// </summary>
+/// <param name="src_ptr">The source image.</param>
+/// <param name="dest_ptr">The destination image.</param>
+/// <param name="lines">The height of the source image.</param>
+/// <param name="src_width">The width of the source image in pixels.</param>
+/// <param name="dest_width">Twice the destination stride.</param>
+static void Interpolate_Line_Interpolate(unsigned char const * src_ptr, unsigned char * dest_ptr, int lines, int src_width, int dest_width)
+{
+	if (lines < 1) {
+		return;
+	}
+
+	int stride = dest_width >> 1;
+	int line_size = src_width * 2;
+
+	unsigned char * previous = TopLine;
+	unsigned char * current = BottomLine;
+
+	Interpolate_Line(src_ptr, previous, src_width);
+	src_ptr += src_width;
+
+	for (int line = 1; line < lines; line++) {
+		Interpolate_Line(src_ptr, current, src_width);
+		Interpolate_Between_Lines(previous, current, LineBuffer, src_width);
+
+		memcpy(dest_ptr, previous, line_size);
+		memcpy(dest_ptr + stride, LineBuffer, line_size);
+
+		src_ptr += src_width;
+		dest_ptr += stride * 2;
+		std::swap(previous, current);
+	}
+
+	/*
+	 * The last source line has nothing below it to blend with, so it closes the image on
+	 * its own and the destination line after it is left alone.
+	 */
+	memcpy(dest_ptr, previous, line_size);
+}
+
+
 /***************************************************************************
  * INTERPOLATE_2X_SCALE                                                    *
  *                                                                         *
@@ -350,23 +474,24 @@ void Interpolate_2X_Scale( Surface * source, Surface * dest , char const * palet
 		dest_width = 2*(dest->Stride());
 
 		/*
-		**	Call the appropriate assembly language copy routine
-		*/
-#if (1)
-		switch (CopyType) {
-			case 0:
-				Asm_Interpolate ( src_ptr , dest_ptr , source->Get_Height() , src_width , dest_width);
-				break;
+		 * The scalers step the source two pixels at a time and stage each output line in a
+		 * fixed size buffer, so a source that is odd or too wide is not one they can scale.
+		 */
+		if (src_width >= 2 && (src_width & 1) == 0 && src_width * 2 <= MAX_INTERPOLATED_LINE) {
+			switch (CopyType) {
+				case 0:
+					Interpolate(src_ptr, dest_ptr, source->Get_Height(), src_width, dest_width);
+					break;
 
-			case 1:
-				Asm_Interpolate_Line_Double( src_ptr , dest_ptr , source->Get_Height() , src_width , dest_width);
-				break;
+				case 1:
+					Interpolate_Line_Double(src_ptr, dest_ptr, source->Get_Height(), src_width, dest_width);
+					break;
 
-			case 2:
-				Asm_Interpolate_Line_Interpolate( src_ptr , dest_ptr , source->Get_Height() , src_width , dest_width);
-				break;
+				case 2:
+					Interpolate_Line_Interpolate(src_ptr, dest_ptr, source->Get_Height(), src_width, dest_width);
+					break;
+			}
 		}
-#endif
 
 #if (0)
 		//

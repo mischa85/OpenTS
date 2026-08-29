@@ -18,8 +18,8 @@
 #include "_tactica.h"
 #include "bsurface.h"
 #include "dsurface.h"
-#include "getcpu.h"
 #include "globals.h"
+#include "lightops.h"
 #include "rules.h"
 #include "scenario.h"
 #include "surface.h"
@@ -29,30 +29,8 @@
 
 DynamicVectorClass<SpotLightClass *> SpotLights;
 
-int SpotLightDontUseMMX = false;
 int SpotLightColorMode = -1;
-int *SpotLightMMXBuffer;
 BSurface *SpotLightSurfaces[SpotLightClass::SPOTLIGHT_SURFACE_COUNT + SpotLightClass::SPOTLIGHT_EXTRA_SURFACE_COUNT];
-
-extern "C" {
-/*
- * Externs to assembly routines from winasm.asm
- */
-void __cdecl Adjust_Color_565(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
-void __cdecl Adjust_Color_555(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
-void __cdecl Adjust_Color_556(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
-void __cdecl Adjust_Color_655(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
-
-void __cdecl Brighten_Color_565(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int width, int height);
-void __cdecl Brighten_Color_555(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int width, int height);
-void __cdecl Brighten_Color_556(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int width, int height);
-void __cdecl Brighten_Color_655(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int width, int height);
-
-void __cdecl MMX_Brighten_Color_565(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int dst_width, int dst_height, int *mmx_buffer);
-void __cdecl MMX_Brighten_Color_555(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int dst_width, int dst_height, int *mmx_buffer);
-void __cdecl MMX_Brighten_Color_556(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int dst_width, int dst_height, int *mmx_buffer);
-void __cdecl MMX_Brighten_Color_655(unsigned char *mul_buffer, unsigned short *color_buffer, int mulbuff_width, int color_buff_width, int dst_width, int dst_height, int *mmx_buffer);
-}
 
 
 /// <summary>
@@ -112,8 +90,7 @@ void SpotLightClass::Update_All(void)
 
 /// <summary>
 /// Performs the one time initialization of the spot light system.
-/// This routine builds the brightness ramp surfaces that every spot light is drawn from,
-/// and prepares the hicolor acceleration table when the processor can make use of it.
+/// This routine builds the brightness ramp surfaces that every spot light is drawn from.
 /// </summary>
 /// <remarks>It is safe to call this routine again after the video mode changes -- the
 /// artwork is built only once, but the color mode is picked up afresh each time.</remarks>
@@ -160,31 +137,16 @@ void SpotLightClass::One_Time(void)
 	}
 
 	SpotLightColorMode = DSurface::Get_Primary_Color_Mode();
-	int cpu_type = PROC_PENTIUM_PRO;
-	bool mmx = false;
-	Get_CPU_Type(cpu_type, mmx);
-
-	if (mmx && SpotLightMMXBuffer == NULL) {
-		SpotLightMMXBuffer = new int[65536];
-		for (int color = 0; color < 65536; color++) {
-			RGBClass rgb = DSurface::Deconstruct_Hicolor_Pixel(color);
-			SpotLightMMXBuffer[color] = (rgb.Get_Red() << 16) | (rgb.Get_Green() << 8) | (rgb.Get_Blue());
-		}
-	}
 }
 
 
 /// <summary>
 /// Frees the artwork the spot lights draw with.
-/// This routine is called during shutdown to release the brightness ramp surfaces and the
-/// hicolor acceleration table that One_Time built.
+/// This routine is called during shutdown to release the brightness ramp surfaces that
+/// One_Time built.
 /// </summary>
 void SpotLightClass::Clear_All(void)
 {
-	if (SpotLightMMXBuffer != NULL) {
-		delete [] SpotLightMMXBuffer;
-		SpotLightMMXBuffer = NULL;
-	}
 	for (int i = 0; i < SPOTLIGHT_SURFACE_COUNT + SPOTLIGHT_EXTRA_SURFACE_COUNT; i++) {
 		delete SpotLightSurfaces[i];
 		SpotLightSurfaces[i] = NULL;
@@ -235,70 +197,32 @@ void SpotLightClass::Draw_It(void)
 			void * sbuffer;
 			if (XSurface::Prep_For_Blit(*dsurf, dcliprect, drect, *ssurf, scliprect, srect, overlapped, dbuffer, sbuffer)) {
 
-				unsigned short *dptr = (unsigned short *)dbuffer;
-				unsigned char *sptr = (unsigned char *)sbuffer;
-				unsigned char *sptr_row = sptr;
-				unsigned short *dptr_row = dptr;
+				HicolorFormat format = HICOLOR_FORMAT_565;
 
-				if (SpotLightDontUseMMX != 1) {
-					switch (SpotLightColorMode) {
+				switch (SpotLightColorMode) {
+					case COLORMODE_555:
+						format = HICOLOR_FORMAT_555;
+						break;
 
-						case COLORMODE_555:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
+					case COLORMODE_556:
+						format = HICOLOR_FORMAT_556;
+						break;
 
-						case COLORMODE_556:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
+					case COLORMODE_655:
+						format = HICOLOR_FORMAT_655;
+						break;
 
-						case COLORMODE_565:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						case COLORMODE_655:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						default:
-							goto fallback;
-					}
-				} else {
-					fallback:
-					for (int y = 0; y < srect.Height; y++) {
-						for (int x = 0; x < srect.Width; x++) {
-							unsigned char spixel = *sptr++;
-							if (spixel != 0) {
-								unsigned short dpixel = *dptr;
-								RGBClass rgb = DSurface::Deconstruct_Hicolor_Pixel(dpixel);
-								int rr = rgb.Get_Red() + ((rgb.Get_Red() * spixel) >> 8);
-								int gg = rgb.Get_Green() + ((rgb.Get_Green() * spixel) >> 8);
-								int bb = rgb.Get_Blue() + ((rgb.Get_Blue() * spixel) >> 8);
-								*dptr = DSurface::Build_Hicolor_Pixel(std::min(255, rr), std::min(255, gg), std::min(255, bb));
-							}
-							dptr++;
-						}
-						sptr_row += 256;
-						sptr = sptr_row;
-						dptr_row = (unsigned short *)((unsigned char *)dptr_row + stride);
-						dptr = dptr_row;
-					}
+					/*
+					 * A color mode that was never picked up falls here too. The primary
+					 * surface is always 565, which is the layout DSurface packs a pixel with.
+					 */
+					case COLORMODE_565:
+					default:
+						break;
 				}
+
+				Brighten_Color(format, (unsigned char *)sbuffer, (unsigned short *)dbuffer, 256, stride, srect.Width, srect.Height);
+
 				dsurf->Unlock();
 				ssurf->Unlock();
 			}

@@ -72,7 +72,6 @@
 /// </summary>
 void Stop_Execution (void)
 {
-	//	__asm nop			// Is this line needed?
 }
 
 

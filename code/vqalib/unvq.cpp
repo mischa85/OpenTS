@@ -11,6 +11,10 @@
  * disclaimers apply; see LICENSE.md.
  ******************************************************************************/
 
+#include "unvq.h"
+
+#include "_vqa.h"
+
 #include <string.h>
 
 typedef signed char int8_t;
@@ -956,7 +960,7 @@ void __cdecl UnVQ2_C0_4x4_TRANS(unsigned char * codebook, unsigned char * pointe
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = blocksperrow * numrows;
 
@@ -1222,7 +1226,7 @@ void __cdecl UnVQ2_C0_4x4_KEY(unsigned char * codebook, unsigned char * pointers
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = numrows * blocksperrow;
 
@@ -2010,7 +2014,7 @@ void __cdecl UnVQ2_C0_4x2_KEY(unsigned char * codebook, unsigned char * pointers
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = numrows * blocksperrow;
 
@@ -2258,4 +2262,234 @@ void __cdecl UnVQ2_C0_4x2_KEY(unsigned char * codebook, unsigned char * pointers
 }
 
 
+/*
+ * The UnVQ1 pointer stream stores each block's codebook index split across two
+ * planes: the low byte at pointers[block], the high byte at pointers[block +
+ * blocksperrow * numrows]. A high byte of 0xFF (color mode 0) or a set high bit
+ * (color mode 1) marks a single-color block whose color is carried in the
+ * pointer itself rather than in the codebook.
+ */
 
+namespace {
+
+inline uint32_t Fetch_Block_Pointer(uint8_t const * pointers, uint32_t block, uint32_t entries)
+{
+	return ((uint32_t)pointers[block + entries] << 8) | pointers[block];
+}
+
+
+inline void Fill_Pixels_16(uint8_t * dest, uint16_t pixel, uint32_t count)
+{
+	for (uint32_t i = 0; i < count; i++) {
+		memcpy(dest + i * 2u, &pixel, 2);
+	}
+}
+
+} // namespace
+
+
+void __cdecl ASM_UnVQ_4x2(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if ((index >> 8) == 0xFFu) {
+				uint8_t color = (uint8_t)index;
+
+				memset(dst, color, 4);
+				memset(dst + bufwidth, color, 4);
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 3);
+
+				memcpy(dst, codeword, 4);
+				memcpy(dst + bufwidth, codeword + 4, 4);
+			}
+
+			dst += 4;
+		}
+
+		row += bufwidth * 2u;
+	}
+}
+
+
+void __cdecl ASM_UnVQ_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if ((index >> 8) == 0xFFu) {
+				uint8_t color = (uint8_t)index;
+
+				for (uint32_t line = 0; line < 4; line++) {
+					memset(dst + line * bufwidth, color, 4);
+				}
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 4);
+
+				for (uint32_t line = 0; line < 4; line++) {
+					memcpy(dst + line * bufwidth, codeword + line * 4u, 4);
+				}
+			}
+
+			dst += 4;
+		}
+
+		row += bufwidth * 4u;
+	}
+}
+
+
+void __cdecl ASM_UnVQ_4x4_HALF(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if ((index >> 8) == 0xFFu) {
+				uint8_t color = (uint8_t)index;
+
+				memset(dst, color, 2);
+				memset(dst + bufwidth, color, 2);
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 4);
+
+				dst[0] = codeword[0];
+				dst[1] = codeword[2];
+				dst[bufwidth] = codeword[8];
+				dst[bufwidth + 1] = codeword[10];
+			}
+
+			dst += 2;
+		}
+
+		row += bufwidth * 2u;
+	}
+}
+
+
+void __cdecl ASM_UnVQ1_C1_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint32_t pitch = (uint32_t)bufwidth * 2u;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if (index & 0x8000u) {
+				uint16_t pixel = (uint16_t)(index & 0x7FFFu);
+
+				for (uint32_t line = 0; line < 4; line++) {
+					Fill_Pixels_16(dst + line * pitch, pixel, 4);
+				}
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 5);
+
+				for (uint32_t line = 0; line < 4; line++) {
+					memcpy(dst + line * pitch, codeword + line * 8u, 8);
+				}
+			}
+
+			dst += 8;
+		}
+
+		row += pitch * 4u;
+	}
+}
+
+
+void __cdecl ASM_UnVQ1_C1_TABLE(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint32_t pitch = (uint32_t)bufwidth * 2u;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if (index & 0x8000u) {
+				uint16_t pixel = HicolorTable[index & 0x7FFFu];
+
+				for (uint32_t line = 0; line < 4; line++) {
+					Fill_Pixels_16(dst + line * pitch, pixel, 4);
+				}
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 5);
+
+				for (uint32_t line = 0; line < 4; line++) {
+					memcpy(dst + line * pitch, codeword + line * 8u, 8);
+				}
+			}
+
+			dst += 8;
+		}
+
+		row += pitch * 4u;
+	}
+}
+
+
+/*
+ * The 4x2 table variant reads only lines 0 and 2 of a 4x4 codeword and writes them
+ * to lines 0 and 2 of a four line band, leaving the odd lines as they were.
+ */
+void __cdecl ASM_UnVQ1_C1_TABLE_ALT(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	uint32_t entries = (uint32_t)numrows * (uint32_t)blocksperrow;
+	uint32_t pitch = (uint32_t)bufwidth * 2u;
+	uint8_t * row = (uint8_t *)buffer;
+	uint32_t block = 0;
+
+	for (uint32_t r = 0; r < numrows; r++) {
+		uint8_t * dst = row;
+
+		for (uint32_t c = 0; c < blocksperrow; c++, block++) {
+			uint32_t index = Fetch_Block_Pointer(pointers, block, entries);
+
+			if (index & 0x8000u) {
+				uint16_t pixel = HicolorTable[index & 0x7FFFu];
+
+				Fill_Pixels_16(dst, pixel, 4);
+				Fill_Pixels_16(dst + pitch * 2u, pixel, 4);
+			} else {
+				uint8_t const * codeword = (uint8_t const *)codebook + (index << 5);
+
+				memcpy(dst, codeword, 8);
+				memcpy(dst + pitch * 2u, codeword + 16, 8);
+			}
+
+			dst += 8;
+		}
+
+		row += pitch * 4u;
+	}
+}
