@@ -40,6 +40,3 @@ extern "C" {
 }
 
 unsigned int Get_CPU_Rate(unsigned int & high);
-
-void RDTSC(void);
-int Get_RDTSC_CPU_Speed(void);

@@ -33,14 +33,9 @@ extern "C" {
 static char const REPORTED_FAMILY = 6;
 
 /*
-**	The palette and blit assembly reads UseMMX and UseCMOV to choose between its
-**	specialized loops. Both are off, which selects the portable loop. VendorID is
-**	consumed as a NUL terminated string.
+**	VendorID is consumed as a NUL terminated string.
 */
 extern "C" {
-	char UseCMOV = 0;
-	char HasCMOV = 0;
-	char UseMMX = 0;
 	char CPUType = REPORTED_FAMILY;
 	char VendorID[20] = "Not available";
 }
@@ -54,7 +49,6 @@ extern "C" {
 bool __cdecl Detect_MMX_Availability(void)
 {
 	CPUType = REPORTED_FAMILY;
-	UseMMX = 0;
 
 	return(false);
 }
@@ -67,9 +61,6 @@ bool __cdecl Detect_MMX_Availability(void)
 /// take.</returns>
 bool __cdecl Detect_CMOV_Availability(void)
 {
-	UseCMOV = 0;
-	HasCMOV = 0;
-
 	return(false);
 }
 
