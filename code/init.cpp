@@ -271,6 +271,38 @@ static void Cheat_Version_Suffix(char * string);
 
 
 
+/// <summary>
+/// Reads a base game file and the expansion's counterpart into one database.
+/// The expansion's file is read over the base one, and either file on its own is enough, so a
+/// deployment may ship the content in whichever of the two it belongs in.
+/// </summary>
+/// <param name="ini">The database both files are read into.</param>
+/// <param name="basename">The name of the base game's file.</param>
+/// <param name="expansion">The name of the expansion's file.</param>
+/// <returns>bool; Was either file read?</returns>
+static bool Read_INI_And_Expansion(CCINIClass & ini, char const * basename, char const * expansion)
+{
+	char const * const names[] = {basename, expansion};
+	bool read = false;
+
+	for (char const * name : names) {
+		CCFileClass file(name);
+
+		if (file.Is_Available() == false) {
+			continue;
+		}
+
+		if (ini.Load(file, false)) {
+			read = true;
+		} else {
+			DebugString("Failed to load %s!\n", name);
+		}
+	}
+
+	return(read);
+}
+
+
 /***********************************************************************************************
  * Init_Game -- Main game initialization routine.                                              *
  *                                                                                             *
@@ -441,23 +473,12 @@ int Init_Game(int , char * [])
 	*/
 	DebugString("Reading SOUND.INI\n");
 
-	CCFileClass voc_file;
-	if (Addon_Installed(ADDON_FIRESTORM)) {
-		voc_file.Set_Name("SOUND01.INI");
-	} else {
-		voc_file.Set_Name("SOUND.INI");
-	}
-
-	if (voc_file.Is_Available() == false) {
-		DebugString("Failed to find SOUND.INI!\n");
-		return(-1);
-	}
-
 	CCINIClass voc_ini;
-	if (!voc_ini.Load(voc_file, false)) {
-		DebugString("Failed to load SOUND.INI!\n");
+	if (!Read_INI_And_Expansion(voc_ini, "SOUND.INI", "SOUND01.INI")) {
+		DebugString("Failed to read SOUND.INI or SOUND01.INI!\n");
 		return(-1);
 	}
+
 	Free_Vocs();
 	Init_Vocs(voc_ini);
 
@@ -465,25 +486,11 @@ int Init_Game(int , char * [])
 	**
 	*/
 	DebugString("Reading THEME.INI\n");
-	CCFileClass theme_file("THEME.INI");
-
-	if (theme_file.Is_Available() == false) {
-		DebugString("Failed to find THEME.INI!\n");
-		return(-1);
-	}
 
 	CCINIClass theme_ini;
-	if (!theme_ini.Load(theme_file, false)) {
-		DebugString("Failed to load THEME.INI!\n");
+	if (!Read_INI_And_Expansion(theme_ini, "THEME.INI", "THEME01.INI")) {
+		DebugString("Failed to read THEME.INI or THEME01.INI!\n");
 		return(-1);
-	}
-
-	if (Addon_Installed(ADDON_FIRESTORM)) {
-		theme_file.Close();
-		theme_file.Set_Name("THEME01.INI");
-		if (theme_file.Is_Available() == true && !theme_ini.Load(theme_file, false)) {
-			DebugString("Failed to load THEME01.INI!\n");
-		}
 	}
 
 	Theme.Free_Themes();
