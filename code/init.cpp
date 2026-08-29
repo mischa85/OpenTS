@@ -2134,12 +2134,9 @@ static bool Init_Expansion_Files(void)
 		if ((ff.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_TEMPORARY)) == 0) {
 
 			ptr = new MFCD(ff.cFileName, &FastKey);
-			assert(ptr != NULL);
 
-			if (ptr != NULL) {
-				ExpandMix.Add(ptr);
-				ptr->Cache();
-			}
+			ExpandMix.Add(ptr);
+			ptr->Cache();
 		}
 
 		if (FindNextFile(handle, &ff) == false) {
@@ -2157,11 +2154,8 @@ static bool Init_Expansion_Files(void)
 		if ((ff.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_TEMPORARY)) == 0) {
 
 			ptr = new MFCD(ff.cFileName, &FastKey);
-			assert(ptr != NULL);
 
-			if (ptr != NULL) {
-				ExpandMix.Add(ptr);
-			}
+			ExpandMix.Add(ptr);
 		}
 
 		if (FindNextFile(handle, &ff) == false) {
@@ -2314,13 +2308,10 @@ static bool Add_Raw_Expansion_Mix(const char *name)
 {
 	if (RawFileClass(name).Is_Available()) {
 		MFCD * expand = new MFCD(name, &FastKey);
-		assert(expand != NULL);
 
-		if (expand != NULL) {
-			ExpandMix.Add(expand);
-			DebugStringNoPrefix(" %s", name);
-			return(true);
-		}
+		ExpandMix.Add(expand);
+		DebugStringNoPrefix(" %s", name);
+		return(true);
 	}
 	return(false);
 }
@@ -2337,14 +2328,11 @@ static bool Add_CC_Expansion_Mix(const char *name)
 {
 	if (CCFileClass(name).Is_Available()) {
 		MFCD * expand = new MFCD(name, &FastKey);
-		assert(expand != NULL);
 
-		if (expand != NULL) {
-			ExpandMix.Add(expand);
-			DebugStringNoPrefix(" %s", name);
-			expand->Cache();
-			return(true);
-		}
+		ExpandMix.Add(expand);
+		DebugStringNoPrefix(" %s", name);
+		expand->Cache();
+		return(true);
 	}
 	return(false);
 }
@@ -2367,12 +2355,9 @@ static void Init_Expand_Mixfiles(void)
 		// inside another archive.
 		if (CDFileClass(name).Is_Available()) {
 			expand = new MFCD(name, &FastKey);
-			assert(expand != NULL);
 
-			if (expand != NULL) {
-				ExpandMix.Add(expand);
-				DebugStringNoPrefix(" %s", name);
-			}
+			ExpandMix.Add(expand);
+			DebugStringNoPrefix(" %s", name);
 		}
 	}
 
@@ -2380,13 +2365,10 @@ static void Init_Expand_Mixfiles(void)
 		sprintf(name, "ECACHE%02d.MIX", index);
 		if (CCFileClass(name).Is_Available()) {
 			expand = new MFCD(name, &FastKey);
-			assert(expand != NULL);
 
-			if (expand != NULL) {
-				ExpandMix.Add(expand);
-				DebugStringNoPrefix(" %s", name);
-				expand->Cache();
-			}
+			ExpandMix.Add(expand);
+			DebugStringNoPrefix(" %s", name);
+			expand->Cache();
 		}
 	}
 }
@@ -2405,24 +2387,18 @@ static void Init_Patch_Mixfiles(void)
 	// inside another archive.
 	if (CDFileClass("PATCH.MIX").Is_Available()) {
 		expand = new MFCD("PATCH.MIX", &FastKey);
-		assert(expand != NULL);
 
-		if (expand != NULL) {
-			ExpandMix.Add(expand);
-			DebugStringNoPrefix(" %s", "PATCH.MIX");
-		}
+		ExpandMix.Add(expand);
+		DebugStringNoPrefix(" %s", "PATCH.MIX");
 	}
 
 
 	if (CCFileClass("PCACHE.MIX").Is_Available()) {
 		expand = new MFCD("PCACHE.MIX", &FastKey);
-		assert(expand != NULL);
 
-		if (expand != NULL) {
-			ExpandMix.Add(expand);
-			DebugStringNoPrefix(" %s", "PCACHE.MIX");
-			expand->Cache();
-		}
+		ExpandMix.Add(expand);
+		DebugStringNoPrefix(" %s", "PCACHE.MIX");
+		expand->Cache();
 	}
 
 }
@@ -2458,11 +2434,6 @@ static bool Init_Bootstrap_Mixfiles(void)
 	Detect_Addons();
 
 	GameMix = new MFCD("TIBSUN.MIX", &FastKey);
-	assert(GameMix != NULL);
-
-	if (GameMix == NULL) {
-		return(false);
-	}
 #endif
 
 	/*
@@ -2472,20 +2443,14 @@ static bool Init_Bootstrap_Mixfiles(void)
 	DebugStringNoPrefix(" CACHE.MIX");
 
 	CacheMix = new MFCD("CACHE.MIX", &FastKey);
-	assert(CacheMix != NULL);
 
-	if ((CacheMix == NULL) || (MFCD::Cache("CACHE.MIX") == false)) {
+	if (MFCD::Cache("CACHE.MIX") == false) {
 		return(false);
 	}
 
 	DebugStringNoPrefix(" CACHE.MIX");
 
 	LocalMix = new MFCD("LOCAL.MIX", &FastKey);
-	assert(LocalMix != NULL);
-
-	if (LocalMix == NULL) {
-		return(false);
-	}
 
 	DebugStringNoPrefix(" LOCAL.MIX");
 
@@ -2515,7 +2480,6 @@ static bool Init_Secondary_Mixfiles(void)
 	*/
 	if (CCFileClass("CONQUER.MIX").Is_Available()) {
 		ConquerMix = new MFCD("CONQUER.MIX", &FastKey);
-		assert(ConquerMix != NULL);
 	}
 
 	DebugStringNoPrefix(" CONQUER.MIX");
@@ -2527,6 +2491,8 @@ static bool Init_Secondary_Mixfiles(void)
 	MFCD * mix;
 
 	{
+		// The map and multiplayer archives are not required. A deployment may keep the maps
+		// and the multiplayer content loose or in archives of its own.
 		std::vector<std::string> const maps = Search_Files("MAPS*.MIX");
 
 		for (unsigned int index = 0; index < maps.size(); index++) {
@@ -2537,34 +2503,21 @@ static bool Init_Secondary_Mixfiles(void)
 			// installed alongside it.
 			if (index == 0) {
 				MapsMix = new MFCD(found, &FastKey);
-				assert(MapsMix != NULL);
 				continue;
 			}
 
 			mix = new MFCD(found, &FastKey);
-			assert(mix != NULL);
 
-			if (mix != NULL) {
-				MapsMixLocal.Add(mix);
-			}
+			MapsMixLocal.Add(mix);
 		}
 	}
 
 #ifndef _DEMO
 
-	if (MapsMix == NULL) {
-		return(false);
-	}
-
 	if (CCFileClass("MULTI.MIX").Is_Available()) {
 		MultiMix = new MFCD("MULTI.MIX", &FastKey);
-		assert(MultiMix != NULL);
-	}
 
-	DebugStringNoPrefix(" MULTI.MIX");
-
-	if (MultiMix == NULL) {
-		return(false);
+		DebugStringNoPrefix(" MULTI.MIX");
 	}
 
 #endif
@@ -2572,7 +2525,6 @@ static bool Init_Secondary_Mixfiles(void)
 	if (Addon_Installed(ADDON_FIRESTORM) == true) {
 		if (CCFileClass("SOUNDS01.MIX").Is_Available()) {
 			Sounds01Mix = new MFCD("SOUNDS01.MIX", &FastKey);
-			assert(Sounds01Mix != NULL);
 		}
 
 		DebugStringNoPrefix(" SOUNDS01.MIX");
@@ -2584,7 +2536,6 @@ static bool Init_Secondary_Mixfiles(void)
 
 	if (CCFileClass("SOUNDS.MIX").Is_Available()) {
 		SoundsMix = new MFCD("SOUNDS.MIX", &FastKey);
-		assert(SoundsMix != NULL);
 	}
 
 	DebugStringNoPrefix(" SOUNDS.MIX");
@@ -2598,7 +2549,6 @@ static bool Init_Secondary_Mixfiles(void)
 	*/
 	if (CCFileClass("SCORES.MIX").Is_Available()) {
 		ScoresMix = new MFCD("SCORES.MIX", &FastKey);
-		assert(ScoresMix != NULL);
 	}
 
 	DebugStringNoPrefix(" SCORES.MIX");
@@ -2609,7 +2559,6 @@ static bool Init_Secondary_Mixfiles(void)
 
 	if (CCFileClass("SCORES01.MIX").Is_Available()) {
 		Scores01Mix = new MFCD("SCORES01.MIX", &FastKey);
-		assert(Scores01Mix != NULL);
 	}
 
 	DebugStringNoPrefix(" SCORES01.MIX");
@@ -2626,16 +2575,12 @@ static bool Init_Secondary_Mixfiles(void)
 
 			if (index == 0) {
 				MoviesMix = new MFCD(found, &FastKey);
-				assert(MoviesMix != NULL);
 				continue;
 			}
 
 			mix = new MFCD(found, &FastKey);
-			assert(mix != NULL);
 
-			if (mix != NULL) {
-				MoviesMixLocal.Add(mix);
-			}
+			MoviesMixLocal.Add(mix);
 		}
 	}
 
@@ -5443,7 +5388,6 @@ void Init_Theater(TheaterType theater)
 			delete TheaterData;
 		}
 		TheaterData = new MFCD(fullname, &FastKey);
-		assert(TheaterData != NULL);
 
 		if (TheaterDat != NULL) {
 			delete TheaterDat;
@@ -5587,9 +5531,6 @@ bool Prep_For_Side(SideType side)
 
 				DebugString("     Initializing %s\n", name);
 				MFCD * mix = new MFCD(name, &FastKey);
-				if (mix == NULL) {
-					return(false);
-				}
 				ExpandSideMix.Add(mix);
 				mix->Cache();
 			}
@@ -5618,9 +5559,6 @@ bool Prep_For_Side(SideType side)
 
 				DebugString("     Initializing %s\n", name);
 				MFCD *mix = new MFCD(name, &FastKey);
-				if (mix == NULL) {
-					return(false);
-				}
 				ExpandSideMix.Add(mix);
 			}
 		}
@@ -5692,10 +5630,8 @@ bool Prep_Speech_For_Side(SideType side)
 
 			if (CCFileClass(name).Is_Available()) {
 				MFCD *mix = new MFCD(name, &FastKey);
-				if (mix != NULL) {
-					ExpandSpeechMix.Add(mix);
-					DebugStringNoPrefix(" %s", name);
-				}
+				ExpandSpeechMix.Add(mix);
+				DebugStringNoPrefix(" %s", name);
 			}
 		}
 	}
