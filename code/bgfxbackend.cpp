@@ -161,7 +161,7 @@ static void Build_Convert_Table(void)
 /// <summary>
 /// Submits one textured rectangle covering the given destination.
 /// </summary>
-static void Submit_Quad(bgfx::ViewId view, bgfx::TextureHandle texture, float x, float y, float width, float height, unsigned int samplerflags)
+static void Submit_Quad(bgfx::ViewId view, bgfx::TextureHandle texture, float x, float y, float width, float height, unsigned int samplerflags, bool flipv = false)
 {
 	bgfx::TransientVertexBuffer buffer;
 
@@ -174,12 +174,15 @@ static void Submit_Quad(bgfx::ViewId view, bgfx::TextureHandle texture, float x,
 	BackendVertex * vertex = (BackendVertex *)buffer.data;
 	const unsigned int white = 0xFFFFFFFF;
 
-	vertex[0] = { x, y, 0.0f, 0.0f, white };
-	vertex[1] = { x + width, y, 1.0f, 0.0f, white };
-	vertex[2] = { x + width, y + height, 1.0f, 1.0f, white };
-	vertex[3] = { x, y, 0.0f, 0.0f, white };
-	vertex[4] = { x + width, y + height, 1.0f, 1.0f, white };
-	vertex[5] = { x, y + height, 0.0f, 1.0f, white };
+	const float topv = flipv ? 1.0f : 0.0f;
+	const float bottomv = flipv ? 0.0f : 1.0f;
+
+	vertex[0] = { x, y, 0.0f, topv, white };
+	vertex[1] = { x + width, y, 1.0f, topv, white };
+	vertex[2] = { x + width, y + height, 1.0f, bottomv, white };
+	vertex[3] = { x, y, 0.0f, topv, white };
+	vertex[4] = { x + width, y + height, 1.0f, bottomv, white };
+	vertex[5] = { x, y + height, 0.0f, bottomv, white };
 
 	bgfx::setVertexBuffer(0, &buffer);
 	bgfx::setTexture(0, _TextureSampler, texture, samplerflags);
@@ -283,7 +286,13 @@ bool Backend_Init(BackendWindow window, int windowwidth, int windowheight, Backe
 	// Presents happen at whatever depth the engine has reached, including from inside a
 	// dialog's paint handler, so the renderer has to run on this thread. Calling
 	// renderFrame before init is what selects that.
+	//
+	// Emscripten is the exception, and asking there is an error rather than a redundancy:
+	// bgfx is built without its render thread on that target, and renderFrame asserts when
+	// there is no thread for it to be choosing between.
+#if !defined(__EMSCRIPTEN__)
 	bgfx::renderFrame();
+#endif
 
 	_WindowWidth = windowwidth;
 	_WindowHeight = windowheight;
@@ -493,6 +502,11 @@ void Backend_Present(void const * pixels, int pitch, int destx, int desty, int d
 	bgfx::TextureHandle source = _FrameTexture;
 	unsigned int samplerflags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
 
+	// A render target's rows run bottom upwards on the renderers that put a texture's
+	// origin in its lower left corner, which OpenGL and its descendants do. An uploaded
+	// texture is unaffected, so this only ever applies to the prescale pass below.
+	bool flipsource = false;
+
 	if (mode == BACKEND_SCALE_NEAREST) {
 		samplerflags |= BGFX_SAMPLER_POINT;
 	}
@@ -517,6 +531,7 @@ void Backend_Present(void const * pixels, int pitch, int destx, int desty, int d
 				Set_View_Transform(VIEW_PRESCALE, _PrescaleWidth, _PrescaleHeight);
 				Submit_Quad(VIEW_PRESCALE, _FrameTexture, 0.0f, 0.0f, (float)_PrescaleWidth, (float)_PrescaleHeight, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_POINT);
 				source = bgfx::getTexture(_PrescaleTarget);
+				flipsource = bgfx::getCaps()->originBottomLeft;
 			}
 		}
 	}
@@ -526,7 +541,7 @@ void Backend_Present(void const * pixels, int pitch, int destx, int desty, int d
 	bgfx::setViewFrameBuffer(VIEW_PRESENT, BGFX_INVALID_HANDLE);
 	bgfx::setViewClear(VIEW_PRESENT, BGFX_CLEAR_COLOR, 0x000000FF);
 	Set_View_Transform(VIEW_PRESENT, _WindowWidth, _WindowHeight);
-	Submit_Quad(VIEW_PRESENT, source, (float)destx, (float)desty, (float)destwidth, (float)destheight, samplerflags);
+	Submit_Quad(VIEW_PRESENT, source, (float)destx, (float)desty, (float)destwidth, (float)destheight, samplerflags, flipsource);
 
 	bgfx::frame();
 }

@@ -15,6 +15,7 @@
 
 #include "dsaudio.h"
 
+#include "audiobackend.h"
 #include "ccfile.h"
 #include "data.h"
 #include "dbgprint.h"
@@ -294,7 +295,12 @@ bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate )
 		/*
 		**	Create the direct sound object
 		*/
+#if defined(__EMSCRIPTEN__)
+		SoundObject = Audio_Create_Sound_Object();
+		res = (SoundObject != NULL) ? DS_OK : DSERR_NODRIVER;
+#else
 		res = DirectSoundCreate (NULL,&SoundObject,NULL);
+#endif
 		if ( res != DS_OK ) {
 			DebugString("Failed to create direct sound object. Error code %d\n", res);
 			Print_Sound_Error(Fetch_String(TXT_DSOUND_CANT_CREATE), window);
@@ -1969,6 +1975,17 @@ void DSAudio::Sound_Callback(void)
 		**	Call the timer callback now as we may block it in this function
 		*/
 		//Sound_Timer_Callback(0,0,0,0,0);
+
+#if defined(__EMSCRIPTEN__)
+		/*
+		 * A page runs the engine on one thread and has no multimedia timer, so the pass
+		 * that the sound timer drives on Windows is taken here, on the caller the game
+		 * already services audio from. Carrying the buffers out to the page comes first so
+		 * that the play cursors the maintenance pass reads are the current ones.
+		 */
+		Audio_Backend_Service();
+		maintenance_callback();
+#endif
 
 		for (index = 0; index < MAX_SFX; index++) {
 			st = &SampleTracker[index];

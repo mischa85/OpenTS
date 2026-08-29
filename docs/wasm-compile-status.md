@@ -182,15 +182,16 @@ erased in `crtcompat.h`.
 
 ## What still has no answer
 
-Two things the build removes rather than replaces:
+One thing the build removes rather than replaces:
 
-- **Localized strings.** Every string the player sees is loaded from
-  `Language.dll` through `LoadLibrary` at `code/data.cpp:350`. The DLL is a
-  Win32 resource library, so the WebAssembly target does not build it and
-  `code/language/` is excluded. A replacement string source is needed before
-  the target can display anything.
 - **Version and icon resources.** `Sun.rc` and `except.rc` are resource-compiler
-  input and are excluded for the same reason.
+  input, so the WebAssembly target does not build them.
+
+Localized strings are no longer among them. `code/language/` is still excluded,
+because the DLL is built by the Visual Studio toolchain, but `code/peresource.cpp`
+reads the shipped `Language.dll` as a data file and walks its resource directory,
+so `Fetch_String` and `Fetch_Resource` answer from the same library the Win32
+build loads.
 
 The test harness under `tests/` is written against the Win32 API and is also
 excluded.

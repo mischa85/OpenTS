@@ -71,3 +71,18 @@ set_target_properties(OpenTSWasmDemo PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/wasm"
     LINK_DEPENDS "${OPENTS_WASM_SHELL}"
 )
+
+#
+# ---------------------------------------------------------
+# The page the engine runs inside
+# ---------------------------------------------------------
+#
+# The engine's own target is built as a plain module rather than through Emscripten's shell
+# templating, so that the same GameD.js runs under node. The page that hosts it is written
+# by hand and lands beside the module; it names the canvas that video.cpp and browser.cpp
+# both look for.
+#
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/bin/index.html"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/game.html"
+)

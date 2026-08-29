@@ -26,6 +26,7 @@
 #include "_timer.h"
 #include "_xmouse.h"
 #include "bench.h"
+#include "browser.h"
 #include "command.h"
 #include "conquer.h"
 #include "data.h"
@@ -161,10 +162,20 @@ static void Check_For_Focus_Loss(void)
 {
 	while (!GameInFocus) {
 		if (Session.Type == GAME_NORMAL || Session.Type == GAME_SKIRMISH) {
+#if defined(__EMSCRIPTEN__)
+			// GameInFocus follows the page's visibility here, so this parks until the tab
+			// is shown again. There is nothing to sleep on: the yield is the wait.
+			Browser_Yield();
+#else
 			Sleep(500);
+#endif
 			Windows_Message_Handler();
 		} else {
+#if defined(__EMSCRIPTEN__)
+			Browser_Yield();
+#else
 			Sleep(10);
+#endif
 			Windows_Message_Handler();
 			break;
 		}
@@ -209,10 +220,18 @@ bool Main_Loop(void)
 	#else
 	while (!GameInFocus) {
 		if (Session.Type == GAME_NORMAL || Session.Type == GAME_SKIRMISH) {
+#if defined(__EMSCRIPTEN__)
+			Browser_Yield();
+#else
 			Sleep(500);
+#endif
 			Windows_Message_Handler();
 		} else {
+#if defined(__EMSCRIPTEN__)
+			Browser_Yield();
+#else
 			Sleep(10);
+#endif
 			Windows_Message_Handler();
 			break;
 		}
@@ -605,13 +624,21 @@ void Sync_Delay(void)
 					TacticalMap->AI();
 					Map.Render();
 				} else {
+#if defined(__EMSCRIPTEN__)
+					Browser_Yield();
+#else
 					Sleep(0);
+#endif
 				}
 				if (!NetFrameTimer()) {
 					break;
 				}
 			}
+#if defined(__EMSCRIPTEN__)
+			Browser_Yield();
+#else
 			Sleep(0);
+#endif
 		}
 	} else {
 		while (FrameTimer) {
@@ -627,11 +654,21 @@ void Sync_Delay(void)
 					break;
 				}
 			}
+#if defined(__EMSCRIPTEN__)
+			/*
+			 * The whole point of this loop is to burn the remainder of a frame, and the
+			 * page's own animation frame is a better measure of one than any sleep. This
+			 * is the hottest of the engine's waits -- it runs every frame of every game --
+			 * and returning here is what keeps a browser tab answering while it plays.
+			 */
+			Browser_Yield();
+#else
 			if (GameInFocus || (Session.Type != GAME_NORMAL && Session.Type != GAME_SKIRMISH)) {
 				Sleep(0);
 			} else {
 				Sleep(16 * FrameTimer);
 			}
+#endif
 		}
 	}
 

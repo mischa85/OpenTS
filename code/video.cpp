@@ -17,6 +17,7 @@
 
 #include "_surface.h"
 #include "bgfxbackend.h"
+#include "browser.h"
 #include "dbgprint.h"
 #include "dsurface.h"
 #include "globals.h"
@@ -41,6 +42,8 @@ int VideoModeHeight = 0;
  */
 bool WindowedMode = false;
 
+// The window the frame is presented into. A browser has none: there is a canvas, whose
+// size the page decides, so the Emscripten paths below never consult this.
 static HWND _Window = NULL;
 static bool _Initialized = false;
 static VideoScaleInfo _ScaleInfo;
@@ -56,12 +59,28 @@ static unsigned int _PresentInterval = 16;
 // that the engine's own present provoked.
 static bool _Presenting = false;
 
+#if defined(__EMSCRIPTEN__)
+// The animation frame the last present went out on. A page composites once per frame
+// whatever the engine does, and the engine reaches its present hook many times between
+// two of them, so this is what a refresh rate stands in for here.
+static unsigned int _LastPresentSerial = ~0u;
+#endif
+
 
 /// <summary>
 /// Works out the shortest sensible gap between presents from the display's refresh rate.
 /// </summary>
 static void Update_Present_Interval(void)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The page decides when a frame is composited, and there is no device context to ask
+	 * how often that is. Presentation is paced against the animation frame instead.
+	 */
+	_PresentInterval = 0;
+	return;
+#else
+
 	int refresh = 0;
 	HDC dc = GetDC(_Window);
 
@@ -81,6 +100,7 @@ static void Update_Present_Interval(void)
 	if (_PresentInterval > 100) {
 		_PresentInterval = 100;
 	}
+#endif
 }
 
 
@@ -96,12 +116,24 @@ static void Update_Scale_Info(void)
 	_ScaleInfo.GameWidth = VideoModeWidth;
 	_ScaleInfo.GameHeight = VideoModeHeight;
 
+#if defined(__EMSCRIPTEN__)
+	client.left = 0;
+	client.top = 0;
+	client.right = Browser_Canvas_Width();
+	client.bottom = Browser_Canvas_Height();
+
+	if (client.right <= 0 || client.bottom <= 0) {
+		client.right = VideoModeWidth;
+		client.bottom = VideoModeHeight;
+	}
+#else
 	if (_Window == NULL || !GetClientRect(_Window, &client)) {
 		client.left = 0;
 		client.top = 0;
 		client.right = VideoModeWidth;
 		client.bottom = VideoModeHeight;
 	}
+#endif
 
 	_ScaleInfo.WindowWidth = client.right - client.left;
 	_ScaleInfo.WindowHeight = client.bottom - client.top;
@@ -164,18 +196,35 @@ bool Video_Init(HWND window)
 		return(true);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * There is no window. The drawing target is the page's canvas, whose size the page
+	 * decides and reports back, so the handle the caller passed carries nothing.
+	 */
+	(void)window;
+
+	client.left = 0;
+	client.top = 0;
+	client.right = Browser_Canvas_Width();
+	client.bottom = Browser_Canvas_Height();
+
+	if (client.right <= 0 || client.bottom <= 0) {
+		return(false);
+	}
+#else
 	if (window == NULL || !GetClientRect(window, &client)) {
 		return(false);
 	}
 
 	_Window = window;
+#endif
 
 	BackendRenderer renderer = (BackendRenderer)Options.Renderer;
 
 #if defined(__EMSCRIPTEN__)
 	// A browser has no window handle to present onto, so the renderer names the page's
 	// canvas by CSS selector instead. The id is fixed by the shell page the build ships.
-	BackendWindow target = "#canvas";
+	BackendWindow target = Browser_Canvas_Selector();
 #else
 	BackendWindow target = window;
 #endif
@@ -324,10 +373,23 @@ void Video_Present_If_Dirty(void)
 		return;
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * One present per animation frame. The engine reaches here from every wait it has,
+	 * which is many times more often than the page composites, and each present is a
+	 * texture upload and a draw whether or not anything sees it.
+	 */
+	if (Browser_Frame_Serial() == _LastPresentSerial) {
+		return;
+	}
+	_LastPresentSerial = Browser_Frame_Serial();
+#else
+
 	unsigned int now = timeGetTime();
 	if ((now - _LastPresentTime) < _PresentInterval) {
 		return;
 	}
+#endif
 
 	Video_Present();
 }

@@ -359,10 +359,10 @@ of a 565 buffer.
 | --- | --- | --- |
 | **Window** | `Create_Main_Window` (`code/winstub.cpp:429`), a `RegisterClass` at `:453`, a `WndProc` handling 16 messages, and `MainWindow` as a global `HWND` named in 37 `.cpp` files. There is no interface. | An abstraction over "the surface being presented to" plus a resize/visibility/focus event feed. Emscripten's HTML5 API (`emscripten_set_resize_callback`, `emscripten_set_visibilitychange_callback`) supplies the events; the canvas supplies the target. |
 | **Input** | `WWKeyboardClass::Message_Handler` (`code/keyboard.cpp:605`) switches on `WM_KEYDOWN`/`WM_KEYUP` and the six mouse-button messages at `:630`–`:730`, and uses `GetKeyState` (`:230`–`:239`), `MapVirtualKey` (`:335`), `ToAscii` (`:336`), and `GetAsyncKeyState` (`:385`). No interface. | A push interface: the platform layer calls `Post_Key_Event` / `Post_Mouse_Event` with engine-native codes. Emscripten's keyboard and mouse callbacks feed it. The `ToAscii`/`MapVirtualKey` pair must be replaced by the browser's own `key` value; this is a real behavior boundary for text entry and hotkeys, not a mechanical substitution. |
-| **Audio** | See [C.2](#c2-directsound). Two independent DirectSound clients, both driven by `timeSetEvent`. No interface. | A `Backend_Audio_*` header in the shape of `bgfxbackend.h`: open device, create/destroy voice, submit buffer, set volume, service. OpenAL (`-lopenal`) or SDL2 audio behind it. |
+| **Audio** | See [C.2](#c2-directsound). Two independent DirectSound clients, both driven by `timeSetEvent`. No interface. | Done. `code/audiobackend.h` is an `Audio_Backend_*` header in the shape of `bgfxbackend.h`: open device, open/close stream, start, stop, seek, play cursor, gain, service. OpenAL over Web Audio behind it. |
 | **Time** | `timeGetTime` in 8 files, `timeBeginPeriod`/`timeSetEvent` in `code/dsaudio.cpp:464`, `:470`, `code/ahandle.cpp:285`, `:288`, `code/mstimer.cpp:24`, `code/milsectmr.cpp:42`, `code/except.cpp:1970`. `QueryPerformanceCounter` in `code/mpu.cpp:223`. | A single `Platform_Milliseconds()` and a per-frame service call. `emscripten_get_now()` supplies the clock; the periodic timers become main-loop polls. |
 | **Threading** | See [C.7](#c7-threading). Two `CreateThread` in `code/except.cpp`, two `timeSetEvent` callback threads, 121 synchronization calls across 8 files. No interface. | Nothing. The concurrency exists only to keep audio fed while the main thread blocks; once the main thread stops blocking, the timers become main-loop calls and the locks become no-ops. |
-| **Resources** | `Fetch_String` (`code/data.cpp:200`) and `Fetch_Resource` (`code/data.cpp:270`), both against `Language.dll`. See [C.4](#c4-languagedll). | A portable container behind the same two functions. |
+| **Resources** | `Fetch_String` (`code/data.cpp:200`) and `Fetch_Resource` (`code/data.cpp:270`), both against `Language.dll`. See [C.4](#c4-languagedll). | Done. `code/peresource.cpp` reads the shipped library's resource directory out of the file, behind the same two functions. |
 | **Sockets** | See [C.5](#c5-networking). | A `Send_To`/`Receive_From` transport interface; `UDPInterfaceClass` already has one internally. |
 
 ## B.3 The GDI text residue
@@ -449,10 +449,9 @@ something answers them.
 *Phase 1 — the shim.* Reimplement handles, a message queue, `SendMessage`,
 `DispatchMessage`, `IsDialogMessage`, `TranslateAccelerator`,
 `SetTimer`/`KillTimer`, and the ~60 window-manipulation calls in portable C++,
-plus a build-time converter that turns the 72 dialog templates in
-`code/language/language.rc` into a portable form for
-`CreateDialogIndirectParam`'s two callers (`code/windlg.cpp:105`,
-`code/ownrdraw.cpp:6723`), plus a font-metrics provider for
+plus a reader for the 72 dialog templates `CreateDialogIndirectParam`'s two
+callers (`code/windlg.cpp:105`, `code/ownrdraw.cpp:6723`) fetch out of the
+language library, plus a font-metrics provider for
 [B.3](#b3-the-gdi-text-residue). Every dialog file, `ownrdraw.cpp` included,
 compiles unchanged. Estimated 4,000–8,000 lines of new code, **2–4 months**.
 
@@ -511,6 +510,16 @@ That maps onto OpenAL almost directly: five sources, `alSourceQueueBuffers` /
 (`code/dsaudio.cpp:2592`) unchanged. Emscripten ships an OpenAL implementation
 over Web Audio; SDL2 audio is the alternative if a single mixed callback is
 preferred.
+
+**What landed.** `code/audiobackend.h` and `code/audiobackend.cpp`. The seam
+keeps the looping ring rather than a submit-a-buffer call, because the ring and
+its play cursor are what the engine's own refill logic is written against; the
+queue is an implementation detail underneath it. `audiobackend.cpp` also carries
+the DirectSound shaped object that both clients consume, declared in
+`dsaudio.h`, so `dsaudio.cpp` changes in two places — the object it starts from,
+and the service pass — and `ahandle.cpp` not at all. A page that will not start
+audio, and a host with no Web Audio at all, both leave the stream running on the
+wall clock, so the driver retires its samples on time either way.
 
 Three details to plan for:
 
@@ -650,23 +659,29 @@ version resource. The `Language` target is already excluded from the wasm build
 (`CMakeLists.txt:77`), so `Fetch_String` is the first thing that will fail at
 runtime.
 
-**Proposal.** A single build-time-generated container with two sections, read
-by a small portable loader that keeps both function signatures:
+**Resolved.** `code/peresource.cpp` reads the resource directory of the shipped
+`Language.dll` straight out of the file: DOS header, optional header, section
+table, and the three level type/name/language tree. No new container format
+exists and the library is not rebuilt, so the file the player installed and the
+file `code/language/` builds are both read as they are.
 
-- *Strings*: id → UTF-8 string. `Fetch_String`'s cache stays exactly as it is;
-  only the `LoadString` line changes. Generating the section from
-  `language.rc` at build time keeps one source of truth and leaves the Win32
-  build's DLL path untouched, so this can ship as a behavior-preserving change
-  on the supported target first.
-- *Dialogs*: the 72 templates, converted to a documented layout that the
-  [C.1](#c1-the-win32-front-end) shim consumes. This section is temporary by
-  construction — it disappears as phase 2 replaces dialogs — so it should be
-  the simplest thing that works, not a designed format.
+`Fetch_String`'s cache stays exactly as it is; only the `LoadString` line
+changes, and the string table is read in its shipped form — bundles of sixteen
+UTF-16 strings, narrowed to Windows-1252 bytes, which is what `LoadStringA`
+hands the engine on Windows. `Fetch_Resource` returns a pointer into the held
+image, the lifetime `LockResource` gives it. Version reporting reads the
+`VS_VERSIONINFO` resource through the same reader.
 
-Version reporting becomes a field in the container header.
+Under Emscripten the library is opened with `RawFileClass` rather than
+`CCFileClass`: a global constructor reaches `Fetch_String`, so the load runs
+before the mixfile and search path objects are constructed and may not touch
+them. That also matches the Windows build, where the module loader reads the
+installation directory and never the game data.
 
-Estimated **3–6 weeks**, most of it in the dialog converter, which is really
-part of [C.1](#c1-the-win32-front-end).
+The dialog templates need no converter. `Fetch_Resource` already returns
+`RT_DIALOG` bytes in their shipped layout on both targets, so what
+[C.1](#c1-the-win32-front-end) consumes is the same structure the Win32 build
+consumes.
 
 ## C.5 Networking
 

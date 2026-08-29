@@ -323,11 +323,13 @@ void ScenarioClass::Reset(void)
  *=============================================================================================*/
 bool Start_Scenario(char const * name, bool briefing, CampaignType campaign)
 {
-	if ((name == NULL || strlen(name) == 0) && campaign != CAMPAIGN_NONE) {
+	if (name == NULL || strlen(name) == 0) {
 		if (Debug_ForceScenario == true) {
 			name = Debug_ScenarioName;
-		} else {
+		} else if (campaign != CAMPAIGN_NONE) {
 			name = Campaigns[campaign]->ScenarioName;
+		} else {
+			return(false);
 		}
 	}
 

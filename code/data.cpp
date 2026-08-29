@@ -39,11 +39,40 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "crtcompat.h"
+#include "peresource.h"
+#include "rawfile.h"
 #else
 #include <new.h>
 #endif
 
 HINSTANCE LanguageResources;
+
+#if defined(__EMSCRIPTEN__)
+
+/*
+ * The language library, read as a data file. There is no module loader on this target, so
+ * the resource directory in the file is walked in place instead. The image is held for
+ * the life of the process because a fetched resource is a pointer into it, which is the
+ * lifetime a locked resource has on Windows.
+ */
+static PEResourceClass LanguageImage;
+
+
+/*
+ * Either half of a resource lookup is a MAKEINTRESOURCE identifier when nothing is set in
+ * the upper half of the pointer, and a name otherwise.
+ */
+static PEResourceNameClass Resource_Name(LPCSTR name)
+{
+	if (((std::uintptr_t)name >> 16) == 0) {
+		return(PEResourceNameClass((unsigned int)(std::uintptr_t)name));
+	}
+
+	return(PEResourceNameClass(name));
+}
+
+#endif
+
 
 /***********************************************************************************************
  * Load_Alloc_Data -- Allocates a buffer and loads the file into it.                           *
@@ -250,6 +279,15 @@ char const * Fetch_String(int id)
 	_buffers[oldest].ID = id;
 	_buffers[oldest].TimeStamp = _time;
 
+#if defined(__EMSCRIPTEN__)
+	if (!LanguageImage.Is_Loaded()) {
+		Init_Language_Resources(false);
+	}
+
+	if (LanguageImage.Fetch_String((unsigned int)id, stringptr, sizeof(_buffers[oldest].String)) == 0) {
+		return("");
+	}
+#else
 	if (LanguageResources == NULL) {
 		Init_Language_Resources(false);
 	}
@@ -257,6 +295,7 @@ char const * Fetch_String(int id)
 	if (LoadString(LanguageResources, id, stringptr, sizeof(_buffers[oldest].String)) == 0) {
 		return("");
 	}
+#endif
 	stringptr[sizeof(_buffers[oldest].String)-1] = '\0';
 	return(stringptr);
 }
@@ -273,6 +312,9 @@ char const * Fetch_String(int id)
 /// <returns>Returns with a pointer to the resource data. Otherwise, NULL is returned.</returns>
 void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
 {
+#if defined(__EMSCRIPTEN__)
+	return(LanguageImage.Fetch_Resource(Resource_Name(restype), Resource_Name(resname)));
+#else
 	/// The superfluous MAKEINTRESOURCE cast is the game's, and the C4302 warning with it.
 	HRSRC handle = FindResource(LanguageResources, MAKEINTRESOURCE(resname), restype);
 	if (handle == NULL) {
@@ -285,6 +327,7 @@ void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
 	}
 
 	return(LockResource(rhandle));
+#endif
 }
 
 
@@ -345,6 +388,51 @@ void * Hires_Load(FileClass & file)
 /// <returns>bool; Are the language resources available?</returns>
 bool Init_Language_Resources(bool show_error)
 {
+#if defined(__EMSCRIPTEN__)
+
+	if (!LanguageImage.Is_Loaded()) {
+
+		/*
+		 * A raw file rather than a searched one, for two reasons. A global constructor
+		 * can reach Fetch_String, so this runs before the mixfile and search path objects
+		 * are constructed and may not touch them. And the Windows build hands the name to
+		 * the module loader, which reads the installation directory and never the game
+		 * data, so this is also the same file the two targets end up reading. The name is
+		 * the one the game ships under, because the file system here is case sensitive.
+		 */
+		RawFileClass file("LANGUAGE.DLL");
+
+		if (file.Is_Available()) {
+			int size = file.Size();
+			char * image = new char[size];
+
+			if (file.Read(image, size) == size) {
+				LanguageImage.Load(image, (std::size_t)size);
+			}
+
+			delete [] image;
+		}
+
+		if (!LanguageImage.Is_Loaded()) {
+
+			if (show_error == true) {
+				MessageBox(NULL,
+					"Unable to initialize Language.dll, please reinstall Tiberian Sun.\n"
+					"Keine Initialisierung von Language.DLL m\xF6glich. Bitte installieren Sie Tiberian Sun erneut.\n"
+					"Initialisation de Language.DLL impossible. Veuillez r\xE9installer Tiberian Sun.",
+					"Tiberian Sun",
+					MB_ICONERROR);
+
+			}
+
+			return(false);
+		}
+	}
+
+	return(true);
+
+#else
+
 	if (LanguageResources == NULL) {
 
 		LanguageResources = LoadLibrary("Language.dll");
@@ -366,6 +454,8 @@ bool Init_Language_Resources(bool show_error)
 	}
 
 	return(true);
+
+#endif
 }
 
 
@@ -380,6 +470,26 @@ bool Init_Language_Resources(bool show_error)
 /// <remarks>Be sure that the destination buffer is big enough to hold the composed text.</remarks>
 void Get_Language_Version(char *version_string)
 {
+#if defined(__EMSCRIPTEN__)
+
+	char name[128];
+	char version[128];
+
+	if (version_string != NULL) {
+		version_string[0] = '\0';
+
+		if (LanguageImage.Fetch_Version_String("InternalName", name, sizeof(name))) {
+
+			sprintf(version_string, "Language: %s ", name);
+
+			if (LanguageImage.Fetch_Version_String("FileVersion", version, sizeof(version))) {
+				strcat(version_string, version);
+			}
+		}
+	}
+
+#else
+
 	INT dwSize;
 	LPVOID pFileInfo;
 	UINT puInfoLen;
@@ -434,4 +544,6 @@ void Get_Language_Version(char *version_string)
 			}
 		}
 	}
+
+#endif
 }

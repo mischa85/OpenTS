@@ -63,6 +63,16 @@ class WWKeyboardClass
 		/* Define the main hook for the message processing loop.					*/
 		int Message_Handler(HWND hwnd, UINT message, UINT wParam, LONG lParam);
 
+#if defined(__EMSCRIPTEN__)
+		/*
+		** A page has no message queue to drain, so its event callbacks hand the keyboard
+		** its events directly. The values are the same virtual keys and frame positions
+		** the message handler above extracts from a Windows message.
+		*/
+		bool Post_Key_Event(unsigned short vk_key, bool release);
+		bool Post_Mouse_Event(unsigned short vk_key, int x, int y, bool release);
+#endif
+
 		/* Define the public access variables which are used with the			*/
 		/*   Keyboard Class.																	*/
 		int MouseQX;

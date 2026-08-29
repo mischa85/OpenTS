@@ -11,3 +11,10 @@ add_subdirectory(soscodec)
 add_subdirectory(vqa)
 add_subdirectory(voxel)
 add_subdirectory(lighting)
+add_subdirectory(win32file)
+add_subdirectory(resources)
+
+# The audio backend is the WebAssembly target's sound output, so its harness builds only there.
+if(EMSCRIPTEN)
+    add_subdirectory(audio)
+endif()

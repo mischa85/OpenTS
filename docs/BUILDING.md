@@ -115,6 +115,27 @@ Excluding `code/language/` removes every localized string the engine displays,
 because `data.cpp` loads them from `Language.dll` at runtime. A replacement
 string source is required before the target can display anything.
 
+### Where the WebAssembly target finds game data
+
+The engine opens its archives out of the directory it runs in, through the Win32
+file API that `code/win32compat.cpp` puts on POSIX. Under node the directory that
+reaches is the host's own, which the `-sNODERAWFS=1` link option hands the module
+directly; the post-build step stages both halves of the Emscripten executable, the
+`.js` loader and the `.wasm` module beside it, into the run directory, so a run is
+
+```bash
+cd Run && node GameD.js
+```
+
+with the game data staged in `Run` exactly as the Win32 build expects it. Paths
+are resolved case-insensitively when the exact spelling is missing, so an archive
+installed as `tibsun.mix` answers the engine's `TIBSUN.MIX` on a case-sensitive
+filesystem.
+
+`-sNODERAWFS=1` is node-only — a page built with it throws before `main` runs — so
+a browser build turns it off with `-DOPENTS_WASM_NODERAWFS=OFF` and brings its data
+in another way. No browser data path exists yet.
+
 Individual translation units compile ahead of the link, which is how the port
 is measured:
 

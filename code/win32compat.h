@@ -20,11 +20,15 @@
 // long, WPARAM and LPARAM are pointer sized, BOOL is int, RECT is four LONGs. A type
 // that drifts here changes the shape of a saved game or a network packet silently.
 //
-// Honesty. Nothing here implements Windows. Every entry point is a stub that reports
-// itself and then returns the value its Win32 original returns on failure, so a port
-// that reaches one fails visibly instead of proceeding on a lie. See WIN32_STUB below.
-// The few routines that are genuinely computable off the host -- the clocks, the string
-// helpers -- are implemented rather than stubbed, and say so.
+// Honesty. Almost nothing here implements Windows. Most entry points are stubs that
+// report themselves and then return the value their Win32 originals return on failure,
+// so a port that reaches one fails visibly instead of proceeding on a lie. See
+// WIN32_STUB below. What the host can genuinely answer is answered instead of stubbed,
+// and says so: the clocks, the string helpers, and the file layer -- CreateFileA through
+// the FindFirstFileA family -- which sits on POSIX and is what the engine reads its
+// archives through. A request the file layer cannot honestly serve, such as an unhandled
+// creation disposition, reports itself through WIN32_UNSUPPORTED and fails rather than
+// approximating.
 
 #pragma once
 
@@ -56,6 +60,34 @@ void Win32_Stub_Reached(char const * function);
 #define WIN32_STUB(value)	(::Win32_Stub_Reached(__func__), (value))
 #define WIN32_STUB_VOID()	(::Win32_Stub_Reached(__func__))
 #define WIN32_STUB_ABORT()	(::Win32_Stub_Fatal(__func__))
+
+/*
+** How an implemented entry point announces a request it cannot honestly serve.
+**
+** An entry point that is real for the cases the engine uses still meets arguments it has
+** no answer for -- an overlapped read, a creation disposition nobody wrote a mapping for.
+** WIN32_UNSUPPORTED names the request and yields the Win32 failure value, so the gap is
+** as visible as a missing entry point rather than being approximated into a wrong result.
+** `description` must be a literal naming the entry point and the request; reporting is
+** once per description.
+*/
+void Win32_Unsupported_Reached(char const * description);
+
+#define WIN32_UNSUPPORTED(description, value)	(::Win32_Unsupported_Reached(description), (value))
+
+
+/*
+** The read-only half of the filesystem.
+**
+** A page has no host directory to run out of, so the file layer looks a name it cannot
+** resolve up inside a mounted ISO9660 image instead. The image sits underneath the host,
+** never over it: a name both can answer resolves to the host's copy, which is what lets a
+** file the engine writes shadow the one it shipped with. An image is mounted on the first
+** file the host cannot answer for, from the location isohttp.h describes; these are for a
+** caller that needs to choose the image itself, such as a test harness.
+*/
+bool Win32_Mount_Image(char const * location);
+void Win32_Unmount_Image(void);
 
 
 /*
@@ -503,6 +535,7 @@ typedef struct tWAVEFORMATEX {
 #define MAX_PATH				260
 #define INVALID_HANDLE_VALUE	((HANDLE)(LONG_PTR)-1)
 #define INVALID_FILE_SIZE		((DWORD)0xFFFFFFFF)
+#define INVALID_FILE_ATTRIBUTES	((DWORD)0xFFFFFFFF)
 #define INVALID_SET_FILE_POINTER ((DWORD)-1)
 #define INFINITE				0xFFFFFFFF
 
@@ -510,6 +543,7 @@ typedef struct tWAVEFORMATEX {
 #define WAIT_ABANDONED			0x00000080L
 #define WAIT_TIMEOUT			0x00000102L
 #define WAIT_FAILED				0xFFFFFFFF
+#define MAXIMUM_WAIT_OBJECTS	64
 
 #define GENERIC_READ			0x80000000L
 #define GENERIC_WRITE			0x40000000L
@@ -554,14 +588,23 @@ typedef struct tWAVEFORMATEX {
 #define ERROR_SUCCESS				0L
 #define ERROR_FILE_NOT_FOUND		2L
 #define ERROR_PATH_NOT_FOUND		3L
+#define ERROR_TOO_MANY_OPEN_FILES	4L
 #define ERROR_ACCESS_DENIED			5L
 #define ERROR_INVALID_HANDLE		6L
 #define ERROR_NOT_ENOUGH_MEMORY		8L
+#define ERROR_READ_FAULT			30L
+#define ERROR_GEN_FAILURE			31L
+#define ERROR_SEEK					25L
+#define ERROR_NEGATIVE_SEEK			131L
+#define ERROR_FILE_EXISTS			80L
+#define ERROR_DISK_FULL				112L
+#define ERROR_DIRECTORY				267L
 #define ERROR_NOT_SUPPORTED			50L
 #define ERROR_INVALID_PARAMETER		87L
 #define ERROR_CALL_NOT_IMPLEMENTED	120L
 #define ERROR_INSUFFICIENT_BUFFER	122L
 #define ERROR_ALREADY_EXISTS		183L
+#define ERROR_NOT_OWNER				288L
 #define ERROR_NO_MORE_FILES			18L
 #define ERROR_HANDLE_EOF			38L
 #define ERROR_IO_PENDING			997L
@@ -917,9 +960,12 @@ typedef struct tWAVEFORMATEX {
 
 
 /*
-** COM. Only the interface shapes are provided: the engine derives from IPersistStream
-** and IStream and calls through pointers it already holds, and it never activates an
-** object through the COM runtime. There is no runtime here to activate one with.
+** COM. The interface shapes, plus the in-process class object table that activation
+** needs. The engine is its own COM server: it publishes a class factory for every
+** persistent game class through CoRegisterClassObject during startup and then creates
+** those objects by class identifier, so nothing outside this module is involved. What is
+** absent is the rest of OLE -- the registry, the service control manager, marshalling,
+** apartments, and any server that is not this one.
 */
 #define STDMETHOD(method)			virtual HRESULT STDMETHODCALLTYPE method
 #define STDMETHOD_(type, method)	virtual type STDMETHODCALLTYPE method
@@ -936,12 +982,13 @@ typedef struct tWAVEFORMATEX {
 
 /*
 ** __uuidof needs -fms-extensions and __declspec(uuid), neither of which this target
-** builds with, so the interface identity Windows attaches to a type is not available.
-** The replacement names the type at runtime and reports itself like any other stub, so a
-** QueryInterface built on it fails rather than matching the wrong interface.
+** builds with, so the identity MIDL_INTERFACE attaches to a type on Windows is not
+** available. Every interface the tree activates or queries for also has its identifier
+** declared as IID_<interface> and defined in the matching MIDL _i.c file, so the constant
+** stands in for the attribute. An interface without one fails to compile here rather than
+** resolving to an identifier that matches the wrong thing.
 */
-IID const & Win32_Uuid_Of(char const * type);
-#define __uuidof(type)	(::Win32_Uuid_Of(#type))
+#define __uuidof(type)	(IID_##type)
 
 #if defined(INITGUID)
 #define DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
@@ -1023,9 +1070,19 @@ struct IClassFactory : public IUnknown
 };
 
 
-/* COM runtime. */
+/*
+** COM runtime. Activation is answered out of the class object table CoRegisterClassObject
+** fills in, and a class identifier that is not in it reports itself and fails with the
+** code Windows uses for the same condition.
+*/
+#define REGDB_E_CLASSNOTREG	((HRESULT)0x80040154L)
+#define CO_E_CLASSSTRING	((HRESULT)0x800401F3L)
+
 HRESULT CoInitialize(LPVOID reserved);
 void CoUninitialize(void);
+HRESULT CoRegisterClassObject(REFCLSID classid, IUnknown * object, DWORD context, DWORD flags, LPDWORD registration);
+HRESULT CoRevokeClassObject(DWORD registration);
+HRESULT CoGetClassObject(REFCLSID classid, DWORD context, LPVOID reserved, REFIID riid, LPVOID * object);
 HRESULT CoCreateInstance(REFCLSID classid, IUnknown * outer, DWORD context, REFIID riid, LPVOID * object);
 LPVOID CoTaskMemAlloc(SIZE_T size);
 void CoTaskMemFree(LPVOID block);
@@ -1038,14 +1095,24 @@ BOOL IsEqualGUID(REFGUID first, REFGUID second);
 /*
 ** comdef.h's smart pointer, reduced to what the tree asks of it. The real template
 ** carries the interface identifier as a second parameter so that construction from
-** another interface can QueryInterface for the one it wants. There is no interface
-** identity here -- see __uuidof above -- so the conversion uses dynamic_cast instead,
-** which answers the same question about these interfaces: they are ordinary polymorphic
-** C++ classes, and a cast across them succeeds exactly when the object implements the
-** target. Activation from a class identifier is the part with no answer, and it is a
-** stub: there is no COM runtime to activate anything with.
+** another interface can QueryInterface for the one it wants. Conversion between two
+** interfaces uses dynamic_cast instead, which answers the same question about these
+** interfaces: they are ordinary polymorphic C++ classes in a single module, and a cast
+** across them succeeds exactly when the object implements the target. Activation cannot
+** be answered that way, because the identifier has to reach the object's QueryInterface
+** before there is an object to cast, so _COM_SMARTPTR_TYPEDEF records the identifier and
+** CreateInstance asks for that interface exactly as Windows does. A multiply inherited
+** implementation such as LocomotionClass hands back a different address for each of its
+** interfaces, and that address is the one this pointer must hold.
 */
 void _com_issue_error(HRESULT result);
+
+/*
+** The interface identifier a smart pointer activates for. Only _COM_SMARTPTR_TYPEDEF
+** supplies one, so activating an interface that never went through it is a compile error
+** rather than a request carrying the wrong identifier.
+*/
+template<class T> struct _com_interface_id;
 
 template<class T> class _com_ptr_t
 {
@@ -1077,9 +1144,15 @@ template<class T> class _com_ptr_t
 			if (Ptr != nullptr) Ptr->AddRef();
 		}
 
+		/*
+		** comdef.h's constructor has no way to return a failure, so it raises one. This
+		** one does the same rather than leaving a null pointer for the caller to walk
+		** into; the CreateInstance method below is the form that reports by return value.
+		*/
 		explicit _com_ptr_t(CLSID const & classid, IUnknown * outer = nullptr, DWORD context = CLSCTX_ALL) : Ptr(nullptr)
 		{
-			CreateInstance(classid, outer, context);
+			HRESULT result = CreateInstance(classid, outer, context);
+			if (FAILED(result)) _com_issue_error(result);
 		}
 
 		~_com_ptr_t(void) { Release(); }
@@ -1124,7 +1197,7 @@ template<class T> class _com_ptr_t
 		HRESULT CreateInstance(CLSID const & classid, IUnknown * outer = nullptr, DWORD context = CLSCTX_ALL)
 		{
 			Release();
-			return(CoCreateInstance(classid, outer, context, Win32_Uuid_Of("interface"), (void **)&Ptr));
+			return(CoCreateInstance(classid, outer, context, _com_interface_id<T>::Id(), (void **)&Ptr));
 		}
 
 		HRESULT QueryInterface(REFIID riid, void ** object) const
@@ -1145,7 +1218,12 @@ template<class T> class _com_ptr_t
 		T * Ptr;
 };
 
-#define _COM_SMARTPTR_TYPEDEF(iface, iid)	typedef _com_ptr_t<iface> iface##Ptr
+#define _COM_SMARTPTR_TYPEDEF(iface, iid) \
+	template<> struct _com_interface_id<iface> \
+	{ \
+		static IID const & Id(void) { return(iid); } \
+	}; \
+	typedef _com_ptr_t<iface> iface##Ptr
 
 _COM_SMARTPTR_TYPEDEF(IUnknown, IID_IUnknown);
 _COM_SMARTPTR_TYPEDEF(IStream, IID_IStream);
@@ -1471,7 +1549,22 @@ LONG InterlockedExchange(LONG volatile * target, LONG value);
 #define CreateEvent		CreateEventA
 #define CreateMutex		CreateMutexA
 
-/* Files and directories. */
+/*
+** Files and directories. Everything from CreateFileA through GetTempPathA is implemented
+** over POSIX rather than stubbed, because the host has the answers. Three consequences of
+** that mapping are visible to callers.
+**
+** Sharing modes are not enforced. POSIX has no mandatory locking, so dwShareMode is
+** accepted and ignored; two opens that Windows would have refused both succeed here.
+**
+** Paths are resolved case-insensitively when the exact spelling does not exist, so the
+** upper-case names the engine asks for reach the assets a user supplied in either case on
+** a case-sensitive filesystem. Backslashes are accepted as separators.
+**
+** A search returns its matches in case-insensitive name order rather than in the order the
+** filesystem happens to hold them, so a wildcard scan such as ECACHE*.MIX registers its
+** archives in the same sequence on every host.
+*/
 HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_ATTRIBUTES attributes, DWORD creation, DWORD flags, HANDLE templatefile);
 BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD tobread, LPDWORD read, LPOVERLAPPED overlapped);
 BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD towrite, LPDWORD written, LPOVERLAPPED overlapped);
@@ -2860,8 +2953,6 @@ HRESULT StgCreateDocfile(OLECHAR const * name, DWORD mode, DWORD reserved, IStor
 HRESULT StgOpenStorage(OLECHAR const * name, IStorage * priority, DWORD mode, void * exclude, DWORD reserved, IStorage ** storage);
 HRESULT StgIsStorageFile(OLECHAR const * name);
 HRESULT CoFileTimeNow(FILETIME * filetime);
-HRESULT CoRegisterClassObject(REFCLSID classid, IUnknown * object, DWORD context, DWORD flags, LPDWORD registration);
-HRESULT CoRevokeClassObject(DWORD registration);
 
 
 /*

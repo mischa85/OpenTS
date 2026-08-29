@@ -55,6 +55,7 @@
 #include "animtype.h"
 #include "blight.h"
 #include "brain.h"
+#include "browser.h"
 #include "building.h"
 #include "builtype.h"
 #include "bullet.h"
@@ -478,11 +479,15 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		return(EXIT_SUCCESS);
 	}
 
+	// The common controls carry the Win32 front end, which a page has no way to load and
+	// the browser build does not reach.
+#if !defined(__EMSCRIPTEN__)
 	if (GetDllVersion("comctl32.dll") < PACKVERSION(4, 70)) {
 		sprintf(buffer, Fetch_String(TXT_DLL_INVALID), "comctl32.dll", 4, 70, "comctl32.dll");
 		MessageBox(NULL, buffer, Fetch_String(TXT_SHORT_TITLE), MB_ICONERROR);
 		exit(EXIT_FAILURE);
 	}
+#endif
 
 	OleInitialize(NULL);
 
@@ -597,10 +602,15 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 			exit(EXIT_FAILURE);
 		}
 
+		// A page's canvas is already laid out and already showing, so there is no window
+		// to wait on coming up. Waiting here would instead park the whole startup for as
+		// long as the tab happened to be in the background.
+#if !defined(__EMSCRIPTEN__)
 		do {
 			Windows_Message_Handler();
 		}
 		while (!GameInFocus);
+#endif
 
 		VisibleSurface->Fill(0);
 
@@ -617,7 +627,13 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 
 		AlphaBuffer = new ABuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y));
 
+#if defined(__EMSCRIPTEN__)
+		// The page reports where the pointer is over the canvas; there is no cursor to ask
+		// after, so the browser's mouse reads that instead of the operating system.
+		MouseCursor = Browser_Create_Mouse(MainWindow);
+#else
 		MouseCursor = new WWMouseClass(MainWindow);
+#endif
 		MouseCursor->Capture_Mouse();
 
 		/*
@@ -664,10 +680,14 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		/*
 		**	Wait until the message handler has dealt with the message
 		*/
+		// Nothing answers that message on a page, so the wait below would never end. The
+		// tab closing is what ends a browser run.
+#if !defined(__EMSCRIPTEN__)
 		do
 		{
 			Windows_Message_Handler();
 		}while (ReadyToQuit == 1);
+#endif
 
 		error_code = EXIT_SUCCESS;
 
@@ -687,13 +707,18 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 #if defined(__EMSCRIPTEN__)
 
 /// <summary>
-/// The WebAssembly entry point, which hands control straight to WinMain.
+/// The WebAssembly entry point.
 /// </summary>
 /// <remarks>
-/// WinMain still owns the message loop, and a loop that never returns to the browser is not
-/// something a page can host. Handing the loop over to emscripten_set_main_loop is a change
-/// to the loop itself and is not made here; under Node this entry point runs the startup
-/// sequence far enough to be diagnosed.
+/// A page owns the thread this runs on, and the engine borrows it. Browser_Init attaches
+/// the engine to the canvas and to the page's event callbacks; from there WinMain runs the
+/// startup sequence it always has, and every wait it reaches hands the thread back through
+/// Windows_Message_Handler rather than keeping it. browser.cpp is where that is arranged
+/// and docs/WASM-PORT.md Part A is what decided it.
+///
+/// This function returns while the engine is still inside it, which is not a contradiction:
+/// under the yield scaffold the return is a promise the page holds, and the runtime is kept
+/// alive for it.
 /// </remarks>
 int main(int argc, char ** argv)
 {
@@ -706,6 +731,10 @@ int main(int argc, char ** argv)
 		}
 		strncat(command_line, argv[index], sizeof(command_line) - strlen(command_line) - 1);
 	}
+
+	// A host without a canvas -- Node, for one -- gets no drawing target and no events, but
+	// the startup sequence still runs far enough to be diagnosed there.
+	Browser_Init();
 
 	return(WinMain(NULL, NULL, command_line, SW_SHOWNORMAL));
 }

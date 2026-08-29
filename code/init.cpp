@@ -848,6 +848,26 @@ static CampaignType Choose_Campaign(void)
 
 
 /// <summary>
+/// Resolves the campaign that a forced scenario is played as part of.
+/// The campaign decides the closing movie and the campaign number a save records; a forced
+/// scenario runs without one when the command line named none.
+/// </summary>
+/// <returns>Returns with the campaign named on the command line, or CAMPAIGN_NONE.</returns>
+static CampaignType Forced_Campaign(void)
+{
+	if (Debug_CampaignName[0] == '\0') {
+		return(CAMPAIGN_NONE);
+	}
+
+	if (Campaigns.Count() == 0) {
+		Init_Campaigns();
+	}
+
+	return(CampaignClass::From_Name(Debug_CampaignName));
+}
+
+
+/// <summary>
 /// Loads the rules and the art control files.
 /// This routine gathers every rules file it can find and, should there be more than one,
 /// asks the player which of them to play with. It then loads the art, expansion, AI and
@@ -1152,11 +1172,19 @@ restart:
 				case SEL_CAMPAIGN_GAME: {
 					new (&Environment) EnvironmentClass;
 
-					Scen->Campaign = Choose_Campaign();
-					if (Scen->Campaign == CAMPAIGN_NONE) {
-						process = true;
-						selection = SEL_NONE;
-						break;
+					/*
+					**	A forced scenario has already answered what the campaign dialog asks,
+					**	so the dialog is not put up to be answered a second time.
+					*/
+					if (Debug_ForceScenario) {
+						Scen->Campaign = Forced_Campaign();
+					} else {
+						Scen->Campaign = Choose_Campaign();
+						if (Scen->Campaign == CAMPAIGN_NONE) {
+							process = true;
+							selection = SEL_NONE;
+							break;
+						}
 					}
 
 					switch (Options.Difficulty) {
@@ -1548,7 +1576,7 @@ restart:
 			Session.PlayerIsGDI = stricmp(HouseTypes[Session.Players[0]->Player.House]->Name(), "GDI") == 0;
 		}
 
-		if (Session.Type != GAME_NORMAL || Debug_ForceScenario || Session.Play) {
+		if (Session.Type != GAME_NORMAL || Session.Play) {
 			if (!Start_Scenario(Scen->ScenarioName, true, CAMPAIGN_NONE)) {
 				if (Debug_Map) {
 					return(false);
@@ -1557,7 +1585,11 @@ restart:
 				}
 			}
 		} else {
-			if (!Start_Scenario(Campaigns[Scen->Campaign]->ScenarioName, true, Scen->Campaign)) {
+			/*
+			**	Start_Scenario picks the scenario itself here: the one the command line
+			**	forced, or otherwise the one the campaign opens with.
+			*/
+			if (!Start_Scenario(NULL, true, Scen->Campaign)) {
 				if (Debug_Map) {
 					return(false);
 				} else {
@@ -1812,6 +1844,29 @@ bool Parse_Command_Line(int argc, char * argv[])
 
 		if (memcmp(string, "-TIME=", 6) == 0) {
 			sscanf(&string[6], "%d", &TournamentTime);
+		}
+
+		/*
+		**	Start the named scenario straight away, in place of the menus that would
+		**	otherwise pick one. The name is the scenario's file name, as the battle
+		**	control file spells it -- "GDI1A.MAP", say.
+		*/
+		if (memcmp(string, "-SCENARIO=", strlen("-SCENARIO=")) == 0) {
+			strncpy(Debug_ScenarioName, &string[strlen("-SCENARIO=")], sizeof(Debug_ScenarioName) - 1);
+			Debug_ScenarioName[sizeof(Debug_ScenarioName) - 1] = '\0';
+			Debug_ForceScenario = (Debug_ScenarioName[0] != '\0');
+			continue;
+		}
+
+		/*
+		**	The battle a forced scenario is played as part of, named as the battle
+		**	control file names it -- "GDI1", say. Optional; without it the scenario is
+		**	played on its own.
+		*/
+		if (memcmp(string, "-CAMPAIGN=", strlen("-CAMPAIGN=")) == 0) {
+			strncpy(Debug_CampaignName, &string[strlen("-CAMPAIGN=")], sizeof(Debug_CampaignName) - 1);
+			Debug_CampaignName[sizeof(Debug_CampaignName) - 1] = '\0';
+			continue;
 		}
 
 		if (strstr(string, "-MPDEBUG")) {

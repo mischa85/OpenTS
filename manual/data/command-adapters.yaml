@@ -482,6 +482,27 @@ launch_options:
     availability: *all
     sites:
       - { file: code/init.cpp, function: Parse_Command_Line, expression: 'literal:-TIME=' }
+  - id: launch:scenario
+    title: Forced scenario
+    syntax: -SCENARIO=<name>
+    description: >-
+      Starts the named scenario at once, in place of the menus that would otherwise pick
+      one. The name is the scenario's file name as the battle control file spells it, such
+      as GDI1A.MAP.
+    audience: developer
+    availability: *all
+    sites:
+      - { file: code/init.cpp, function: Parse_Command_Line, expression: 'literal:-SCENARIO=' }
+  - id: launch:campaign
+    title: Forced campaign
+    syntax: -CAMPAIGN=<name>
+    description: >-
+      Names the battle that a forced scenario is played as part of, as the battle control
+      file names it, such as GDI1. Without it the scenario is played on its own.
+    audience: developer
+    availability: *all
+    sites:
+      - { file: code/init.cpp, function: Parse_Command_Line, expression: 'literal:-CAMPAIGN=' }
   - id: launch:multiplayer-debug
     title: Internet debug display
     syntax: -MPDEBUG

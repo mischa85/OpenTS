@@ -1,0 +1,146 @@
+<!doctype html>
+<!--
+     O P E N  T S
+
+     SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright 2026 OpenTS contributors
+
+     See LICENSE.md for applicable additional terms and warranty disclaimers.
+
+     The page the engine runs inside. It lays out a canvas, names it the way video.cpp
+     and the input callbacks both expect, and gets out of the way: the module reads the
+     laid out size back and drives the resize itself, so the path is the one a real page
+     would take rather than a synthetic one.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenTS</title>
+<style>
+	:root { color-scheme: dark; }
+	body {
+		margin: 0;
+		background: #101216;
+		color: #d8dbe0;
+		font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	}
+	header { padding: 8px 14px; border-bottom: 1px solid #262a31; }
+	h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .05em; }
+	#status { padding: 6px 14px; color: #8f98a3; white-space: pre-wrap; }
+	#stage { padding: 12px 14px; }
+	/* Outlined rather than bordered: the module measures the laid out box, and a border
+	   would be counted into the drawing buffer it asks the renderer for. */
+	#canvas {
+		display: block;
+		width: 960px;
+		height: 720px;
+		max-width: 100%;
+		background: #000;
+		outline: 1px solid #262a31;
+	}
+	#log {
+		margin: 0;
+		padding: 8px 14px 20px;
+		max-height: 16em;
+		overflow: auto;
+		color: #6f7883;
+		white-space: pre-wrap;
+	}
+</style>
+</head>
+<body>
+
+<header><h1>OPENTS &mdash; WEBASSEMBLY</h1></header>
+<div id="status">loading&hellip;</div>
+<div id="stage"><canvas id="canvas" tabindex="0"></canvas></div>
+<pre id="log"></pre>
+
+<script>
+	// What an automated check reads to tell an engine that is running from one that
+	// started and then stopped.
+	window.OpenTS_State = { started: false, frames: 0, waits: 0, lines: [] };
+
+	var logElement = document.getElementById("log");
+
+	function OpenTS_Record(text) {
+		window.OpenTS_State.lines.push(text);
+		if (window.OpenTS_State.lines.length > 400) {
+			window.OpenTS_State.lines.shift();
+		}
+		logElement.textContent = window.OpenTS_State.lines.join("\n");
+		logElement.scrollTop = logElement.scrollHeight;
+	}
+
+	// A page has no command line, so the query string stands in for one. "?scenario=GDI1A.MAP"
+	// starts that mission directly; "arg" carries any other switch through verbatim.
+	function OpenTS_Arguments() {
+		var query = new URLSearchParams(window.location.search);
+		var args = [];
+
+		if (query.get("scenario")) {
+			args.push("-SCENARIO=" + query.get("scenario"));
+		}
+
+		if (query.get("campaign")) {
+			args.push("-CAMPAIGN=" + query.get("campaign"));
+		}
+
+		return args.concat(query.getAll("arg"));
+	}
+
+	var Module = {
+		arguments: OpenTS_Arguments(),
+		canvas: document.getElementById("canvas"),
+		print: function (text) { console.log(text); OpenTS_Record(text); },
+		printErr: function (text) { console.error(text); OpenTS_Record(text); },
+		onRuntimeInitialized: function () { window.OpenTS_State.started = true; },
+	};
+
+	// The engine keeps the thread between yields, so the status is polled from a timer
+	// rather than asked of the module on a frame it may not be holding.
+	setInterval(function () {
+		if (!window.OpenTS_State.started || !Module._OpenTS_Browser_Frames) {
+			return;
+		}
+		window.OpenTS_State.frames = Module._OpenTS_Browser_Frames();
+		window.OpenTS_State.waits = Module._OpenTS_Browser_Waits();
+		document.getElementById("status").textContent =
+			"frames " + window.OpenTS_State.frames +
+			"  |  waits carried by the scaffold " + window.OpenTS_State.waits +
+			"  |  canvas " + Module.canvas.width + "x" + Module.canvas.height;
+	}, 250);
+
+	// The canvas takes the focus on a click so that a page with other focusable content
+	// still sends the game its keys.
+	Module.canvas.addEventListener("mousedown", function () { Module.canvas.focus(); });
+
+	// The engine runs inside a suspended JSPI call, so a trap surfaces as a rejected
+	// promise rather than an exception anyone sees. Without this the page simply stops
+	// advancing frames and is indistinguishable from a hang.
+	function report(what) {
+		var line = document.getElementById("fault");
+		if (line === null) {
+			line = document.createElement("pre");
+			line.id = "fault";
+			line.style.cssText = "color:#ff8b7a;white-space:pre-wrap;margin:8px 0";
+			document.getElementById("status").after(line);
+		}
+		line.textContent = what;
+		console.error(what);
+	}
+
+	window.addEventListener("unhandledrejection", function (event) {
+		var reason = event.reason;
+		report("the engine stopped: " + ((reason && reason.stack) || reason));
+	});
+
+	window.addEventListener("error", function (event) {
+		report("the engine stopped: " + (event.message || event.error));
+	});
+</script>
+
+<script async src="$<TARGET_FILE_BASE_NAME:OpenTS>.js"></script>
+
+</body>
+</html>

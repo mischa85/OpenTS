@@ -111,6 +111,17 @@ DSurface::DSurface(int width, int height) :
 	GDIBuffer(NULL),
 	Pitch(0)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page has no GDI to allocate through. The pixels are what the surface is for, and
+	 * a plain allocation supplies them in the same 565 layout at the same pitch; what is
+	 * lost is the device context, which Is_GDI_Backed reports as absent.
+	 */
+	Pitch = width * 2;
+	GDIBuffer = new unsigned char[(size_t)Pitch * (size_t)height];
+	memset(GDIBuffer, 0, (size_t)Pitch * (size_t)height);
+#else
+
 	/*
 	 * BITMAPINFO carries room for a single color entry, but a bitfields bitmap is
 	 * described by three masks following the header, so the header is declared with
@@ -159,6 +170,7 @@ DSurface::DSurface(int width, int height) :
 	} else {
 		Pitch = width * 2;
 	}
+#endif
 }
 
 
@@ -178,6 +190,12 @@ DSurface::DSurface(int width, int height) :
  *=============================================================================================*/
 DSurface::~DSurface(void)
 {
+#if defined(__EMSCRIPTEN__)
+	delete [] (unsigned char *)GDIBuffer;
+	GDIBuffer = NULL;
+	return;
+#else
+
 	/*
 	 * GDI will not free a bitmap that is still selected into a context, so the one the
 	 * context started with has to go back first.
@@ -197,6 +215,7 @@ DSurface::~DSurface(void)
 	}
 
 	GDIBuffer = NULL;
+#endif
 }
 
 

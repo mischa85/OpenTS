@@ -21,6 +21,11 @@
 #include "win.h"
 #include "xmouse.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32window.h"
+#include <vector>
+#endif
+
 #include <cstring>
 
 
@@ -98,6 +103,24 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 		return(NULL);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page will not draw a cursor past a size of its own, and shows nothing rather than
+	 * a clipped one, so an image that would exceed it is built at whatever whole scale
+	 * still fits.
+	 */
+	int limit = Win32_Window_Max_Cursor_Size();
+
+	while (scale > 1 && (width > limit || height > limit)) {
+		scale--;
+		width = shape->Get_Width() * scale;
+		height = shape->Get_Height() * scale;
+	}
+
+	std::vector<unsigned long> pixels((size_t)width * (size_t)height, 0);
+	unsigned long * bits = pixels.data();
+#else
+
 	BITMAPINFO info;
 	memset(&info, '\0', sizeof(info));
 	info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -107,14 +130,17 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	info.bmiHeader.biBitCount = 32;
 	info.bmiHeader.biCompression = BI_RGB;
 
-	void * bits = NULL;
-	HBITMAP color = CreateDIBSection(NULL, &info, DIB_RGB_COLORS, &bits, NULL, 0);
+	void * surface = NULL;
+	HBITMAP color = CreateDIBSection(NULL, &info, DIB_RGB_COLORS, &surface, NULL, 0);
 
 	if (color == NULL) {
 		return(NULL);
 	}
 
-	memset(bits, '\0', width * height * 4);
+	memset(surface, '\0', width * height * 4);
+
+	unsigned long * bits = (unsigned long *)surface;
+#endif
 
 	// The shapes are palette indices and the primary is 565, so the drawer's table is
 	// what turns one into the other.
@@ -135,13 +161,26 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 			unsigned long argb = 0xFF000000UL | (red << 16) | (green << 8) | blue;
 
 			for (int suby = 0; suby < scale; suby++) {
-				unsigned long * row = (unsigned long *)bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
+				unsigned long * row = bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
 				for (int subx = 0; subx < scale; subx++) {
 					row[subx] = argb;
 				}
 			}
 		}
 	}
+
+	int cursor_hotx = hotx * scale;
+	int cursor_hoty = hoty * scale;
+	if (cursor_hotx < 0) cursor_hotx = 0;
+	if (cursor_hoty < 0) cursor_hoty = 0;
+	if (cursor_hotx >= width) cursor_hotx = width - 1;
+	if (cursor_hoty >= height) cursor_hoty = height - 1;
+
+#if defined(__EMSCRIPTEN__)
+	// The pixels are the same ones Windows would have composited; the canvas takes them
+	// with the hotspot directly rather than through a bitmap and an icon.
+	return(Win32_Window_Create_Cursor(bits, width, height, cursor_hotx, cursor_hoty));
+#else
 
 	// A color cursor carries its transparency in the alpha channel, but Windows still
 	// wants a mask bitmap alongside it.
@@ -150,13 +189,6 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	memset(mask_bits, '\0', mask_pitch * height);
 	HBITMAP mask = CreateBitmap(width, height, 1, 1, mask_bits);
 	delete [] mask_bits;
-
-	int cursor_hotx = hotx * scale;
-	int cursor_hoty = hoty * scale;
-	if (cursor_hotx < 0) cursor_hotx = 0;
-	if (cursor_hoty < 0) cursor_hoty = 0;
-	if (cursor_hotx >= width) cursor_hotx = width - 1;
-	if (cursor_hoty >= height) cursor_hoty = height - 1;
 
 	ICONINFO icon;
 	icon.fIcon = FALSE;
@@ -169,6 +201,7 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	DeleteObject(mask);
 	DeleteObject(color);
 	return(cursor);
+#endif
 }
 
 

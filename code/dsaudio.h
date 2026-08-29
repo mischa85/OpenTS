@@ -18,6 +18,14 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "win32compat.h"
+
+/*
+ * A page has no DirectSound. This hands back an object that keeps the part of the
+ * DirectSound contract this driver and the movie player are written against -- a looping
+ * buffer with a lock window, a play cursor and a volume -- carried out to the page by
+ * audiobackend.cpp, which is where it is built.
+ */
+LPDIRECTSOUND Audio_Create_Sound_Object(void);
 #else
 #include <dsound.h>
 #endif

@@ -303,6 +303,16 @@ static void Write_Text_Locked(char const * text, size_t length)
 {
 	DWORD actual;
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page has nowhere to put a log file that anyone can read afterwards, and its console
+	 * is the sink a browser build is actually diagnosed from. The other sinks below are a
+	 * file, a Windows debugger, and a Windows console, and none of the three exists here.
+	 */
+	fwrite(text, 1, length, stderr);
+	return;
+#endif
+
 	if (DebugFile != INVALID_HANDLE_VALUE) {
 
 		// The notice is paid for out of the reserve, so the file never passes its limit.

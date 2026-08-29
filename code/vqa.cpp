@@ -16,6 +16,8 @@
 #include "vqa.h"
 
 #include "_keyboar.h"
+#include "audiobackend.h"
+#include "browser.h"
 #include "ccfile.h"
 #include "dbgprint.h"
 #include "globals.h"
@@ -25,8 +27,10 @@
 #include "session.h"
 #include "unvqtblc.h"
 #include "vector.h"
+#include "video.h"
 #include "vqoption.h"
 #include "win.h"
+#include "win32timer.h"
 
 #include "special.hh"
 
@@ -46,6 +50,25 @@ long __cdecl VQAMemoryHandler(VQAHandle * vqa, long action, void * buffer, long 
 
 bool VQA_Message_Handler(void)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The player's loop is the only thing running while a movie plays, and it comes through
+	 * here once per pass, so this is the movie's whole service point: the audio timer is run
+	 * from here, the decoded frame goes up from here, and the page gets the thread back from
+	 * here. Without the last of those the tab would be frozen for the length of the movie.
+	 *
+	 * The sound driver's own pass does not run while a movie plays, so the rings are carried
+	 * out to the page here instead. It comes first: the play cursor the audio callback reads
+	 * is what the movie takes its time from, and a cursor that never moves stops the movie.
+	 */
+	Browser_Service();
+	Audio_Backend_Service();
+	Win32_Timer_Service();
+	Video_Present_If_Dirty();
+	Browser_Yield_If_Due();
+	return(true);
+#else
+
 	MSG msg;
 
 	if (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE)) {
@@ -57,6 +80,7 @@ bool VQA_Message_Handler(void)
 		}
 	}
 	return(true);
+#endif
 }
 
 

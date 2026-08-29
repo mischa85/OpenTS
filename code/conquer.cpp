@@ -515,6 +515,17 @@ void Main_Game(int argc, char * argv[])
  *=============================================================================================*/
 void Call_Back(void)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Several of the engine's waits spin on this routine alone -- an audio stream
+	 * finishing, mostly -- and never reach the message handler. On a page the thread has
+	 * to be given back somewhere, and "as often as possible" is what this routine's own
+	 * contract already promises. The yield inside is paced, so being called this often
+	 * does not cost a frame per call.
+	 */
+	Windows_Message_Handler();
+#endif
+
 	/*
 	**	Music and speech maintenance
 	*/

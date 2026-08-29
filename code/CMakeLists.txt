@@ -155,7 +155,14 @@ set(OPENTS_COMPILE_OPTIONS
     -fshort-wchar
 
     # C++ exception handling, matching /EHsc. Emscripten compiles throws to traps otherwise.
-    -fexceptions
+    #
+    # The WebAssembly form of it rather than the JavaScript one, and that is not a
+    # preference: -fexceptions routes every call that can unwind through an invoke_ import,
+    # and Emscripten declares every invoke_ import suspending whenever JSPI is on. A static
+    # initializer would then try to suspend before main -- outside the promising boundary --
+    # and trap. -fwasm-exceptions keeps the unwinding in wasm, where it belongs, and leaves
+    # nothing for JSPI to mistake for a yield.
+    -fwasm-exceptions
 
     # The inherited declarations carry MSVC's __declspec, which clang parses only when asked.
     -fdeclspec
@@ -314,8 +321,47 @@ if (EMSCRIPTEN)
         # The engine sizes its own allocations at startup rather than against a fixed heap.
         -sALLOW_MEMORY_GROWTH=1
 
-        -fexceptions
+        # main returns to the page while the engine is still running inside it, so the
+        # runtime has to outlive the return.
+        -sEXIT_RUNTIME=0
+
+        -fwasm-exceptions
     )
+
+    #
+    # ---------------------------------------------------------
+    # The yield scaffold
+    # ---------------------------------------------------------
+    #
+    # A page owns the thread the engine borrows, and the engine has around sixty waits that
+    # do not return. JavaScript Promise Integration suspends the engine's own stack at such a
+    # wait and resumes it later, which is what lets a browser build run before they are
+    # flattened. docs/WASM-PORT.md A.5 records it as deliberately temporary: it costs nothing
+    # at runtime, but it keeps the reentrancy the project means to remove and it pins the
+    # build to a young VM feature. Browser_Blocking_Wait_Count is the number that has to
+    # reach zero before this option can go; turning it off before then leaves a build that
+    # stops answering the moment it reaches a wait.
+    #
+    option(OPENTS_WASM_JSPI
+        "Carry the engine's not-yet-flattened waits on JavaScript Promise Integration" ON)
+
+    if(OPENTS_WASM_JSPI)
+        target_compile_definitions(OpenTS PRIVATE OPENTS_WASM_JSPI)
+        target_link_options(OpenTS PRIVATE -sJSPI)
+    endif()
+
+    # The engine opens its archives out of the directory it runs in, through the Win32 file
+    # API that win32compat.cpp puts on POSIX. Under node the directory that reaches is the
+    # host's own, which this hands the module directly, and that is the whole of the data
+    # mounting story for the node target. The option exists because the flag is node-only --
+    # a page built with it throws before main runs -- so a browser build turns it off and
+    # brings its data in another way.
+    option(OPENTS_WASM_NODERAWFS
+        "Give the WebAssembly build the host filesystem, for running under node" ON)
+
+    if(OPENTS_WASM_NODERAWFS)
+        target_link_options(OpenTS PRIVATE -sNODERAWFS=1)
+    endif()
 endif()
 
 if (MSVC)
@@ -421,6 +467,17 @@ add_custom_command(TARGET OpenTS POST_BUILD
         "$<TARGET_FILE:OpenTS>"
         "${TS_RUN_DIR}"
 )
+
+# Emscripten splits the executable in two: a loader, which the copy above brings across, and
+# the module it looks for beside itself. Without the module the run directory holds half a
+# program.
+if(EMSCRIPTEN)
+    add_custom_command(TARGET OpenTS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE_DIR:OpenTS>/$<TARGET_FILE_BASE_NAME:OpenTS>.wasm"
+            "${TS_RUN_DIR}"
+    )
+endif()
 
 # The symbol file and the map come from the MSVC linker.
 if(MSVC)
