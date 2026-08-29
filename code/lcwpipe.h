@@ -77,11 +77,15 @@ class LCWPipe : public Pipe
 		*/
 		int BlockSize;
 
-		/*
-		**	LCW compression requires a safety margin when decompressing over itself. This
-		**	margin is only for the worst case situation (very rare).
-		*/
+		// How much the encoder can add to a block that will not compress. The buffers
+		// hold a whole compressed block, so they must allow for that worst case, and it
+		// is also the largest compressed block this pipe will accept when decompressing.
 		int SafetyMargin;
+
+		// Set when the incoming stream describes a block the buffers cannot hold or one
+		// that will not decompress. The pipe has no way to report that, so it stops
+		// producing output rather than passing on what it could not decode.
+		bool Damaged;
 
 		/*
 		**	Each block has a header of this format.

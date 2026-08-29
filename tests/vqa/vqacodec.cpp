@@ -92,7 +92,7 @@ struct LCWStream
 };
 
 
-static void Build_Random_Stream(LCWStream & stream, std::mt19937 & rng, bool relative, bool lcw_uncomp_safe)
+static void Build_Random_Stream(LCWStream & stream, std::mt19937 & rng, bool relative)
 {
 	std::uniform_int_distribution<int> byte(0, 255);
 	std::uniform_int_distribution<int> op(0, 4);
@@ -143,10 +143,8 @@ static void Build_Random_Stream(LCWStream & stream, std::mt19937 & rng, bool rel
 		} break;
 
 		case 2: {
-			/* Long run of one byte. LCW_Uncomp mishandles runs shorter than its
-			 * dword alignment pad, so keep those out of the shared streams.
-			 */
-			int count = (lcw_uncomp_safe ? 8 : 1) + (byte(rng) % 200);
+			/* Long run of one byte. */
+			int count = 1 + (byte(rng) % 200);
 			unsigned char value = (unsigned char)byte(rng);
 
 			stream.Data.push_back(0xFE);
@@ -195,8 +193,8 @@ static void Build_Random_Stream(LCWStream & stream, std::mt19937 & rng, bool rel
 
 static std::vector<unsigned char> Run_Vqa_Lcw(LCWStream const & stream, size_t limit)
 {
-	/* The slack absorbs LCW_Uncomp's dword writes when the same buffer size is
-	 * handed to both decoders.
+	/* The guard bytes past the limit catch a decoder that writes further than the
+	 * destination it was given.
 	 */
 	std::vector<unsigned char> dest(limit + 16, 0xCD);
 
@@ -220,33 +218,37 @@ static void Test_Lcw()
 {
 	std::mt19937 rng(20260829u);
 
-	for (int trial = 0; trial < 64; trial++) {
+	for (int trial = 0; trial < 128; trial++) {
 		LCWStream stream;
-		Build_Random_Stream(stream, rng, false, true);
+		Build_Random_Stream(stream, rng, false);
 
 		std::vector<unsigned char> got = Run_Vqa_Lcw(stream, stream.Expected.size());
 		Check_Bytes(got, stream.Expected, "absolute stream matches the model");
 
-		std::vector<unsigned char> reference(stream.Expected.size() + 16, 0);
-		int written = LCW_Uncomp(stream.Data.data(), reference.data(), 0);
-		reference.resize(stream.Expected.size());
+		/* The engine's decoder reads the same absolute format, told how large the
+		 * block is, so it must produce the same bytes and stop after them.
+		 */
+		std::vector<unsigned char> reference(stream.Expected.size() + 16, 0xCD);
+		int written = LCW_Uncomp(stream.Data.data(), reference.data(), (unsigned long)stream.Expected.size());
 
 		Check((size_t)written == stream.Expected.size(), "LCW_Uncomp reports the same length");
+
+		bool clean = true;
+		for (size_t i = stream.Expected.size(); i < reference.size(); i++) {
+			clean = clean && (reference[i] == 0xCD);
+		}
+
+		Check(clean, "LCW_Uncomp stays inside the destination");
+
+		reference.resize(stream.Expected.size());
+
 		Check_Bytes(reference, stream.Expected, "LCW_Uncomp agrees with the model");
 		Check_Bytes(got, reference, "VQA_LCW_Uncompress agrees with LCW_Uncomp");
 	}
 
 	for (int trial = 0; trial < 64; trial++) {
 		LCWStream stream;
-		Build_Random_Stream(stream, rng, false, false);
-
-		std::vector<unsigned char> got = Run_Vqa_Lcw(stream, stream.Expected.size());
-		Check_Bytes(got, stream.Expected, "short long-runs match the model");
-	}
-
-	for (int trial = 0; trial < 64; trial++) {
-		LCWStream stream;
-		Build_Random_Stream(stream, rng, true, false);
+		Build_Random_Stream(stream, rng, true);
 
 		std::vector<unsigned char> got = Run_Vqa_Lcw(stream, stream.Expected.size());
 		Check_Bytes(got, stream.Expected, "relative stream matches the model");
@@ -255,7 +257,7 @@ static void Test_Lcw()
 	/* Truncation: every command is clipped to the destination that is left. */
 	for (int trial = 0; trial < 32; trial++) {
 		LCWStream stream;
-		Build_Random_Stream(stream, rng, false, false);
+		Build_Random_Stream(stream, rng, false);
 
 		size_t limit = stream.Expected.size() / (2 + (size_t)(trial % 4));
 		std::vector<unsigned char> want(stream.Expected.begin(), stream.Expected.begin() + (ptrdiff_t)limit);

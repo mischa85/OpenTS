@@ -34,6 +34,9 @@
 #include	"always.h"
 #include	"lcw.h"
 
+#include	<climits>
+#include	<cstring>
+
 /***************************************************************************
  * LCW_Uncomp -- Decompress an LCW encoded data block.                     *
  *                                                                         *
@@ -60,37 +63,49 @@
  *     unsigned long # of destination bytes written                        *
  *                                                                         *
  * WARNINGS:                                                               *
- *     3rd argument is dummy. It exists to provide cross-platform          *
- *      compatibility. Note therefore that this implementation does not    *
- *      check for corrupt source data by testing the uncompressed length.  *
+ *     The 3rd argument is the capacity of the destination buffer. Zero    *
+ *      leaves the decoder unbounded, as it always was, so corrupt source  *
+ *      data can then drive it past the end of the buffer.                 *
  *                                                                         *
  * HISTORY:                                                                *
  *    03/20/1995 IML : Created.                                            *
  *=========================================================================*/
-int LCW_Uncomp(void const * source, void * dest, unsigned long )
+int LCW_Uncomp(void const * source, void * dest, unsigned long length)
 {
-	unsigned char * source_ptr, * dest_ptr, * copy_ptr;
-	unsigned char op_code, data;
-	unsigned count;
-	unsigned * word_dest_ptr;
-	unsigned word_data;
+	unsigned long const capacity = (length > 0 && length < (unsigned long)INT_MAX) ? length : (unsigned long)INT_MAX;
 
-	/* Copy the source and destination ptrs. */
-	source_ptr = (unsigned char*) source;
-	dest_ptr   = (unsigned char*) dest;
+	return(LCW_Uncomp_Bounded(source, INT_MAX, dest, (int)capacity));
+}
+
+
+int LCW_Uncomp_Bounded(void const * source, int srclen, void * dest, int destlen)
+{
+	unsigned char const * const source_start = (unsigned char const *)source;
+	unsigned char * const dest_start = (unsigned char *)dest;
+
+	int const in_limit = srclen > 0 ? srclen : 0;
+	int const out_limit = destlen > 0 ? destlen : 0;
+
+	int in = 0;
+	int out = 0;
 
 	for (;;) {
 
 		/* Read in the operation code. */
-		op_code = *source_ptr++;
+		if (in >= in_limit) break;
+		unsigned char const op_code = source_start[in++];
 
 		if (!(op_code & 0x80)) {
 
 			/* Do a short copy from destination. */
-			count = (op_code >> 4) + 3;
-			copy_ptr = dest_ptr - ((unsigned) *source_ptr++ + (((unsigned) op_code & 0x0f) << 8));
+			if (in >= in_limit) break;
+			int const count = (op_code >> 4) + 3;
+			int const from = out - ((int)source_start[in++] + (((int)op_code & 0x0f) << 8));
 
-			while (count--) *dest_ptr++ = *copy_ptr++;
+			if (from < 0 || from >= out || count > out_limit - out) break;
+
+			for (int i = 0; i < count; i++) dest_start[out + i] = dest_start[from + i];
+			out += count;
 
 		} else {
 
@@ -99,14 +114,18 @@ int LCW_Uncomp(void const * source, void * dest, unsigned long )
 				if (op_code == 0x80) {
 
 					/* Return # of destination bytes written. */
-					return((unsigned long) (dest_ptr - (unsigned char*) dest));
+					return(out);
 
 				} else {
 
 					/* Do a medium copy from source. */
-					count = op_code & 0x3f;
+					int const count = op_code & 0x3f;
 
-					while (count--) *dest_ptr++ = *source_ptr++;
+					if (count > in_limit - in || count > out_limit - out) break;
+
+					for (int i = 0; i < count; i++) dest_start[out + i] = source_start[in + i];
+					in += count;
+					out += count;
 				}
 
 			} else {
@@ -114,52 +133,55 @@ int LCW_Uncomp(void const * source, void * dest, unsigned long )
 				if (op_code == 0xfe) {
 
 					/* Do a long run. */
-					count = *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-					word_data = data = *(source_ptr + 2);
-					word_data  = (word_data << 24) + (word_data << 16) + (word_data << 8) + word_data;
-					source_ptr += 3;
+					if (in_limit - in < 3) break;
+					int const count = (int)source_start[in] + ((int)source_start[in + 1] << 8);
+					unsigned char const data = source_start[in + 2];
+					in += 3;
 
-					copy_ptr = dest_ptr + 4 - ((unsigned) dest_ptr & 0x3);
-					count -= (copy_ptr - dest_ptr);
-					while (dest_ptr < copy_ptr) *dest_ptr++ = data;
+					if (count > out_limit - out) break;
 
-					word_dest_ptr = (unsigned*) dest_ptr;
-
-					dest_ptr += (count & 0xfffffffc);
-
-					while (word_dest_ptr < (unsigned*) dest_ptr) {
-						*word_dest_ptr		= word_data;
-						*(word_dest_ptr + 1) = word_data;
-						word_dest_ptr += 2;
-					}
-
-					copy_ptr = dest_ptr + (count & 0x3);
-					while (dest_ptr < copy_ptr) *dest_ptr++ = data;
+					memset(dest_start + out, data, (size_t)count);
+					out += count;
 
 				} else {
 
 					if (op_code == 0xff) {
 
 						/* Do a long copy from destination. */
-						count = *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-						copy_ptr = (unsigned char*) dest + *(source_ptr + 2) + ((unsigned) *(source_ptr + 3) << 8);
-						source_ptr += 4;
+						if (in_limit - in < 4) break;
+						int const count = (int)source_start[in] + ((int)source_start[in + 1] << 8);
+						int const from = (int)source_start[in + 2] + ((int)source_start[in + 3] << 8);
+						in += 4;
 
-						while (count--) *dest_ptr++ = *copy_ptr++;
+						if (from >= out || count > out_limit - out) break;
+
+						for (int i = 0; i < count; i++) dest_start[out + i] = dest_start[from + i];
+						out += count;
 
 					} else {
 
 						/* Do a medium copy from destination. */
-						count = (op_code & 0x3f) + 3;
-						copy_ptr = (unsigned char*) dest + *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-						source_ptr += 2;
+						if (in_limit - in < 2) break;
+						int const count = (op_code & 0x3f) + 3;
+						int const from = (int)source_start[in] + ((int)source_start[in + 1] << 8);
+						in += 2;
 
-						while (count--) *dest_ptr++ = *copy_ptr++;
+						if (from >= out || count > out_limit - out) break;
+
+						for (int i = 0; i < count; i++) dest_start[out + i] = dest_start[from + i];
+						out += count;
 					}
 				}
 			}
 		}
 	}
+
+	/*
+	** Everything that leaves the loop rather than reading the end of data code is a
+	** damaged stream. The count returned falls short of what the container promised,
+	** which is how the callers tell the two apart.
+	*/
+	return(out);
 }
 
 
@@ -180,8 +202,9 @@ int LCW_Uncomp(void const * source, void * dest, unsigned long )
  * OUTPUT:  Returns with the number of bytes of output data stored into the destination        *
  *          buffer.                                                                            *
  *                                                                                             *
- * WARNINGS:   Be sure that the destination buffer is big enough. The maximum size required    *
- *             for the destination buffer is (datasize + datasize/128).                        *
+ * WARNINGS:   Be sure that the destination buffer is big enough. The maximum size             *
+ *             required is what LCW_Comp_Worst_Case reports, which is one byte                 *
+ *             over the source for every four bytes of it, plus the end marker.                *
  *                                                                                             *
  * HISTORY:                                                                                    *
  *   05/20/1997 JLB : Created.                                                                 *

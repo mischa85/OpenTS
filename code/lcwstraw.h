@@ -79,10 +79,9 @@ class LCWStraw : public Straw
 		*/
 		int BlockSize;
 
-		/*
-		**	LCW compression requires a safety margin when decompressing over itself. This
-		**	margin is only for the worst case situation (very rare).
-		*/
+		// How much the encoder can add to a block that will not compress, plus room for
+		// the block header. The same slack is what lets a block be decompressed over
+		// itself in one buffer, and it bounds the compressed block the straw will accept.
 		int SafetyMargin;
 
 		/*

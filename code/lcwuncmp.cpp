@@ -30,6 +30,13 @@
  * Functions:                                                              *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
+#include	"lcw.h"
+
+/* LCW_Uncompress is the name iff.h exports for the decoder. The format is the one
+ * LCW_Uncomp reads, so the two names reach one implementation rather than two copies
+ * of it.
+ */
+
 extern "C" {
 
 /***************************************************************************
@@ -58,104 +65,15 @@ extern "C" {
  *     unsigned long # of destination bytes written                        *
  *                                                                         *
  * WARNINGS:                                                               *
- *     3rd argument is dummy. It exists to provide cross-platform          *
- *      compatibility. Note therefore that this implementation does not    *
- *      check for corrupt source data by testing the uncompressed length.  *
+ *     The 3rd argument is the capacity of the destination buffer, with    *
+ *      the meaning LCW_Uncomp gives it.                                   *
  *                                                                         *
  * HISTORY:                                                                *
  *    03/20/1995 IML : Created.                                            *
  *=========================================================================*/
-unsigned long __cdecl LCW_Uncompress (void * source, void * dest, unsigned long )
-//unsigned long LCW_Uncompress (void * source, void * dest, unsigned long length)
+unsigned long __cdecl LCW_Uncompress(void * source, void * dest, unsigned long length)
 {
-	unsigned char * source_ptr, * dest_ptr, * copy_ptr, op_code, data;
-	unsigned	  count, * word_dest_ptr, word_data;
-
-	/* Copy the source and destination ptrs. */
-	source_ptr = (unsigned char*) source;
-	dest_ptr   = (unsigned char*) dest;
-
-	while (1 /*TRUE*/) {
-
-		/* Read in the operation code. */
-		op_code = *source_ptr++;
-
-		if (!(op_code & 0x80)) {
-
-			/* Do a short copy from destination. */
-			count	 = (op_code >> 4) + 3;
-			copy_ptr = dest_ptr - ((unsigned) *source_ptr++ + (((unsigned) op_code & 0x0f) << 8));
-
-			while (count--) *dest_ptr++ = *copy_ptr++;
-
-		} else {
-
-			if (!(op_code & 0x40)) {
-
-				if (op_code == 0x80) {
-
-					/* Return # of destination bytes written. */
-					return((unsigned long) (dest_ptr - (unsigned char*) dest));
-
-				} else {
-
-					/* Do a medium copy from source. */
-					count = op_code & 0x3f;
-
-					while (count--) *dest_ptr++ = *source_ptr++;
-				}
-
-			} else {
-
-				if (op_code == 0xfe) {
-
-					/* Do a long run. */
-					count = *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-					word_data = data = *(source_ptr + 2);
-					word_data  = (word_data << 24) + (word_data << 16) + (word_data << 8) + word_data;
-					source_ptr += 3;
-
-					copy_ptr = dest_ptr + 4 - ((unsigned) dest_ptr & 0x3);
-					count -= (copy_ptr - dest_ptr);
-					while (dest_ptr < copy_ptr) *dest_ptr++ = data;
-
-					word_dest_ptr = (unsigned*) dest_ptr;
-
-					dest_ptr += (count & 0xfffffffc);
-
-					while (word_dest_ptr < (unsigned*) dest_ptr) {
-						*word_dest_ptr		= word_data;
-						*(word_dest_ptr + 1) = word_data;
-						word_dest_ptr += 2;
-					}
-
-					copy_ptr = dest_ptr + (count & 0x3);
-					while (dest_ptr < copy_ptr) *dest_ptr++ = data;
-
-				} else {
-
-					if (op_code == 0xff) {
-
-						/* Do a long copy from destination. */
-						count	 = *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-						copy_ptr = (unsigned char*) dest + *(source_ptr + 2) + ((unsigned) *(source_ptr + 3) << 8);
-						source_ptr += 4;
-
-						while (count--) *dest_ptr++ = *copy_ptr++;
-
-					} else {
-
-						/* Do a medium copy from destination. */
-						count = (op_code & 0x3f) + 3;
-						copy_ptr = (unsigned char*) dest + *source_ptr + ((unsigned) *(source_ptr + 1) << 8);
-						source_ptr += 2;
-
-						while (count--) *dest_ptr++ = *copy_ptr++;
-					}
-				}
-			}
-		}
-	}
+	return((unsigned long)LCW_Uncomp(source, dest, length));
 }
 
 }

@@ -65,10 +65,10 @@ LCWPipe::LCWPipe(CompControl control, int blocksize) :
 		Counter(0),
 		Buffer(NULL),
 		Buffer2(NULL),
-		BlockSize(blocksize)
+		BlockSize(blocksize),
+		Damaged(false)
 {
-	int margin = BlockSize/128+1;
-	SafetyMargin = margin < 128 ? 128 : margin;
+	SafetyMargin = LCW_Comp_Worst_Case(BlockSize) - BlockSize;
 	Buffer = new char[BlockSize+SafetyMargin];
 	Buffer2 = new char[BlockSize+SafetyMargin];
 	BlockHeader.CompCount = 0xFFFF;
@@ -133,7 +133,7 @@ int LCWPipe::Put(void const * source, int slen)
 	*/
 	if (Control ==  DECOMPRESS) {
 
-		while (slen > 0) {
+		while (slen > 0 && !Damaged) {
 
 			/*
 			**	First check to see if we are in the block header accumulation phase.
@@ -153,6 +153,17 @@ int LCWPipe::Put(void const * source, int slen)
 				if (Counter == sizeof(BlockHeader)) {
 					memmove(&BlockHeader, Buffer, sizeof(BlockHeader));
 					Counter = 0;
+
+					/*
+					**	Both counts arrive from the stream and neither is trustworthy. The
+					**	buffers only hold a block that this pipe could itself have written,
+					**	so anything larger is a stream that must not be accumulated.
+					*/
+					if (BlockHeader.CompCount > LCW_Comp_Worst_Case(BlockSize) || BlockHeader.UncompCount > BlockSize) {
+						Damaged = true;
+						BlockHeader.CompCount = 0xFFFF;
+						break;
+					}
 				}
 			}
 
@@ -173,10 +184,17 @@ int LCWPipe::Put(void const * source, int slen)
 				**	through the pipe.
 				*/
 				if (Counter == BlockHeader.CompCount) {
-					LCW_Uncomp(Buffer, Buffer2);
-					total += BASECLASS::Put(Buffer2, BlockHeader.UncompCount);
+					int const uncomped = LCW_Uncomp_Bounded(Buffer, BlockHeader.CompCount, Buffer2, BlockHeader.UncompCount);
+
 					Counter = 0;
 					BlockHeader.CompCount = 0xFFFF;
+
+					if (uncomped < BlockHeader.UncompCount) {
+						Damaged = true;
+						break;
+					}
+
+					total += BASECLASS::Put(Buffer2, uncomped);
 				}
 			}
 		}

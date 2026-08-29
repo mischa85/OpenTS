@@ -69,7 +69,11 @@ LCWStraw::LCWStraw(CompControl control, int blocksize) :
 		Buffer2(NULL),
 		BlockSize(blocksize)
 {
-	SafetyMargin = BlockSize/128+1;
+	/*
+	 * Compression writes the block after its header in the second buffer, so the margin
+	 * covers the header as well as everything the encoder can add to the block.
+	 */
+	SafetyMargin = (LCW_Comp_Worst_Case(BlockSize) - BlockSize) + (int)sizeof(BlockHeader);
 	Buffer = new char[BlockSize+SafetyMargin];
 	if (control == COMPRESS) {
 		Buffer2 = new char[BlockSize+SafetyMargin];
@@ -159,11 +163,18 @@ int LCWStraw::Get(void * destbuf, int slen)
 			int incount = BASECLASS::Get(&BlockHeader, sizeof(BlockHeader));
 			if (incount != sizeof(BlockHeader)) break;
 
+			/*
+			**	Both counts arrive from the stream and neither is trustworthy. The buffer
+			**	only holds a block that the matching compressor could have written, so a
+			**	larger one is treated the same as a stream that ran out early.
+			*/
+			if (BlockHeader.CompCount > LCW_Comp_Worst_Case(BlockSize) || BlockHeader.UncompCount > BlockSize) break;
+
 			void * ptr = &Buffer[(BlockSize+SafetyMargin) - BlockHeader.CompCount];
 			incount = BASECLASS::Get(ptr, BlockHeader.CompCount);
 			if (incount != BlockHeader.CompCount) break;
 
-			LCW_Uncomp(ptr, Buffer);
+			if (LCW_Uncomp_Bounded(ptr, BlockHeader.CompCount, Buffer, BlockHeader.UncompCount) < BlockHeader.UncompCount) break;
 			Counter = BlockHeader.UncompCount;
 		} else {
 			BlockHeader.UncompCount = (unsigned short)BASECLASS::Get(Buffer, BlockSize);
