@@ -4,6 +4,7 @@ summary: A local developer build reads legitimately owned Tiberian Sun data from
 category: getting-started
 source_files:
   - README.md
+  - code/addon.cpp
   - docs/BUILDING.md
   - Run/place_steam_build_here
 related:
@@ -22,6 +23,8 @@ related:
 The repository contains engine source and build inputs. It does not contain maps, movies, audio, or other proprietary game assets.
 
 Place data from a legitimate copy of Tiberian Sun under `Run/`. The tracked `Run/place_steam_build_here` marker identifies this local run tree; the directory's populated contents are ignored by Git.
+
+Firestorm counts as installed when the game finds `FIRESTRM.INI`. That one file decides it, so a deployment keeping the expansion's content in archives of its own is still played as the expansion, and one without that file is played as the base game.
 
 Do not place game data in the CMake build directory. The build copies OpenTS executables and `Language.dll` into `Run/`, alongside the locally supplied game files.
 
