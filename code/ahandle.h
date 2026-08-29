@@ -15,8 +15,16 @@
 
 #include "vqaplay.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <dsound.h>
 #include <windows.h>
+#endif
+#endif
 
 struct AhandleInitParams
 {

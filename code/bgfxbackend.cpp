@@ -12,7 +12,11 @@
 
 #include "bgfxbackend.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/console.h>
+#else
 #include "except.h"
+#endif
 
 #include <bgfx/bgfx.h>
 #include <bgfx/embedded_shader.h>
@@ -20,6 +24,7 @@
 #include <vs_ocornut_imgui.bin.h>
 #include <fs_ocornut_imgui.bin.h>
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -73,6 +78,34 @@ struct BackendVertex
 };
 
 
+/// <summary>
+/// Reports an unrecoverable renderer failure. Win32 routes it through the crash handler,
+/// which a page does not have; there the browser console is the whole report.
+/// </summary>
+static void Report_Fatal(char const * text)
+{
+#ifdef __EMSCRIPTEN__
+	emscripten_console_error(text);
+	abort();
+#else
+	Fatal("%s", text);
+#endif
+}
+
+
+/// <summary>
+/// Passes one of bgfx's traces to whatever the platform gives a developer to read.
+/// </summary>
+static void Report_Trace(char const * text)
+{
+#ifdef __EMSCRIPTEN__
+	emscripten_console_log(text);
+#else
+	OutputDebugString(text);
+#endif
+}
+
+
 // bgfx reports lost devices and shader failures through this rather than a return code,
 // so the engine would otherwise present to a black window with no explanation.
 class BackendCallback : public bgfx::CallbackI
@@ -82,15 +115,17 @@ class BackendCallback : public bgfx::CallbackI
 
 		virtual void fatal(const char * filepath, uint16_t line, bgfx::Fatal::Enum code, const char * str) override
 		{
-			Fatal("Renderer error %d at %s(%u): %s", (int)code,
+			char message[1024];
+			snprintf(message, sizeof(message), "Renderer error %d at %s(%u): %s", (int)code,
 						filepath != NULL ? filepath : "", (unsigned)line, str != NULL ? str : "");
+			Report_Fatal(message);
 		}
 
 		virtual void traceVargs(const char * filepath, uint16_t line, const char * format, va_list argList) override
 		{
 			char message[1024];
 			vsnprintf(message, sizeof(message), format, argList);
-			OutputDebugString(message);
+			Report_Trace(message);
 		}
 
 		virtual void profilerBegin(const char *, uint32_t, const char *, uint16_t) override {}
@@ -230,15 +265,16 @@ static bool Ensure_Prescale_Target(int width, int height)
 
 
 /// <summary>
-/// Starts the renderer on an existing window.
+/// Starts the renderer on an existing presentation target.
 /// </summary>
-/// <param name="window">The window the frame is presented into.</param>
-/// <param name="windowwidth">The width of that window's client area.</param>
-/// <param name="windowheight">The height of that window's client area.</param>
+/// <param name="window">The target the frame is presented into: a window on Win32, and the
+/// CSS selector naming a canvas under Emscripten.</param>
+/// <param name="windowwidth">The width of that target's drawable area.</param>
+/// <param name="windowheight">The height of that target's drawable area.</param>
 /// <param name="renderer">Which graphics API to ask for, or auto to let bgfx decide.</param>
 /// <param name="vsync">Should presents wait for the display's refresh?</param>
 /// <returns>bool; Did the renderer start?</returns>
-bool Backend_Init(HWND window, int windowwidth, int windowheight, BackendRenderer renderer, bool vsync)
+bool Backend_Init(BackendWindow window, int windowwidth, int windowheight, BackendRenderer renderer, bool vsync)
 {
 	if (_Initialized) {
 		return(true);
@@ -254,7 +290,9 @@ bool Backend_Init(HWND window, int windowwidth, int windowheight, BackendRendere
 	_ResetFlags = BGFX_RESET_FLIP_AFTER_RENDER | (vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE);
 
 	bgfx::Init init;
-	init.platformData.nwh = window;
+	// The Emscripten context reads this back as the canvas selector rather than as a
+	// handle, which is why the seam lets the platform decide what a target is named.
+	init.platformData.nwh = (void *)window;
 	init.resolution.width = (uint32_t)windowwidth;
 	init.resolution.height = (uint32_t)windowheight;
 	init.resolution.reset = _ResetFlags;
@@ -275,6 +313,10 @@ bool Backend_Init(HWND window, int windowwidth, int windowheight, BackendRendere
 
 		case BACKEND_RENDERER_OPENGL:
 			init.type = bgfx::RendererType::OpenGL;
+			break;
+
+		case BACKEND_RENDERER_OPENGLES:
+			init.type = bgfx::RendererType::OpenGLES;
 			break;
 
 		default:

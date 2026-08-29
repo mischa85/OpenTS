@@ -118,7 +118,7 @@
 #include "ionblast.h"
 #include "ipxmgr.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "laser.h"
 #include "light.h"
 #include "lightcon.h"
@@ -185,9 +185,17 @@
 #include "scrnsel.hh"
 
 #include <algorithm>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <conio.h>
+#endif
 #include <ctime>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <dos.h>
+#endif
 #include <unordered_set>
 
 extern VoxelDataStruct DropPodVoxel;
@@ -205,7 +213,7 @@ struct ChooseCampaignStruct {
 **	Enable the set of limited cheat key options.
 */
 #ifdef _DEBUG
-#define	PARM_PLAYTEST		0xF7DDC227		// "PLAYTEST"
+#define	PARM_PLAYTEST		((int)0xF7DDC227)		// "PLAYTEST"
 #endif
 
 /*
@@ -213,11 +221,11 @@ struct ChooseCampaignStruct {
 */
 #ifdef _DEBUG
 #ifndef PARM_PLAYTEST
-#define	PARM_PLAYTEST		0xF7DDC227		// "PLAYTEST"
+#define	PARM_PLAYTEST		((int)0xF7DDC227)		// "PLAYTEST"
 #endif
 #endif
 
-#define	PARM_INSTALL		0xD95C68A2		//	"FROMINSTALL"
+#define	PARM_INSTALL		((int)0xD95C68A2)		//	"FROMINSTALL"
 
 
 /****************************************
@@ -242,7 +250,7 @@ static void Init_Threads(void);
 void Draw_Version_Text(Surface * surface);
 void Version_Dialog(void);
 
-BOOL CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+static BOOL CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 BOOL CALLBACK Main_Menu_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 void Init_Random(void);

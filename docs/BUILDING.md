@@ -18,7 +18,9 @@
 | Configurations | Debug and Release |
 
 Other generators, compilers, architectures, and configurations are not
-supported by the current tree.
+supported by the current tree. A WebAssembly target is
+[in progress](#webassembly-in-progress-and-unsupported) and configures under
+Emscripten; it does not build and it is not supported.
 
 Install Visual Studio 2022 with the **Desktop development with C++** workload,
 a Windows SDK, CMake 3.23 or newer, and Git for Windows.
@@ -75,6 +77,53 @@ Visual Studio Code (VSCode) support includes (assuming recommended extensions ar
 - full Test Explorer integration.
 
 Standard VSCode shortcuts (`Ctrl+Shift+B`, `F5`, `Ctrl+F5`) and interface apply.
+
+## WebAssembly, in progress and unsupported
+
+> [!WARNING]
+> The WebAssembly target is under development. It configures, and some of its
+> translation units compile. The target itself does not build, it produces no
+> binary, and nothing about it has been run. It is not supported and
+> continuous integration does not build it.
+
+The build accepts the Emscripten toolchain alongside MSVC, so that the port can
+be worked on and measured. Emscripten's wasm32 is ILP32, which gives the engine
+the 4-byte pointers and 4-byte `long` its layouts assume, the same as Win32
+x86.
+
+```bash
+source /path/to/emsdk/emsdk_env.sh
+emcmake cmake -S . -B build-wasm -G Ninja \
+    -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+```
+
+Configuration was last exercised on August 29, 2026 with Emscripten 6.0.8,
+CMake 4.4.2, and Ninja on macOS, in both Debug and Release. That establishes
+that CMake generates a build; it establishes nothing about compiling, linking,
+or running.
+
+The target differs from the Win32 one in what it contains:
+
+| Component | Treatment |
+| --- | --- |
+| `.rc` resources and MASM assembly | Excluded; both are Visual Studio toolchain inputs |
+| `code/language/` | Excluded; `Language.dll` is a Win32 resource library |
+| `tests/` | Excluded; the harness is written against the Win32 API |
+| Renderer | bgfx's OpenGL ES 3 renderer, which Emscripten reaches through WebGL 2 |
+
+Excluding `code/language/` removes every localized string the engine displays,
+because `data.cpp` loads them from `Language.dll` at runtime. A replacement
+string source is required before the target can display anything.
+
+Individual translation units compile ahead of the link, which is how the port
+is measured:
+
+```bash
+ninja -C build-wasm code/CMakeFiles/OpenTS.dir/lcw.cpp.o
+```
+
+[WebAssembly compile status](wasm-compile-status.md) records what compiles
+today and categorizes what does not.
 
 ## Build identity
 

@@ -28,7 +28,7 @@
 #include "goptions.h"
 #include "hsv.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "mainloop.h"
 #include "misc.h"
 #include "msgroute.h"
@@ -45,9 +45,13 @@
 #include "vox.h"
 #include "windlg.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <commctrl.h>
+#endif
 #include <ctime>
-#include <sys\timeb.h>
+#include <sys/timeb.h>
 #include <utility>
 
 

@@ -119,7 +119,7 @@
 #include "internet.h"
 #include "ipxmgr.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "light.h"
 #include "mainloop.h"
 #include "mono.h"
@@ -308,13 +308,13 @@ void Multiplayer_Debug_Print(bool noframecheck);
 //...........................................................................
 static int Build_Send_Packet(void *buf, int bufsize, int frame_delay,
 	int num_cmds, int cap, int & processed);
-int Add_Uncompressed_Events(void *buf, int bufsize, int frame_delay, int size,
+static int Add_Uncompressed_Events(void *buf, int bufsize, int frame_delay, int size,
 	int cap);
-int Add_Compressed_Events(void *buf, int bufsize, int frame_delay, int size,
+static int Add_Compressed_Events(void *buf, int bufsize, int frame_delay, int size,
 	int cap,  int & processed);
 static int Breakup_Receive_Packet(void *buf, int bufsize );
-int Extract_Uncompressed_Events(void *buf, int bufsize);
-int Extract_Compressed_Events(void *buf, int bufsize);
+static int Extract_Uncompressed_Events(void *buf, int bufsize);
+static int Extract_Compressed_Events(void *buf, int bufsize);
 
 //...........................................................................
 // DoList management:

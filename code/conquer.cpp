@@ -88,7 +88,7 @@
 #include "internet.h"
 #include "ipxmgr.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "logic.h"
 #include "mainloop.h"
 #include "movie.h"
@@ -110,7 +110,7 @@
 #include "theme.h"
 #include "voc.h"
 #include "vox.h"
-#include "wolapi\wolapi.h"
+#include "wolapi/wolapi.h"
 #include "wonline.h"
 #include "wsproto.h"
 
@@ -120,11 +120,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <direct.h>
+#endif
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <dos.h>
+#endif
 #include <fcntl.h>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <io.h>
+#endif
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <share.h>
+#endif
 
 
 /****************************************

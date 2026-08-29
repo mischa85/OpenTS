@@ -36,11 +36,15 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windows.h>
 #include <mmsystem.h>
 #include <windowsx.h>
 #include <winnt.h>
 #include <winuser.h>
+#endif
 
 extern int			ShowCommand;
 extern HINSTANCE	ProgramInstance;

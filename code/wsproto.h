@@ -38,7 +38,11 @@
 /*
 **	Include standard Winsock 1.0 header file.
 */
+#if defined(__EMSCRIPTEN__)
+#include "winsockcompat.h"
+#else
 #include <winsock.h>
+#endif
 
 #ifndef fw_assert
 #define fw_assert assert

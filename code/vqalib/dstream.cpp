@@ -45,7 +45,11 @@
 #include	"vqaplayp.h"
 #include	<stdio.h>
 #include	<fcntl.h>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include	<io.h>
+#endif
 #include	<string.h>
 
 

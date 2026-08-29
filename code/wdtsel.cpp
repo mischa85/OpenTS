@@ -8,7 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "language\language.h"
+#include "language/language.h"
 
 #include "_keyboar.h"
 #include "_surface.h"
@@ -31,7 +31,7 @@
 #include "worlddom.h"
 
 #define IID_DEFINED
-#include "wolapi\wolapi.h"
+#include "wolapi/wolapi.h"
 
 typedef VectorClass<Point2D> POINT2D_LIST;
 

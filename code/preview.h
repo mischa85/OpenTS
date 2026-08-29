@@ -11,7 +11,11 @@
 
 #include "point.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windows.h>
+#endif
 
 class Surface;
 class XSurface;

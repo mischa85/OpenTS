@@ -48,7 +48,8 @@
 /// <param name="message">A printf style description of what went wrong.</param>
 /// <remarks>
 /// The message is raised as an exception rather than printed, so that the crash handler
-/// reports it with the machine state that produced it. This never returns.
+/// reports it with the machine state that produced it. The WebAssembly target has no such
+/// handler, so there the message is the whole report. This never returns.
 /// </remarks>
 void __cdecl Fatal(char const * message, ...)
 {
@@ -60,8 +61,14 @@ void __cdecl Fatal(char const * message, ...)
 	vsnprintf(_text, sizeof(_text), message, va);
 	va_end(va);
 
+#if defined(__EMSCRIPTEN__)
+	fprintf(stderr, "OpenTS: fatal error: %s\n", _text);
+	fflush(stderr);
+	abort();
+#else
 	ULONG_PTR const argument = (ULONG_PTR)_text;
 	RaiseException(EXCEPTION_OPENTS_FATAL, EXCEPTION_NONCONTINUABLE, 1, &argument);
 
 	TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+#endif
 }

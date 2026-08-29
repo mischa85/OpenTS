@@ -32,8 +32,13 @@
 
 #pragma once
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#include "winsockcompat.h"
+#else
 #include <windows.h>
 #include <winsock.h>
+#endif
 
 #define FIELD_HEADER_SIZE	(sizeof(FieldClass) - (sizeof(void *) * 2))
 

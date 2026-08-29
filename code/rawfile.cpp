@@ -55,8 +55,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <direct.h>
+#endif
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <share.h>
+#endif
 
 
 /***********************************************************************************************

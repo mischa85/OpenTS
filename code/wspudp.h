@@ -33,7 +33,11 @@
 
 #include "wsproto.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <nspapi.h>
+#endif
 
 
 /*

@@ -58,7 +58,7 @@
 #include "dbgprint.h"
 #include "globals.h"
 #include "ipxmgr.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "msgloop.h"
 #include "progress.h"
 #include "queue.h"
@@ -71,7 +71,11 @@
 
 #include <algorithm>
 #include <ctime> // for station ID computation
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <dos.h> // for station ID computation
+#endif
 
 
 /***************************** Globals *************************************/

@@ -19,7 +19,7 @@
 #include "data.h"
 #include "dbgprint.h"
 #include "globals.h" // for GameInFocus
-#include "language\language.h"
+#include "language/language.h"
 #include "soscomp.h"
 #include "winfix.h"
 
@@ -147,7 +147,7 @@ int Convert_HMI_To_Direct_Sound_Volume(int volume)
  *   06/23/1995 PWG : Created.                                             *
  *=========================================================================*/
 
-static void *Audio_Add_Long_To_Pointer(void const *ptr, int size)
+void *Audio_Add_Long_To_Pointer(void const *ptr, int size)
 {
 	return((void *) ( (char const *) ptr + size));
 }

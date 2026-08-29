@@ -17,7 +17,11 @@
 #ifdef STEVES_NEW_CATCHER
 
 #include <crtdbg.h>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <new.h>
+#endif
 
 
 /// <summary>

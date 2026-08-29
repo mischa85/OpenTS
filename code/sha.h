@@ -35,7 +35,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <new.h>
+#endif
 
 
 /*

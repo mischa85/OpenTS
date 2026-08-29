@@ -101,6 +101,12 @@ void __cdecl operator delete(void * ptr);
 */
 #include "visualc.h"
 
+/*
+**	The MSVC C runtime spellings the tree is written against. Inert under MSVC, which has
+**	them already.
+*/
+#include "crtcompat.h"
+
 
 #ifndef	NULL
 	#define	NULL		0

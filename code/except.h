@@ -33,7 +33,11 @@
 
 #include "win.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <sal.h>
+#endif
 
 // Posted to the main window so that a requested test fault happens inside window procedure
 // dispatch, which the operating system unwinds differently from an ordinary call.

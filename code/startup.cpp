@@ -89,7 +89,7 @@
 #include "ipxmgr.h"
 #include "isotype.h"
 #include "jumpjet.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "levitate.h"
 #include "light.h"
 #include "lightcon.h"
@@ -155,8 +155,12 @@
 #include "wwmouse.h"
 #include "zbuffer.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <conio.h>
 #include <io.h>
+#endif
 #include <cfloat>
 
 extern	HINSTANCE LanguageResources;
@@ -390,6 +394,12 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 	// thread that crashed may be the one holding the logger's lock.
 	Exception_Register_Log_File(Debug_Log_File_Name());
 
+	// The two mutexes below exclude a second copy of the game and the AutoPlay shell from
+	// running at the same time as this one. A WebAssembly module has neither: it is the whole
+	// process, and there is no installer to wait for. Both are skipped rather than answered by
+	// a stub, because the loop below waits for the AutoPlay mutex forever if it cannot get one.
+#if !defined(__EMSCRIPTEN__)
+
 	/*
 	 * Create a mutex with a unique name to TibSun in order to determine if
 	 * our app is already running.
@@ -459,6 +469,8 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 
 		DebugString ("Got AutoPlayMutex okay.\n");
 	}
+
+#endif
 
 	atexit(Prog_End);
 
@@ -670,6 +682,35 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 
 	return(error_code);
 }
+
+
+#if defined(__EMSCRIPTEN__)
+
+/// <summary>
+/// The WebAssembly entry point, which hands control straight to WinMain.
+/// </summary>
+/// <remarks>
+/// WinMain still owns the message loop, and a loop that never returns to the browser is not
+/// something a page can host. Handing the loop over to emscripten_set_main_loop is a change
+/// to the loop itself and is not made here; under Node this entry point runs the startup
+/// sequence far enough to be diagnosed.
+/// </remarks>
+int main(int argc, char ** argv)
+{
+	static char command_line[1024];
+
+	command_line[0] = '\0';
+	for (int index = 1; index < argc; index++) {
+		if (command_line[0] != '\0') {
+			strncat(command_line, " ", sizeof(command_line) - strlen(command_line) - 1);
+		}
+		strncat(command_line, argv[index], sizeof(command_line) - strlen(command_line) - 1);
+	}
+
+	return(WinMain(NULL, NULL, command_line, SW_SHOWNORMAL));
+}
+
+#endif	// __EMSCRIPTEN__
 
 /***********************************************************************************************
  * Prog_End -- Cleans up library systems in prep for game exit.                                *

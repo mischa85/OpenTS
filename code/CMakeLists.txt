@@ -1,9 +1,12 @@
 # Limit the generated solution to supported configurations.
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
 
-# OpenTS currently supports 32-bit (x86) builds only.
+# OpenTS builds against 32-bit pointers only. Win32 x86 and Emscripten wasm32 both provide
+# them, along with the 32-bit long the engine's layouts assume.
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-    message(FATAL_ERROR "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32.")
+    message(FATAL_ERROR
+        "OpenTS must be built with 32-bit pointers. Reconfigure with -A Win32, or with the "
+        "Emscripten toolchain file for the WebAssembly target.")
 endif()
 
 #
@@ -28,10 +31,27 @@ file(GLOB_RECURSE OPENTS_RAW CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hh"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.rc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.asm"
 
     # Submodules of OpenTS
     "${CMAKE_CURRENT_SOURCE_DIR}/wolapi/*"
+)
+
+#
+# ---------------------------------------------------------
+# Sources the WebAssembly target drops entirely
+# ---------------------------------------------------------
+#
+# Each of these builds on a Windows-only facility with no browser counterpart, and is left
+# out whole rather than compiled hollow so the omission is visible in the build rather than
+# buried in a header.
+#
+#   wonline.cpp -- Westwood Online: the internet lobby, its chat, ladders, and the World
+#                  Domination Tour, reached through ATL and a COM client for a service
+#                  retired in 2004. wonlinestub.cpp keeps what the rest of the engine
+#                  references and reports that nothing happened.
+#
+set(OPENTS_EMSCRIPTEN_EXCLUDED
+    "wonline.cpp"
 )
 
 #
@@ -48,6 +68,20 @@ foreach(f ${OPENTS_RAW})
         endif()
     endforeach()
 
+    # Resource scripts are a Visual Studio toolchain input with no Emscripten equivalent.
+    if(EMSCRIPTEN AND f MATCHES "\\.rc$")
+        set(EXCLUDED TRUE)
+    endif()
+
+    if(EMSCRIPTEN)
+        foreach(name ${OPENTS_EMSCRIPTEN_EXCLUDED})
+            if(f STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/${name}")
+                set(EXCLUDED TRUE)
+                message(STATUS "${PROJECT_NAME}: WebAssembly target excludes ${name}")
+            endif()
+        endforeach()
+    endif()
+
     if(NOT EXCLUDED)
         list(APPEND OPENTS_SRC "${f}")
     endif()
@@ -60,7 +94,13 @@ endforeach()
 #
 message(STATUS "${PROJECT_NAME}: Creating '${PROJECT_NAME}' executable...")
 
-add_executable(OpenTS WIN32 ${OPENTS_SRC})
+# The WIN32 marker selects the Windows GUI entry point and means nothing elsewhere.
+if(EMSCRIPTEN)
+    add_executable(OpenTS ${OPENTS_SRC})
+else()
+    add_executable(OpenTS WIN32 ${OPENTS_SRC})
+endif()
+
 target_compile_features(OpenTS PRIVATE cxx_std_20)
 
 #
@@ -95,6 +135,49 @@ set_target_properties(OpenTS PROPERTIES
 #
 message(STATUS "${PROJECT_NAME}: Applying compiler flags...")
 
+if(EMSCRIPTEN)
+
+set(OPENTS_COMPILE_OPTIONS
+
+    # WebAssembly arithmetic is strict IEEE-754: single precision stays single precision and
+    # nothing is reassociated, which is what /arch:SSE2 and /fp:precise buy under MSVC. So the
+    # floating-point model needs nothing asked for here, but no fast-math option may ever be
+    # added: the simulation runs in lockstep across a network game and any relaxation
+    # desynchronizes it.
+    -fno-fast-math
+
+    # MSVC does not optimize on the strict aliasing rule and the inherited code puns types
+    # freely, so clang is held to the assumption the code was written under.
+    -fno-strict-aliasing
+
+    # MSVC's wchar_t is 16 bits and clang's is 32. The engine's structures are
+    # layout-sensitive, so the narrow form is kept.
+    -fshort-wchar
+
+    # C++ exception handling, matching /EHsc. Emscripten compiles throws to traps otherwise.
+    -fexceptions
+
+    # The inherited declarations carry MSVC's __declspec, which clang parses only when asked.
+    -fdeclspec
+
+    # WebAssembly has one calling convention, so the x86 keywords naming the others carry no
+    # meaning here. vqapalette.h uses the underscore-less `cdecl`, which no clang option
+    # accepts, so all four are erased on the command line rather than in a header the
+    # declarations would have to be made to include.
+    -D__cdecl=
+    -D__stdcall=
+    -D__fastcall=
+    -Dcdecl=
+
+    -g
+    -fno-omit-frame-pointer
+
+    $<$<CONFIG:Debug>:-O0>
+    $<$<CONFIG:Release>:-O2>
+)
+
+else()
+
 set(OPENTS_COMPILE_OPTIONS
 
     # ================= DEBUG =================
@@ -110,11 +193,6 @@ set(OPENTS_COMPILE_OPTIONS
         # ---------- C ----------
         $<$<COMPILE_LANGUAGE:C>:
             /Zi /Od /RTC1 /MP /Oy- /arch:SSE2 /fp:precise
-        >
-
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
         >
     >
 
@@ -132,13 +210,10 @@ set(OPENTS_COMPILE_OPTIONS
         $<$<COMPILE_LANGUAGE:C>:
             /Zi /O2 /GF /MP /arch:SSE2 /fp:precise
         >
-
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 )
+
+endif()
 
 target_compile_options(OpenTS PRIVATE ${OPENTS_COMPILE_OPTIONS})
 
@@ -166,8 +241,13 @@ set(BGFX_ROOT "${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bgfx")
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" PROPERTIES
     INCLUDE_DIRECTORIES
         "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
-    COMPILE_OPTIONS "/Zc:preprocessor"
 )
+
+if(MSVC)
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" PROPERTIES
+        COMPILE_OPTIONS "/Zc:preprocessor"
+    )
+endif()
 
 message(STATUS "${PROJECT_NAME}: Adding compilier definitions...")
 target_compile_definitions(OpenTS PRIVATE
@@ -208,17 +288,35 @@ target_link_libraries(OpenTS PRIVATE
     $<TARGET_FILE:bgfx>
     $<TARGET_FILE:bx>
     $<TARGET_FILE:bimg>
-    comctl32
-    dbghelp
-    dsound
-    iphlpapi
-    psapi
-    version
-    winmm
-    wsock32
-    kernel32 user32 gdi32 winspool comdlg32 advapi32 shell32
-    ole32 oleaut32 uuid odbc32 odbccp32
 )
+
+if (NOT EMSCRIPTEN)
+    target_link_libraries(OpenTS PRIVATE
+        comctl32
+        dbghelp
+        dsound
+        iphlpapi
+        psapi
+        version
+        winmm
+        wsock32
+        kernel32 user32 gdi32 winspool comdlg32 advapi32 shell32
+        ole32 oleaut32 uuid odbc32 odbccp32
+    )
+endif()
+
+if (EMSCRIPTEN)
+    target_link_options(OpenTS PRIVATE
+        # bgfx's OpenGL ES 3 renderer reaches the page through WebGL 2 alone.
+        -sMIN_WEBGL_VERSION=2
+        -sMAX_WEBGL_VERSION=2
+
+        # The engine sizes its own allocations at startup rather than against a fixed heap.
+        -sALLOW_MEMORY_GROWTH=1
+
+        -fexceptions
+    )
+endif()
 
 if (MSVC)
     target_link_options(OpenTS PRIVATE
@@ -235,25 +333,6 @@ if (MSVC)
         /MANIFEST:EMBED
     )
 endif()
-
-#
-# ---------------------------------------------------------
-# MASM assembly support
-# ---------------------------------------------------------
-#
-message(STATUS "${PROJECT_NAME}: Adding MASM support...")
-
-enable_language(ASM_MASM)
-
-# All .asm files compile automatically using ML.EXE with appropriate flags.
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        set_source_files_properties(${f} PROPERTIES
-            LANGUAGE ASM_MASM
-            COMPILE_FLAGS "-Zi -c -coff -Cx"
-        )
-    endif()
-endforeach()
 
 #
 # ---------------------------------------------------------
@@ -280,13 +359,6 @@ endforeach()
 foreach(f ${OPENTS_SRC})
     if(f MATCHES "\\.hh$")
         source_group("Header Files\\Define Header Files" FILES ${f})
-    endif()
-endforeach()
-
-# Assembly Files
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        source_group("Assembly Files" FILES ${f})
     endif()
 endforeach()
 
@@ -350,19 +422,22 @@ add_custom_command(TARGET OpenTS POST_BUILD
         "${TS_RUN_DIR}"
 )
 
-# Copy the linker-generated .pdb alongside the exe
-add_custom_command(TARGET OpenTS POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_PDB_FILE:OpenTS>"
-        "${TS_RUN_DIR}"
-)
+# The symbol file and the map come from the MSVC linker.
+if(MSVC)
+    # Copy the linker-generated .pdb alongside the exe
+    add_custom_command(TARGET OpenTS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_PDB_FILE:OpenTS>"
+            "${TS_RUN_DIR}"
+    )
 
-# Copy the linker-generated .map (sits next to the exe, no GenEx for it)
-add_custom_command(TARGET OpenTS POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE_DIR:OpenTS>/$<TARGET_FILE_BASE_NAME:OpenTS>.map"
-        "${TS_RUN_DIR}"
-)
+    # Copy the linker-generated .map (sits next to the exe, no GenEx for it)
+    add_custom_command(TARGET OpenTS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE_DIR:OpenTS>/$<TARGET_FILE_BASE_NAME:OpenTS>.map"
+            "${TS_RUN_DIR}"
+    )
+endif()
 
 #
 # ---------------------------------------------------------
@@ -374,7 +449,9 @@ set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT OpenTS)
 # ---------------------------------------------------------
 # Add the .natvis file for Visual Studio debugging
 # ---------------------------------------------------------
-set(NATVIS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sun.natvis")
-source_group("Natvis Files" FILES ${NATVIS_FILE})
-target_sources(OpenTS PRIVATE ${NATVIS_FILE})
-target_link_options(OpenTS PRIVATE "/NATVIS:${NATVIS_FILE}")
+if(MSVC)
+    set(NATVIS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sun.natvis")
+    source_group("Natvis Files" FILES ${NATVIS_FILE})
+    target_sources(OpenTS PRIVATE ${NATVIS_FILE})
+    target_link_options(OpenTS PRIVATE "/NATVIS:${NATVIS_FILE}")
+endif()

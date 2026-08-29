@@ -11,7 +11,11 @@
 
 #include "dllver.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <shlwapi.h>
+#endif
 
 /// Sample code from https://learn.microsoft.com/en-us/windows/win32/controls/common-control-versions
 

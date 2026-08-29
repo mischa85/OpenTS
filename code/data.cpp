@@ -37,7 +37,11 @@
 
 #include "data.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <new.h>
+#endif
 
 HINSTANCE LanguageResources;
 

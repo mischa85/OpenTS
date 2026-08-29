@@ -171,7 +171,16 @@ bool Video_Init(HWND window)
 	_Window = window;
 
 	BackendRenderer renderer = (BackendRenderer)Options.Renderer;
-	if (!Backend_Init(window, client.right - client.left, client.bottom - client.top, renderer, Options.VSync)) {
+
+#if defined(__EMSCRIPTEN__)
+	// A browser has no window handle to present onto, so the renderer names the page's
+	// canvas by CSS selector instead. The id is fixed by the shell page the build ships.
+	BackendWindow target = "#canvas";
+#else
+	BackendWindow target = window;
+#endif
+
+	if (!Backend_Init(target, client.right - client.left, client.bottom - client.top, renderer, Options.VSync)) {
 		return(false);
 	}
 

@@ -37,7 +37,15 @@
 #include "house.hh"
 #include "struct.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <unknwn.h>
+#endif
+#endif
 
 
 class CCINIClass;

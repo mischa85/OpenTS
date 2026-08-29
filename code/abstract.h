@@ -39,7 +39,15 @@
 #include "house.hh"
 #include "rtti.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <comdef.h>
+#endif
+#endif
 
 class AbstractTypeClass;
 class CRCEngine;

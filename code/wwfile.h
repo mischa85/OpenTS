@@ -40,7 +40,11 @@
 
 #include <cstddef>
 #include <cstdio>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <io.h>
+#endif
 
 #ifndef SEEK_SET
 #define SEEK_SET					0	// Seek from start of file.

@@ -30,9 +30,13 @@
 #include "goptions.h"
 #include "houstype.h"
 #include "init.h"
+#if defined(__EMSCRIPTEN__)
+#include "guidcompat.h"
+#else
 #include "initguid.h"
+#endif
 #include "ipxmgr.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "mapgen.h"
 #include "mixfile.h"
 #include "mplayer.h"
@@ -52,12 +56,12 @@
 #include "winfix.h"
 #include "winstub.h"
 #define IID_DEFINED
-#include "wolapi\chatdefs.h"
-#include "wolapi\downloaddefs.h"
-#include "wolapi\ftpdefs.h"
-#include "wolapi\netutildefs.h"
-#include "wolapi\wolapi.h"
-#include "wolapi\wolapi_i.c"
+#include "wolapi/chatdefs.h"
+#include "wolapi/downloaddefs.h"
+#include "wolapi/ftpdefs.h"
+#include "wolapi/netutildefs.h"
+#include "wolapi/wolapi.h"
+#include "wolapi/wolapi_i.c"
 #include "wonline.h"
 #include "worlddom.h"
 #include "wsproto.h"
@@ -67,12 +71,20 @@
 #include <atlbase.h>  /// ERROR: atlimpl.cpp is obsolete. Please remove it from your project.
 extern CComModule _Module;  // Required for COM - must be between atlbase.h and atlcom.h.  Funky, no?
 #include <atlcom.h>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <commctrl.h> /// Needed for the PBM_ progress bar messages.
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <shellapi.h>
 #include <windows.h>
+#endif
 
 #define strncasecmp _strnicmp
 #define strcasecmp	_stricmp

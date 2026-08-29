@@ -32,7 +32,11 @@
 #pragma once
 
 //#define	HMI_DRIVER	TRUE
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include "dsound.h"
+#endif
 #include "soscomp.h"
 
 /*

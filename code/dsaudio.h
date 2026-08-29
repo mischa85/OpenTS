@@ -16,7 +16,11 @@
 #include "audio.h"
 #include "soundint.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <dsound.h>
+#endif
 
 #define INVALID_SAMPLE_HANDLE -1
 

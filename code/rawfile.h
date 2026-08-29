@@ -41,7 +41,11 @@
 #include <climits>
 #include <cstddef>
 #include <cstdlib>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windows.h>
+#endif
 
 #define NULL_HANDLE INVALID_HANDLE_VALUE
 #define HANDLE_TYPE HANDLE

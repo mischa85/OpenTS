@@ -45,7 +45,11 @@
 #include "utracker.h"
 
 #include <cstring>
+#if defined(__EMSCRIPTEN__)
+#include "winsockcompat.h"
+#else
 #include <winsock.h>
+#endif
 
 
 /***********************************************************************************************

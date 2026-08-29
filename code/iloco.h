@@ -20,7 +20,11 @@
 #include "visual.hh"
 #include "zgrad.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <comdef.h>
+#endif
 
 /// Names and comments from TLBs
 

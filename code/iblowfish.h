@@ -9,7 +9,11 @@
 
 #pragma once
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <comdef.h>
+#endif
 
 /// Names and comments from TLBs
 

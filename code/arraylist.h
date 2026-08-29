@@ -20,7 +20,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <math.h>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <new.h>
+#endif
+#endif
 
 
 template <class T>

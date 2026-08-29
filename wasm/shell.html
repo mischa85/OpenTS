@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+     O P E N  T S
+
+     SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright 2026 OpenTS contributors
+
+     See LICENSE.md for applicable additional terms and warranty disclaimers.
+
+     Emscripten's default shell sizes its canvas from the module and offers no way to
+     drive the renderer seam from the page. This one lays the canvas out with CSS and
+     lets the module read the result back, which is what puts Backend_On_Resize on a
+     real path rather than a synthetic one.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenTS renderer seam</title>
+<style>
+	:root { color-scheme: dark; }
+	body {
+		margin: 0;
+		background: #16181c;
+		color: #d8dbe0;
+		font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	}
+	header { padding: 10px 14px; border-bottom: 1px solid #2a2e35; }
+	h1 { margin: 0 0 6px; font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+	#controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+	button {
+		font: inherit;
+		background: #24282f;
+		color: #d8dbe0;
+		border: 1px solid #3a3f48;
+		border-radius: 4px;
+		padding: 3px 10px;
+		cursor: pointer;
+	}
+	button:hover { background: #2e333b; }
+	button[aria-pressed="true"] { background: #3d5a80; border-color: #5b82b4; }
+	#status { padding: 8px 14px; white-space: pre-wrap; color: #9aa3ae; }
+	#stage { padding: 14px; }
+	/* Outlined rather than bordered: the module measures the laid out box, and a border
+	   would be counted into the drawing buffer it asks the renderer for. */
+	#canvas {
+		display: block;
+		width: 800px;
+		height: 500px;
+		background: #000;
+		outline: 1px solid #2a2e35;
+		max-width: 100%;
+	}
+</style>
+</head>
+<body>
+
+<header>
+	<h1>OpenTS &mdash; bgfx renderer seam on a canvas</h1>
+	<div id="controls">
+		<span>scale:</span>
+		<button id="mode-nearest" onclick="OpenTS_Mode(0)" aria-pressed="false">NEAREST</button>
+		<button id="mode-linear" onclick="OpenTS_Mode(1)" aria-pressed="false">LINEAR</button>
+		<button id="mode-pixelart" onclick="OpenTS_Mode(2)" aria-pressed="true">PIXELART</button>
+		<span>&nbsp;canvas:</span>
+		<button onclick="OpenTS_Size(800, 500)">800&times;500</button>
+		<button onclick="OpenTS_Size(1024, 768)">1024&times;768</button>
+		<button onclick="OpenTS_Size(640, 480)">640&times;480</button>
+		<button onclick="OpenTS_Size(500, 700)">500&times;700</button>
+	</div>
+</header>
+
+<div id="status">starting&hellip;</div>
+
+<div id="stage"><canvas id="canvas" tabindex="-1"></canvas></div>
+
+<script>
+	// The module reports through this every thirty presents. It is also what an
+	// automated check reads to tell a running loop from one that merely started.
+	window.OpenTS_State = { renderer: "?", mode: "?", presents: 0 };
+
+	function OpenTS_Status(renderer, mode, canvasw, canvash, destx, desty, destw, desth) {
+		window.OpenTS_State.renderer = renderer;
+		window.OpenTS_State.mode = mode;
+		window.OpenTS_State.presents = Module._Demo_Present_Count();
+		document.getElementById("status").textContent =
+			"renderer " + renderer +
+			"  |  frame 640x480 565" +
+			"  |  scale " + mode +
+			"  |  drawing buffer " + canvasw + "x" + canvash +
+			"  |  destination " + destw + "x" + desth + " at " + destx + "," + desty +
+			"  |  presented " + window.OpenTS_State.presents;
+	}
+
+	function OpenTS_Mode(mode) {
+		Module._Demo_Set_Scale_Mode(mode);
+		var ids = ["mode-nearest", "mode-linear", "mode-pixelart"];
+		for (var i = 0; i < ids.length; i++) {
+			document.getElementById(ids[i]).setAttribute("aria-pressed", i === mode ? "true" : "false");
+		}
+	}
+
+	// Only the CSS box is set. The module reads the laid out size back and drives
+	// Backend_On_Resize itself, so the resize path is the one a real page would take.
+	function OpenTS_Size(width, height) {
+		var canvas = document.getElementById("canvas");
+		canvas.style.width = width + "px";
+		canvas.style.height = height + "px";
+	}
+
+	var Module = {
+		canvas: document.getElementById("canvas"),
+		print: function (text) { console.log(text); },
+		printErr: function (text) { console.error(text); },
+	};
+</script>
+
+{{{ SCRIPT }}}
+
+</body>
+</html>

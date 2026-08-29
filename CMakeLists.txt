@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
 
-project(OpenTS VERSION 0.2.0 LANGUAGES C CXX ASM_MASM)
+project(OpenTS VERSION 0.2.0 LANGUAGES C CXX)
 
 # A SemVer prerelease label, which project() cannot carry because it takes numbers only. Set it
 # to "beta1" and the version reads 0.1.0-beta1; leave it empty outside a prerelease series. The
@@ -11,8 +11,14 @@ set(OPENTS_VERSION_PRERELEASE "")
 # alone. Every other build names the commit it came from as well.
 option(OPENTS_OFFICIAL_BUILD "Build as an official release of the declared version" OFF)
 
-if(NOT MSVC OR MSVC_VERSION LESS 1930)
-    message(FATAL_ERROR "OpenTS requires the Visual Studio 2022 MSVC toolchain.")
+# Visual Studio 2022 is the supported toolchain. Emscripten configures the WebAssembly
+# target, which docs/BUILDING.md records as in progress and unsupported.
+if(EMSCRIPTEN)
+    message(STATUS "OpenTS: configuring the in-progress, unsupported WebAssembly target.")
+elseif(NOT MSVC OR MSVC_VERSION LESS 1930)
+    message(FATAL_ERROR
+        "OpenTS requires the Visual Studio 2022 MSVC toolchain, or the Emscripten "
+        "toolchain for the in-progress WebAssembly target.")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -56,7 +62,14 @@ add_custom_target(OpenTSBuildStamp ALL
 
 add_subdirectory(thirdparty)
 add_subdirectory(code)
-add_subdirectory(code/language)
+add_subdirectory(wasm)
 
 enable_testing()
+
+# The localized strings ship in a Win32 resource DLL, which the WebAssembly target has no
+# way to build or load.
+if(NOT EMSCRIPTEN)
+    add_subdirectory(code/language)
+endif()
+
 add_subdirectory(tests)

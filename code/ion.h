@@ -13,7 +13,11 @@
 
 #include "theme.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <unknwn.h>
+#endif
 
 class SaveStreamClass;
 class ShapeSet;

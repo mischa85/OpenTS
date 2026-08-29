@@ -61,7 +61,7 @@ int WestwoodOnline_PortNumber = 1234;
 #include "unit.h"
 #include "unittype.h"
 #include "win.h"
-#include "wolapi\wolapi.h"
+#include "wolapi/wolapi.h"
 #include "wonline.h"
 
 #define FIELD_GAME_ID							"IDNO"

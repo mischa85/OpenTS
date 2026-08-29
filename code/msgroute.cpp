@@ -14,7 +14,11 @@
 #include "vidscale.h"
 #include "win.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windowsx.h>
+#endif
 
 
 // Set while a re-targeted message is being delivered, so the receiving procedure's own

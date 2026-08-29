@@ -13,7 +13,11 @@
 
 #include "diff.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <comdef.h>
+#endif
 
 class SaveStreamClass;
 

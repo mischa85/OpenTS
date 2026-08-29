@@ -36,7 +36,11 @@
 #endif
 
 #ifdef _WINDOWS
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <winioctl.h>
+#endif
 #endif
 
 #ifdef _MSC_VER

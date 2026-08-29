@@ -36,5 +36,9 @@
 */
 
 #pragma warning(disable:4201)
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <mmsystem.h>
+#endif
 #pragma warning(default:4201)

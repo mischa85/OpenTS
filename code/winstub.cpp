@@ -79,7 +79,11 @@
 #include "opents_version.h"
 
 #include <algorithm>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <commctrl.h>
+#endif
 
 int		ShowCommand;
 HWND	MainWindow;

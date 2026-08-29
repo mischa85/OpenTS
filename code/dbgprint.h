@@ -15,7 +15,11 @@
 
 #include "sun.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <sal.h>
+#endif
 
 void Debug_Init(void);
 void Debug_Init_Console(void);

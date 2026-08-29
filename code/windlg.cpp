@@ -20,8 +20,12 @@
 #include "video.h"
 #include "win.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <commctrl.h>
 #include <windows.h>
+#endif
 
 
 BOOL CALLBACK Resize_Dialog(HWND window, LPARAM lParam);

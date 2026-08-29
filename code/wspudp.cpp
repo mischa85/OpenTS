@@ -50,7 +50,11 @@
 
 #include <cstdio>
 #include <cstring>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <iphlpapi.h>
+#endif
 
 
 extern int WestwoodOnline_PortNumber;

@@ -1130,7 +1130,7 @@ void MSPrintAnim::Redraw(Surface * surface, Rect const * rect)
 		int y = YPos;
 
 		unsigned printed = Get_Printed_Char_Count();
-		unsigned end = std::min(printed, strlen(String));
+		unsigned end = std::min<unsigned>(printed, (unsigned)strlen(String));
 
 		for (unsigned char_index = LineStart; char_index < end; char_index++) {
 			if (String[char_index] == '\n') {

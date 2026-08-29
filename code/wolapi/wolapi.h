@@ -29,16 +29,24 @@
 #define __REQUIRED_RPCNDR_H_VERSION__ 440
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <rpc.h>
 #include <rpcndr.h>
+#endif
 
 #ifndef __RPCNDR_H_VERSION__
 #error this stub requires an updated version of <rpcndr.h>
 #endif // __RPCNDR_H_VERSION__
 
 #ifndef COM_NO_WINDOWS_H
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windows.h>
 #include <ole2.h>
+#endif
 #endif /*COM_NO_WINDOWS_H*/
 
 #ifndef __WOLAPI_h__
@@ -171,8 +179,12 @@ typedef struct Chat2 Chat2;
 
 
 /* header files for imported files */
+#if defined(__EMSCRIPTEN__)
+#include "../win32compat.h"
+#else
 #include <oaidl.h>
 #include <ocidl.h>
+#endif
 
 void __RPC_FAR * __RPC_USER MIDL_user_allocate(size_t);
 void __RPC_USER MIDL_user_free( void __RPC_FAR * ); 

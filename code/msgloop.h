@@ -31,7 +31,11 @@
 
 #pragma once
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <windows.h>
+#endif
 
 // Main message handler.
 void Windows_Message_Handler(void);

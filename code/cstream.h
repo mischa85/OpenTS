@@ -11,8 +11,12 @@
 
 #include "ilinkstm.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <comdef.h>
 #include <unknwn.h>
+#endif
 
 class CStreamClass : public IStream, public ILinkStream
 {

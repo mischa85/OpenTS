@@ -43,7 +43,11 @@
 #include "voc.hh"
 
 #include <algorithm>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <new.h>
+#endif
 
 
 /***************************************************************************

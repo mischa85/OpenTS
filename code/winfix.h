@@ -44,7 +44,11 @@
 
 #include "win.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <commctrl.h>
+#endif
 
 /*
  * Custom messages for the TreeView drag-and-drop helpers below. The helpers

@@ -18,11 +18,19 @@
 #include "opents_build.h"
 #include "win.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
 #include <shellapi.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
+#if defined(__EMSCRIPTEN__)
+#include "crtcompat.h"
+#else
 #include <conio.h>
+#endif
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -40,7 +48,7 @@ static char const DebugTruncationNotice[] = "\n*** Log size limit reached. Nothi
 
 static constexpr size_t DEBUG_MESSAGE_MAX = 4096;
 static constexpr unsigned DEBUG_LOG_MAX_AGE_DAYS = 14;
-static constexpr unsigned __int64 DEBUG_LOG_MAX_BYTES = 64ui64 * 1024ui64 * 1024ui64;
+static constexpr unsigned __int64 DEBUG_LOG_MAX_BYTES = 64ULL * 1024ULL * 1024ULL;
 static constexpr unsigned __int64 DEBUG_LOG_NOTICE_RESERVE = sizeof(DebugTruncationNotice) - 1;
 static constexpr unsigned __int64 DEBUG_LOG_BUDGET = DEBUG_LOG_MAX_BYTES - DEBUG_LOG_NOTICE_RESERVE;
 
@@ -117,7 +125,7 @@ bool Delete_Files_Older_Than(char const * directory, char const * pattern, unsig
 	cutoff.LowPart = now_stamp.dwLowDateTime;
 	cutoff.HighPart = now_stamp.dwHighDateTime;
 
-	unsigned __int64 const age = (unsigned __int64)days * 24ui64 * 60ui64 * 60ui64 * 10000000ui64;
+	unsigned __int64 const age = (unsigned __int64)days * 24ULL * 60ULL * 60ULL * 10000000ULL;
 	if (cutoff.QuadPart < age) {
 		return(false);
 	}
