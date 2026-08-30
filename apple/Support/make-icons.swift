@@ -27,15 +27,16 @@ let root = URL(fileURLWithPath: #filePath)
 	.deletingLastPathComponent()   // apple
 	.deletingLastPathComponent()   // repository root
 
-let mark = root.appendingPathComponent("manual/site/public/favicon.svg")
+let mark = root.appendingPathComponent("apple/Support/icon.png")
 
 guard let source = NSImage(contentsOf: mark) else {
 	FileHandle.standardError.write(Data("cannot read \(mark.path)\n".utf8))
 	exit(1)
 }
 
-/// The mark's own background, used where iOS will not accept transparency.
-let ground = NSColor(srgbRed: 0x9a / 255.0, green: 0x4f / 255.0, blue: 0x24 / 255.0, alpha: 1)
+/// What stands behind the mark where iOS will not accept transparency. The mark is drawn
+/// for a pale page, so it is given one rather than the near black the game itself uses.
+let ground = NSColor(srgbRed: 0xf3 / 255.0, green: 0xf2 / 255.0, blue: 0xef / 255.0, alpha: 1)
 
 func render(_ size: Int, inset: CGFloat, opaque: Bool) -> Data {
 	let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
@@ -132,6 +133,6 @@ try write(root.appendingPathComponent("apple/iOS/Assets.xcassets/AppIcon.appicon
 	      "platform" : "ios",
 	      "size" : "1024x1024"
 	    }
-	""")]) { _ in render(1024, inset: 0, opaque: true) }
+	""")]) { _ in render(1024, inset: 0.08, opaque: true) }
 
 print("icons written from \(mark.lastPathComponent)")
