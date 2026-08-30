@@ -195,8 +195,19 @@ void GraphicMenuImageItem::On_Visible_Change(bool)
 /// </summary>
 void GraphicMenuImageItem::Update_Images(void)
 {
+	bool standin = false;
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	**	Not every choice was drawn a disabled face, and a choice this target withholds may
+	**	well be one of them. Standing its ordinary face in keeps it on the page, where a
+	**	choice that has simply gone missing would read as a broken menu.
+	*/
+	standin = Visible && !Enabled && DisabledImage == NULL;
+#endif
+
 	if (Image != NULL) {
-		Image->Set_Active(Visible && Enabled && !Selected);
+		Image->Set_Active((Visible && Enabled && !Selected) || standin);
 	}
 	if (HighlightImage != NULL) {
 		HighlightImage->Set_Active(Visible && Enabled && Selected);

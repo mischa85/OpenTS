@@ -178,6 +178,12 @@ The build offers no `--preload-file` bundling. [README](../README.md) is
 explicit that OpenTS supplies the engine and not the game data, so a deployment
 that serves an image is one serving data it has the right to serve.
 
+The menu withholds what a page cannot play. The three network games and the World
+Domination Tour are shown but not offered, and the exit is dropped entirely, since
+there is nothing to quit back to (`code/newmenu.cpp:199`). A choice the game data drew
+no disabled face for keeps its ordinary face rather than disappearing
+(`code/grphmimg.cpp:196`), so the menu reads as complete.
+
 The first-run `EVA.VQA` sequence does not play here. It belongs to a first run
 that follows an installation, and a page installs nothing, so it covers no
 setup; `PlayIntro=true` under `[Intro]` in `SUN.INI` asks for it anyway

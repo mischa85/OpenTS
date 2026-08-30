@@ -196,6 +196,30 @@ int NewMenuClass::Display_Game_Select_Menu(char const * section)
 }
 
 
+#if defined(__EMSCRIPTEN__)
+/// <summary>
+/// Withholds the menu options a page cannot play.
+/// </summary>
+/// <remarks>
+/// A page has no sockets and no serial line, so the three network games and the tour that
+/// is played over them are shown but not offered. The exit goes further and is dropped
+/// entirely: there is nothing to quit back to, and a canvas the engine has stopped drawing
+/// to is worse than no choice at all.
+/// </remarks>
+/// <param name="options">The menu items that should be shown disabled.</param>
+/// <param name="hidden">The menu items that should not appear at all.</param>
+static void Hide_Unplayable_Options(DynamicVectorClass<int> & options, DynamicVectorClass<int> & hidden)
+{
+	options.Add(NSEL_LAN);
+	options.Add(NSEL_INTERNET);
+	options.Add(NSEL_SERIAL_MODEM);
+	options.Add(NSEL_WDT);
+
+	hidden.Add(NSEL_EXIT);
+}
+#endif
+
+
 /// <summary>
 /// Displays a menu page and waits for the player to choose.
 /// This routine will build the menu described by the INI section, adopt the background
@@ -303,6 +327,10 @@ int NewMenuClass::Display_Tiberian_Sun_Menu(void)
 		options.Add(NSEL_LOAD_MISSION);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	Hide_Unplayable_Options(options, hidden);
+#endif
+
 	return(Display_Menu("TiberianSunMenu", options, hidden));
 }
 
@@ -325,6 +353,10 @@ int NewMenuClass::Display_Firestorm_Menu(void)
 	if (!LoadOptionsClass().Files_Present()) {
 		options.Add(NSEL_LOAD_MISSION);
 	}
+
+#if defined(__EMSCRIPTEN__)
+	Hide_Unplayable_Options(options, hidden);
+#endif
 
 	return(Display_Menu("FirestormMenu", options, hidden));
 }
