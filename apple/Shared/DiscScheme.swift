@@ -33,10 +33,20 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 	/// shell can honestly say is happening while it does.
 	private(set) var delivered: UInt64 = 0
 
-	/// The last thing that went wrong reading an image, if anything has. A disc that
+	/// The last read that could not be completed at all, if there has been one. A disc that
 	/// cannot be read leaves the engine reporting a missing file, which says nothing about
 	/// the disk or the network that actually failed.
+	///
+	/// A read that failed and then succeeded on a later attempt is not recorded here: it
+	/// belongs to the log, because nothing was lost and there is nothing to decide.
 	private(set) var failure: String?
+
+	/// How many times one ranged read is tried before it is called a failure.
+	///
+	/// A cold start makes hundreds of these, and a public mirror answering one of them
+	/// badly is ordinary rather than evidence about the mirror. A retry costs one block's
+	/// latency; leaving it out costs the run.
+	private static let attempts = 3
 
 	private let log = Logger(subsystem: "org.opents.shell", category: "disc")
 
@@ -125,6 +135,16 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 		if failure == nil { failure = text }
 		lock.unlock()
 		log.error("\(text, privacy: .public)")
+	}
+
+	/// Forgets what a previous run learned and what went wrong in it, so a fresh run is
+	/// judged on its own reads rather than on one a restart was meant to leave behind.
+	func reset() {
+		lock.lock()
+		delivered = 0
+		failure = nil
+		pinned = [:]
+		lock.unlock()
 	}
 
 	// MARK: - The bundled engine
@@ -241,8 +261,13 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 	/// Passes the range on to a server and hands back what it answered. This is the case a
 	/// page could do for itself only if the server had said it could; here no same-origin
 	/// rule and no preflight applies, because the request is not the page's.
+	///
+	/// A read that does not come back usable is tried again before it is called a failure.
+	/// One bad answer says nothing about the host: a mirror serving a run's hundreds of
+	/// ranged reads will occasionally answer one of them with an error and the next with
+	/// the bytes.
 	private func serveRemote(_ address: URL, identity: String, range: String?,
-	                         _ task: WKURLSchemeTask, _ url: URL) {
+	                         _ task: WKURLSchemeTask, _ url: URL, attempt: Int = 1) {
 		lock.lock(); let target = pinned[identity] ?? address; lock.unlock()
 
 		var request = URLRequest(url: target)
@@ -250,37 +275,68 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 		if let range { request.setValue(range, forHTTPHeaderField: "Range") }
 
 		session.dataTask(with: request) { [weak self] data, response, error in
-			guard let self else { return }
+			guard let self, self.holds(task) else { return }
 
-			guard let http = response as? HTTPURLResponse else {
-				// A pin that no longer answers is given up, so the next read resolves afresh.
+			let http = response as? HTTPURLResponse
+			let name = address.lastPathComponent
+
+			// What the transport requires of a ranged read is exact: a partial answer it
+			// can take a Content-Range out of. Anything else is a read that did not
+			// happen. What it says about the host is not knowable from one answer, so
+			// what is recorded is what arrived and nothing beyond it.
+			var wrong: String?
+			if let http {
+				if range != nil && http.statusCode != 206 {
+					wrong = "the server answered \(http.statusCode) where a partial "
+					      + "response (206) was required"
+				}
+			} else {
+				wrong = error?.localizedDescription ?? "the request did not complete"
+			}
+
+			if let wrong {
+				// A pin is a guess at which host of a mirror to keep asking. A read that
+				// failed is reason enough to stop guessing and resolve the address afresh.
 				self.lock.lock(); self.pinned[identity] = nil; self.lock.unlock()
-				self.note(failure: "\(address.host ?? address.absoluteString) could not be "
-				                 + "reached: \(error?.localizedDescription ?? "no response").")
-				return self.fail(task, url, 502)
+
+				if attempt < Self.attempts {
+					self.log.notice("""
+						\(name, privacy: .public) \(range ?? "whole file", privacy: .public): \
+						\(wrong, privacy: .public); attempt \(attempt) of \(Self.attempts)
+						""")
+
+					let when = DispatchTime.now() + .milliseconds(250 * attempt)
+					DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: when) {
+						self.serveRemote(address, identity: identity, range: range,
+						                 task, url, attempt: attempt + 1)
+					}
+					return
+				}
+
+				self.note(failure: "\(name) could not be read from "
+				                 + "\(address.host ?? address.absoluteString). It was asked "
+				                 + "\(Self.attempts) times, and \(wrong).")
+			} else {
+				if attempt > 1 {
+					self.log.notice("\(name, privacy: .public): read on attempt \(attempt)")
+				}
+
+				if let settled = http?.url, settled != target {
+					self.lock.lock()
+					if self.pinned[identity] == nil { self.pinned[identity] = settled }
+					self.lock.unlock()
+				}
+
+				self.note(read: data?.count ?? 0)
 			}
 
-			if let settled = http.url, settled != target {
-				self.lock.lock()
-				if self.pinned[identity] == nil { self.pinned[identity] = settled }
-				self.lock.unlock()
-			}
-
-			// The transport requires a partial answer and rejects anything else. A server
-			// that ignores the range hands back the whole image for every 64 KiB the engine
-			// wanted, so this is worth naming rather than leaving as a stalled run.
-			if range != nil && http.statusCode != 206 {
-				self.note(failure: "\(address.lastPathComponent) is served by a host that "
-				                 + "does not support ranged requests (it answered "
-				                 + "\(http.statusCode) where 206 was required).")
-			}
+			guard let http else { return self.fail(task, url, 502) }
 
 			var headers: [String: String] = [:]
 			for (key, value) in http.allHeaderFields {
 				headers["\(key)"] = "\(value)"
 			}
 
-			self.note(read: data?.count ?? 0)
 			self.answer(task, url, http.statusCode, headers, data ?? Data())
 		}.resume()
 	}

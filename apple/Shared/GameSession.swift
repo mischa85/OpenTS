@@ -112,6 +112,7 @@ final class GameSession: NSObject {
 	func start() {
 		lastFrames = 0
 		lastSample = Date()
+		handler.reset()
 
 		// Rebuilt per run rather than installed once: what they tell the page depends on
 		// the discs, and those can be changed without quitting.
@@ -132,6 +133,16 @@ final class GameSession: NSObject {
 
 	private func sample() {
 		guard let onStatus else { return }
+
+		// What the shell knows without asking the page, reported first. A read off a disc
+		// is synchronous, so while one is outstanding the page cannot run a script at all
+		// and nothing below would answer -- and that stretch is precisely the one a
+		// progress readout exists for.
+		var carried = Status()
+		carried.frames = lastFrames
+		carried.delivered = handler.delivered
+		carried.failure = handler.failure
+		onStatus(carried)
 
 		state { [weak self] object in
 			guard let self else { return }

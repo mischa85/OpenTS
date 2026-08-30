@@ -5,8 +5,13 @@ built by CMake and copied into the app bundle; the app supplies a window, a menu
 thing a browser cannot: a scheme handler that answers the engine's ranged reads out of a
 disc image on this device.
 
-OpenTS supplies the engine and not the game data. Nothing here names a source for it: a
-fresh installation has no discs and asks for them.
+OpenTS supplies the engine and not the game data. A player points the app at their own
+disc images; until they do, it falls back to the addresses `DiscLibrary.archiveDiscs()`
+holds.
+
+A first launch on those addresses reads its working set over the network before the menu
+can appear, so the window carries a readout of what has been read and how fast while it
+does.
 
 ## What it needs
 
@@ -79,7 +84,14 @@ Either way what is recorded is a bookmark, so the same files reopen on a later l
 without asking again.
 
 Images can also be read from a server that answers ranged requests, entered by address in
-the settings panel. Nothing is supplied: the field is empty and the app knows no address.
+the settings panel. Until a player configures anything, `DiscLibrary` falls back to the
+addresses in `archiveDiscs()`.
+
+A ranged read a server does not answer usably is tried up to three times before it counts
+as a failure, and the address is resolved afresh in between: a run makes hundreds of these
+reads and a public mirror will occasionally answer one of them badly. A read that recovers
+goes to the log and nowhere else. Only a read that stays failed raises the alert, and the
+alert says what the server answered rather than what that would imply about the server.
 
 Local images are read straight off the device, so the engine is told not to cache them —
 there is nothing a cache could make faster. Blocks fetched from a server are kept in

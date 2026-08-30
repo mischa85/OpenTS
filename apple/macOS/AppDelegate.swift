@@ -20,8 +20,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	private var firstRun: SettingsViewController?
 
 	/// Shown over the game until it draws. A cold start reads a working set off the discs
-	/// before there is anything to see, and over a network that is minutes.
+	/// before there is anything to see, and over a network that is minutes; without
+	/// something moving on it, that window reads as a hang.
+	private let spinner = NSProgressIndicator()
 	private let loading = NSTextField(labelWithString: "")
+	private let detail = NSTextField(wrappingLabelWithString: "")
+	private var loadingConstraints: [NSLayoutConstraint] = []
+
+	/// When the run being reported on started, which is what turns its byte count into a
+	/// rate. Averaged over the whole run rather than sampled: a block takes longer than a
+	/// sample does, so an instant rate is zero as often as it is anything.
+	private var loadingSince = Date()
 
 	/// The first failure has been reported; the engine will keep asking and the tenth
 	/// message says no more than the first.
@@ -36,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		window.title = "OpenTS"
 		window.minSize = NSSize(width: 640, height: 480)
 		window.setFrameAutosaveName("OpenTS")
+		// Held in a strong reference for the life of the app, so it must not be released
+		// out from under that reference when it is closed.
+		window.isReleasedWhenClosed = false
 		window.center()
 		window.makeKeyAndOrderFront(nil)
 
@@ -57,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	private func showGame() {
 		firstRun = nil
 		reported = false
+		loadingSince = Date()
 
 		let container = NSView(frame: window.contentLayoutRect)
 		let web = GameSession.shared.webView!
@@ -64,20 +77,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		web.autoresizingMask = [.width, .height]
 		container.addSubview(web)
 
-		loading.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-		loading.textColor = NSColor(calibratedWhite: 0.62, alpha: 1)
 		loading.stringValue = "Starting the engine…"
-		loading.translatesAutoresizingMaskIntoConstraints = false
-		container.addSubview(loading)
-		NSLayoutConstraint.activate([
-			loading.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-			loading.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-		])
+		// A network run has a minutes long stretch with nothing on screen and no way for
+		// the player to tell it from a stall, so it is said outright what is happening.
+		detail.stringValue = DiscLibrary.shared.discs.contains(where: \.isRemote)
+			? "The discs are being read over the network. A first launch fetches what the "
+			+ "game needs before its menu can appear, which takes a few minutes; a later "
+			+ "one reuses what this one keeps."
+			: ""
+
+		loadingBanner.isHidden = false
+		spinner.startAnimation(nil)
+
+		NSLayoutConstraint.deactivate(loadingConstraints)
+		container.addSubview(loadingBanner)
+		loadingConstraints = [
+			loadingBanner.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+			loadingBanner.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+			loadingBanner.widthAnchor.constraint(equalToConstant: 420),
+		]
+		NSLayoutConstraint.activate(loadingConstraints)
 
 		window.contentView = container
 		window.makeFirstResponder(web)
 		GameSession.shared.start()
 	}
+
+	/// The spinner, the line of progress and the sentence under it, built once and moved
+	/// between the containers a restart makes.
+	private lazy var loadingBanner: NSView = {
+		spinner.style = .spinning
+		spinner.controlSize = .small
+		spinner.isIndeterminate = true
+
+		loading.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+		loading.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
+
+		detail.font = .systemFont(ofSize: 11)
+		detail.textColor = NSColor(calibratedWhite: 0.5, alpha: 1)
+		detail.alignment = .center
+		detail.maximumNumberOfLines = 4
+		detail.preferredMaxLayoutWidth = 420
+
+		let head = NSStackView(views: [spinner, loading])
+		head.orientation = .horizontal
+		head.spacing = 8
+
+		let column = NSStackView(views: [head, detail])
+		column.orientation = .vertical
+		column.alignment = .centerX
+		column.spacing = 10
+		column.translatesAutoresizingMaskIntoConstraints = false
+		// It sits on the engine's black canvas whatever the rest of the system is set to,
+		// and the spinner draws itself from the appearance rather than from a colour set
+		// here: in a light one it comes out dark on black and cannot be seen.
+		column.appearance = NSAppearance(named: .darkAqua)
+		return column
+	}()
 
 	private func showFirstRun() {
 		let controller = SettingsViewController(mode: .firstRun) { [weak self] in self?.showGame() }
@@ -86,11 +142,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		window.makeFirstResponder(controller.view)
 	}
 
-	/// The loading line, and the one alert a failed disc gets.
+	/// The loading readout, and the one alert a disc that could not be read gets.
+	///
+	/// Only a read the scheme handler gave up on reaches here. A read that failed and then
+	/// succeeded is in the log and nowhere else: the player has nothing to decide about a
+	/// block they already have.
 	private func show(_ status: GameSession.Status) {
 		if let failure = status.failure, !reported {
 			reported = true
-			loading.isHidden = true
+			hideLoading()
 
 			let alert = NSAlert()
 			alert.messageText = "A disc image could not be read."
@@ -101,18 +161,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 			return
 		}
 
-		guard !loading.isHidden else { return }
+		guard !loadingBanner.isHidden else { return }
 
-		if status.frames > 0 {
-			loading.isHidden = true
+		if status.frames > 0 { return hideLoading() }
+
+		guard status.delivered > 0 else {
+			loading.stringValue = "Starting the engine…"
 			return
 		}
 
 		let read = ByteCountFormatter.string(fromByteCount: Int64(status.delivered),
 		                                     countStyle: .file)
-		loading.stringValue = status.delivered == 0
-			? "Starting the engine…"
-			: "Reading the discs — \(read) so far"
+		let elapsed = Date().timeIntervalSince(loadingSince)
+		guard elapsed >= 2 else {
+			loading.stringValue = "Reading the discs — \(read) so far"
+			return
+		}
+
+		let rate = ByteCountFormatter.string(fromByteCount: Int64(Double(status.delivered) / elapsed),
+		                                     countStyle: .file)
+		loading.stringValue = "Reading the discs — \(read) at \(rate)/s"
+	}
+
+	private func hideLoading() {
+		spinner.stopAnimation(nil)
+		loadingBanner.isHidden = true
 	}
 
 	// MARK: - Menu
@@ -187,14 +260,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 			return
 		}
 
+		// The panel is kept rather than rebuilt: closing it only orders it out, and the
+		// branch above reopens and refreshes the one that is already there.
 		let controller = SettingsViewController(mode: .settings) { [weak self] in
 			self?.settingsWindow?.close()
-			self?.settingsWindow = nil
 			self?.showGame()
 		}
 
 		let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
 		                     styleMask: [.titled, .closable], backing: .buffered, defer: false)
+		// A window built this way releases itself when it is closed, which would leave the
+		// reference kept here pointing at freed memory the next time the panel is asked
+		// for. It is owned by that reference instead, and closing only orders it out.
+		panel.isReleasedWhenClosed = false
 		panel.title = "OpenTS Settings"
 		panel.contentViewController = controller
 		panel.center()
