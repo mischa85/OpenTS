@@ -535,6 +535,17 @@ void Browser_Service(void)
 
 	if (Measure_Canvas()) {
 
+		/*
+		 * The window the engine believes it has covers the screen, and on a page the screen
+		 * is the canvas. Mouse messages are hit tested against that window's rectangle in
+		 * the canvas's own pixels, so a canvas that has outgrown it drops every event past
+		 * the old edge -- the cursor still tracks, because its position never came from a
+		 * message, and the clicks simply stop working.
+		 */
+		if (MainWindow != NULL) {
+			MoveWindow(MainWindow, 0, 0, _CanvasWidth, _CanvasHeight, FALSE);
+		}
+
 		// The presenter follows the canvas at once: the frame it already holds is simply
 		// scaled into the new window, so the picture is never absent while the window is
 		// being dragged.
