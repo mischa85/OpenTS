@@ -120,19 +120,19 @@ class ISOBlockIndexClass
 
 		/*
 		** How much of an image may be kept when the browser will not say how much the origin
-		** is allowed. The working set of a mission is a few tens of megabytes, so this holds
-		** one comfortably while staying far enough under any plausible quota that the store
-		** is not the reason a saved game will not fit.
+		** is allowed. The archives fetched from a disc come to a little over a hundred and
+		** forty megabytes, and an image that cannot hold its own archives refetches them on
+		** every run, so this is sized to hold them rather than to hold one mission's reading.
 		*/
-		static constexpr std::uint64_t STORE_LIMIT = 64ull * 1024ull * 1024ull;
+		static constexpr std::uint64_t STORE_LIMIT = 160ull * 1024ull * 1024ull;
 
 		/*
-		** And the most one may be given when it does say. A disc's data archives come to
-		** something over a hundred and fifty megabytes at the largest, so this holds a whole
-		** disc's worth with room to spare; past that the discs would be taking a share of a
-		** large quota that nothing about them earns.
+		** And the most one may be given when it does say. Three discs are mounted and each
+		** brings its own archives, so a ceiling that fits one disc is a ceiling the second
+		** evicts the first out of. This fits all three, past which the discs would be taking
+		** a share of a large quota that nothing about them earns.
 		*/
-		static constexpr std::uint64_t STORE_MAX = 256ull * 1024ull * 1024ull;
+		static constexpr std::uint64_t STORE_MAX = 512ull * 1024ull * 1024ull;
 
 		/*
 		** And what share of the origin's allowance one image may take. A set is a handful of
@@ -525,6 +525,28 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 			std::vector<unsigned char> Data;
 		};
 
+		// The read a fetch is serving. What is fetched for it may start earlier and run
+		// longer, since a read shorter than a block is served out of the block that holds
+		// it, so this and not the span is what says where the engine was waiting.
+		struct ReadType {
+			std::uint64_t Offset;
+			unsigned int Length;
+
+			/// <summary>The bytes of a fetched span this read is the one waiting for.</summary>
+			/// <param name="offset">Where the span begins.</param>
+			/// <param name="length">How long it is.</param>
+			ReadType Within(std::uint64_t offset, unsigned int length) const
+			{
+				std::uint64_t const first = (Offset > offset) ? Offset : offset;
+				std::uint64_t const stop = offset + length;
+				std::uint64_t const last = (Offset + Length < stop) ? (Offset + Length) : stop;
+
+				if (last <= first) return(*this);
+
+				return(ReadType{first, (unsigned int)(last - first)});
+			}
+		};
+
 		// Whether the run has reached the point where the database may be waited on at all.
 		enum StoreStateType {
 			STORE_UNTRIED,
@@ -599,19 +621,23 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 	static constexpr double WASTE_SHARE = 0.10;
 	static constexpr std::uint64_t WASTE_FLOOR = 1024ull * 1024ull;
 
-		bool Transfer(std::uint64_t offset, void * buffer, unsigned int length);
-		bool Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length);
-		BlockType const * Block(std::uint64_t index);
+		bool Transfer(std::uint64_t offset, void * buffer, unsigned int length,
+			ReadType const & read);
+		bool Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length,
+			ReadType const & read);
+		BlockType const * Block(std::uint64_t index, ReadType const & read);
 
 		void Look_Ahead(void);
-		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length);
+		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length,
+			ReadType const & read);
 		void Ahead_Drop(void);
 		void Ahead_Drop(std::uint64_t first, std::uint64_t stop);
 		void Soon(std::uint64_t offset, std::uint64_t length);
 		void Soon_Keep(void);
 
 		bool Store_Ready(void);
-		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
+		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length,
+			ReadType const & read);
 		void Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length,
 			ISOBlockIndexClass::AdmitType how);
 		void Store_Write(void);

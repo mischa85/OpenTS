@@ -760,6 +760,164 @@ void Check_Image_Identity(void)
 
 
 /*
+**	Stands in for the transport for the length of a read rather than a probe. Every range is
+**	answered out of a pattern the harness can check, and each answer is made to take a few
+**	milliseconds so that the read is recorded as a stall the way a slow link's would be.
+*/
+void Serve_Slowly(char const * page, double total)
+{
+	EM_ASM({
+		globalThis.location = {href: UTF8ToString($0)};
+
+		var total = $1;
+
+		globalThis.XMLHttpRequest = function () {
+			var answer = this;
+			var first = 0;
+			var last = 0;
+
+			answer.status = 0;
+			answer.response = null;
+			answer.responseURL = "";
+			answer.open = function () {};
+			answer.overrideMimeType = function () {};
+			answer.setRequestHeader = function (name, value) {
+				if (("" + name).toLowerCase() !== "range") return;
+
+				var span = ("" + value).split("=")[1];
+				var dash = span.indexOf("-");
+
+				first = parseInt(span.substring(0, dash), 10);
+				last = parseInt(span.substring(dash + 1), 10);
+			};
+			answer.send = function () {
+				var count = last - first + 1;
+				var bytes = new Uint8Array(count);
+
+				for (var index = 0; index < count; index++) {
+					bytes[index] = (first + index) & 255;
+				}
+
+				answer.response = bytes.buffer;
+				answer.status = 206;
+
+				var until = performance.now() + 3;
+				while (performance.now() < until) {}
+			};
+			answer.getResponseHeader = function (name) {
+				var wanted = ("" + name).toLowerCase();
+				if (wanted === "content-range") return "bytes " + first + "-" + last + "/" + total;
+				if (wanted === "etag") return "\"slow\"";
+				return null;
+			};
+		};
+	}, page, total);
+}
+
+
+/*
+**	The last line the stall record wrote, or an empty string when it has written none.
+*/
+std::string Last_Stall(void)
+{
+	char line[256];
+
+	line[0] = '\0';
+
+	EM_ASM({
+		var state = globalThis.OpenTS_State;
+		var stalls = (state && state.stalls) ? state.stalls : [];
+		var text = stalls.length > 0 ? "" + stalls[stalls.length - 1] : "";
+		var count = 0;
+
+		while (count < text.length && count + 1 < $1) {
+			HEAPU8[$0 + count] = text.charCodeAt(count) & 255;
+			count++;
+		}
+
+		HEAPU8[$0 + count] = 0;
+	}, line, (int)sizeof(line));
+
+	return(std::string(line));
+}
+
+
+std::string Stall_Field(std::string const & line, unsigned int index)
+{
+	std::size_t cursor = 0;
+
+	for (;;) {
+		std::size_t stop = line.find(' ', cursor);
+		if (stop == std::string::npos) stop = line.size();
+
+		if (index == 0) return(line.substr(cursor, stop - cursor));
+		if (stop == line.size()) return(std::string());
+
+		cursor = stop + 1;
+		index--;
+	}
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	What a stall says it was waiting for. A read shorter than a block is served out of the
+**	whole block that holds it, and the block starts wherever the arithmetic puts it -- as
+**	much as a block before the read. Recording the block instead of the read names whatever
+**	file the image happens to carry in front of the one being opened, which turns the first
+**	read of an archive into a read of the installer sitting ahead of it and sends anyone
+**	reading the record after the wrong thing.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Stall_Record(void)
+{
+	char const * const page = "https://player.example/game/";
+	double const total = 1048576.0;
+
+	ISOHttpSourceClass source;
+
+	Serve_Slowly(page, total);
+
+	EM_ASM({
+		if (globalThis.OpenTS_State) globalThis.OpenTS_State.stalls = [];
+	});
+
+	Check(source.Open("https://mirror.example/discs/slow.iso"), "an image on a slow link opens");
+
+	/*
+	**	A read of sixteen bytes a long way into the block that holds them. The block begins
+	**	at 65536 and the read at 100000, which is what the record has to tell apart.
+	*/
+	unsigned char scrap[16];
+
+	Check(source.Read_At(100000, scrap, sizeof(scrap)), "a read shorter than a block is served");
+
+	std::string line = Last_Stall();
+
+	Check(Stall_Field(line, 3) == "100000", "and the stall names the offset the read asked for");
+	Check(Stall_Field(line, 4) == "16", "and the length it asked for");
+	Check(Stall_Field(line, 6) == "demand", "as a read the engine waited on");
+
+	/*
+	**	A read that is already a whole block is fetched as it stands, so the read and the
+	**	span are the same thing and the record says so.
+	*/
+	std::vector<unsigned char> whole(ISO_BLOCK_SIZE);
+
+	Check(source.Read_At(262144, whole.data(), (unsigned int)whole.size()),
+		"a read of a whole block is served");
+
+	line = Last_Stall();
+
+	Check(Stall_Field(line, 3) == "262144" && Stall_Field(line, 4) == "65536",
+		"and is recorded as the block it both asked for and fetched");
+
+	source.Close();
+	Stop_Serving();
+}
+
+
+/*
 **	------------------------------------------------------------------------------------
 **	What the link costs, and what the read ahead is worth doing because of it. The whole
 **	point is that none of it is a constant: the same code reads a disc on this machine and
@@ -1455,6 +1613,7 @@ int main(int argc, char ** argv)
 	Check_Several_Images();
 	Check_Block_Index();
 	Check_Image_Identity();
+	Check_Stall_Record();
 	Check_Link();
 	Check_Read_Ahead();
 	Check_Read_Runs();

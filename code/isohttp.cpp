@@ -2345,7 +2345,8 @@ void ISOHttpSourceClass::Look_Ahead(void)
 /// <remarks>A span whose bytes are already here costs a copy and no suspension at all,
 /// which is the case the window exists to produce. One still in flight is waited on, and
 /// that wait is legal only underneath the promising export.</remarks>
-bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length)
+bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length,
+	ReadType const & read)
 {
 #if defined(OPENTS_WASM_JSPI)
 	if (Url.empty()) return(false);
@@ -2371,7 +2372,7 @@ bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsign
 
 	if (ISO_Http_Ahead_Wait(Url.c_str(), (double)offset, buffer, length) != 1) return(false);
 
-	Account_For_Stall(Meter, offset, length, emscripten_get_now() - stalled, STALL_AHEAD);
+	Account_For_Stall(Meter, read.Offset, read.Length, emscripten_get_now() - stalled, STALL_AHEAD);
 	_AheadServed++;
 	_AheadWaited++;
 	return(true);
@@ -2686,7 +2687,8 @@ void ISOHttpSourceClass::Store_Drop(std::vector<std::uint64_t> const & evicted)
 
 /// <summary>Serves a span out of the store, if the store holds all of it.</summary>
 /// <returns>bool; Was the whole span delivered without a request?</returns>
-bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsigned int length)
+bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsigned int length,
+	ReadType const & read)
 {
 #if defined(OPENTS_WASM_JSPI)
 	if (!Store_Ready()) return(false);
@@ -2713,7 +2715,7 @@ bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsign
 		return(false);
 	}
 
-	Account_For_Stall(Meter, offset, length, emscripten_get_now() - stalled, STALL_STORE);
+	Account_For_Stall(Meter, read.Offset, read.Length, emscripten_get_now() - stalled, STALL_STORE);
 	_StoreHits += (unsigned int)(last - first + 1);
 	_StoreBytes += length;
 	return(true);
@@ -2840,12 +2842,12 @@ void ISOHttpSourceClass::Store_Discard(void)
 }
 
 
-bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned int length)
+bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned int length,
+	ReadType const & read)
 {
 	unsigned char * cursor = (unsigned char *)buffer;
 	unsigned int remaining = length;
 	double const stalled = emscripten_get_now();
-	std::uint64_t const wanted = offset;
 
 	Account_For_Transfer(Meter, offset, length);
 
@@ -2887,21 +2889,29 @@ bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned 
 		remaining -= (unsigned int)got;
 	}
 
-	Account_For_Stall(Meter, wanted, length, emscripten_get_now() - stalled, STALL_TRANSFER);
+	Account_For_Stall(Meter, read.Offset, read.Length, emscripten_get_now() - stalled, STALL_TRANSFER);
 	return(true);
 }
 
 
 /// <summary>Delivers a span the store may already hold, and stores it when it does not.</summary>
 /// <remarks>The span is a whole number of whole blocks, which is what makes it storable.</remarks>
-bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length)
+bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length,
+	ReadType const & read)
 {
+	/*
+	**	A span is fetched whole, so it can begin before the read that wanted it and end after
+	**	it. What a stall in here is a wait for is the part of the span the read asked for,
+	**	and that is what the record is given rather than the span.
+	*/
+	ReadType const part = read.Within(offset, length);
+
 	/*
 	**	The look-ahead comes first. What it holds was asked for because the run was heading
 	**	here, so a span it covers is already paid for and asking the store about it would
 	**	only add a wait to bytes that are on the heap.
 	*/
-	if (Ahead_Serve(offset, buffer, length)) {
+	if (Ahead_Serve(offset, buffer, length, part)) {
 		Store_Keep(offset, buffer, length, ISOBlockIndexClass::ADMIT_READ);
 		Look_Ahead();
 		return(true);
@@ -2912,7 +2922,7 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	**	the run for a window to hide and asking for one would be bandwidth spent on bytes the
 	**	browser is already holding. Only a span the network had to carry opens the window.
 	*/
-	if (Store_Serve(offset, buffer, length)) return(true);
+	if (Store_Serve(offset, buffer, length, part)) return(true);
 
 	/*
 	**	The window is opened before this read is paid for rather than after it. The request
@@ -2924,14 +2934,15 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	*/
 	Look_Ahead();
 
-	if (!Transfer(offset, buffer, length)) return(false);
+	if (!Transfer(offset, buffer, length, part)) return(false);
 
 	Store_Keep(offset, buffer, length, ISOBlockIndexClass::ADMIT_READ);
 	return(true);
 }
 
 
-ISOHttpSourceClass::BlockType const * ISOHttpSourceClass::Block(std::uint64_t index)
+ISOHttpSourceClass::BlockType const * ISOHttpSourceClass::Block(std::uint64_t index,
+	ReadType const & read)
 {
 	for (std::size_t position = 0; position < Cache.size(); position++) {
 		if (Cache[position].Index != index) continue;
@@ -2953,7 +2964,7 @@ ISOHttpSourceClass::BlockType const * ISOHttpSourceClass::Block(std::uint64_t in
 	fetched.Index = index;
 	fetched.Data.resize((std::size_t)available);
 
-	if (!Fetch_Run(at, fetched.Data.data(), (unsigned int)available)) return(nullptr);
+	if (!Fetch_Run(at, fetched.Data.data(), (unsigned int)available, read)) return(nullptr);
 
 	if (Cache.size() >= (std::size_t)BLOCK_CACHE) Cache.pop_back();
 	Cache.insert(Cache.begin(), std::move(fetched));
@@ -2966,6 +2977,8 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 	if (buffer == nullptr) return(false);
 	if (length == 0) return(true);
 	if (Length == 0 || offset > Length || (std::uint64_t)length > Length - offset) return(false);
+
+	ReadType const read = {offset, length};
 
 	/*
 	**	A batch left over from a burst of loading is written once the loading stops, so that
@@ -3032,7 +3045,7 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 
 			unsigned int const span = (unsigned int)(count * (std::uint64_t)BLOCK_SIZE);
 
-			if (!Fetch_Run(offset, cursor, span)) return(false);
+			if (!Fetch_Run(offset, cursor, span, read)) return(false);
 
 			cursor += span;
 			offset += span;
@@ -3040,7 +3053,7 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 			continue;
 		}
 
-		BlockType const * const block = Block(index);
+		BlockType const * const block = Block(index, read);
 		if (block == nullptr || within >= block->Data.size()) return(false);
 
 		std::size_t chunk = block->Data.size() - within;
