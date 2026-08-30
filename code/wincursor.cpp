@@ -22,6 +22,7 @@
 #include "xmouse.h"
 
 #if defined(__EMSCRIPTEN__)
+#include "browser.h"
 #include "win32window.h"
 #include <vector>
 #endif
@@ -68,6 +69,20 @@ static int Cursor_Scale(void)
 
 	VideoScaleInfo const & scale = Video_Get_Scale_Info();
 	float smaller = scale.ScaleX < scale.ScaleY ? scale.ScaleX : scale.ScaleY;
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The frame is scaled in device pixels, but a page measures a cursor image in CSS
+	 * pixels and multiplies it up by the display ratio itself. Scaling by the device
+	 * factor would apply that ratio a second time.
+	 */
+	int const devicewidth = Browser_Canvas_Width();
+	int const csswidth = Browser_Canvas_CSS_Width();
+
+	if (devicewidth > 0 && csswidth > 0) {
+		smaller = smaller * (float)csswidth / (float)devicewidth;
+	}
+#endif
 
 	int result = (int)(smaller + 0.5f);
 	if (result < 1) result = 1;
