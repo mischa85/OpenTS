@@ -1,0 +1,515 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		020D9F3BD43BBA81A9B467EA /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEFB56A2D8E35563E5A0260 /* GameSession.swift */; };
+		084529486C9DC01E451096E6 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2ACB780FA4F541DCF77F23 /* main.swift */; };
+		1E2D89FD764F267CA473BDF9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5C53A38A59E0DD3CC680F757 /* Assets.xcassets */; };
+		29B3AFDC6A7D204CCA03A607 /* DiscLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806AD60738496302E18B788B /* DiscLibrary.swift */; };
+		3F4E73D374F085EE04870690 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918139F224EBD907FECF0625 /* AppDelegate.swift */; };
+		410F8A48087FF592C1EE58E1 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DF89461D9ADE3CB5BA2F0E /* main.swift */; };
+		528962DDE1EC24A14E79041C /* DiscLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806AD60738496302E18B788B /* DiscLibrary.swift */; };
+		629A867AEA8EDC038DDAF309 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD500829E89B71052A965B9 /* AppDelegate.swift */; };
+		65CB70BD66AC145A1276AF70 /* RootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A70B321D336696C10DEF23 /* RootViewController.swift */; };
+		79C2C74ABD6D18718BCB59C0 /* DiscScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */; };
+		82F49C4D1A482FDA28562DEE /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD72ADD63365986942F7852 /* SettingsViewController.swift */; };
+		8CE2C7F1A3523D9EF6872BA6 /* DiscScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */; };
+		B2738AA214E8278FF91BA820 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEFB56A2D8E35563E5A0260 /* GameSession.swift */; };
+		D482179A7E5E79BC45D6E27B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 52A35942529197F28D10D991 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0EEC1B790B735FAFF6A7A6ED /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		30DF89461D9ADE3CB5BA2F0E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		5105C52E05E53046F53DC685 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		52A35942529197F28D10D991 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5C53A38A59E0DD3CC680F757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6C7EFCD0F9A92F0DBF00F613 /* OpenTS-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenTS-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		74A70B321D336696C10DEF23 /* RootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewController.swift; sourceTree = "<group>"; };
+		806AD60738496302E18B788B /* DiscLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscLibrary.swift; sourceTree = "<group>"; };
+		893B4417683BD6EDDF08E454 /* OpenTS-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenTS-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		918139F224EBD907FECF0625 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		9CD500829E89B71052A965B9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		9FD72ADD63365986942F7852 /* SettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewController.swift; sourceTree = "<group>"; };
+		BF2ACB780FA4F541DCF77F23 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscScheme.swift; sourceTree = "<group>"; };
+		CFEFB56A2D8E35563E5A0260 /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
+		F6BD4F7DE2B22EACB307F670 /* Sandbox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sandbox.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1C7703D3080BA88CA96BD43B /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				918139F224EBD907FECF0625 /* AppDelegate.swift */,
+				52A35942529197F28D10D991 /* Assets.xcassets */,
+				5105C52E05E53046F53DC685 /* Info.plist */,
+				BF2ACB780FA4F541DCF77F23 /* main.swift */,
+				74A70B321D336696C10DEF23 /* RootViewController.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		203D24641BEDC6E659DB56EF = {
+			isa = PBXGroup;
+			children = (
+				1C7703D3080BA88CA96BD43B /* iOS */,
+				9DD528D5CD84A14B5620BCCF /* macOS */,
+				67C531A6C230DFE1573E2218 /* Shared */,
+				F3ED7F784940CA41360A7085 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		67C531A6C230DFE1573E2218 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				806AD60738496302E18B788B /* DiscLibrary.swift */,
+				C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */,
+				CFEFB56A2D8E35563E5A0260 /* GameSession.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		9DD528D5CD84A14B5620BCCF /* macOS */ = {
+			isa = PBXGroup;
+			children = (
+				9CD500829E89B71052A965B9 /* AppDelegate.swift */,
+				5C53A38A59E0DD3CC680F757 /* Assets.xcassets */,
+				0EEC1B790B735FAFF6A7A6ED /* Info.plist */,
+				30DF89461D9ADE3CB5BA2F0E /* main.swift */,
+				F6BD4F7DE2B22EACB307F670 /* Sandbox.entitlements */,
+				9FD72ADD63365986942F7852 /* SettingsViewController.swift */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
+		F3ED7F784940CA41360A7085 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6C7EFCD0F9A92F0DBF00F613 /* OpenTS-iOS.app */,
+				893B4417683BD6EDDF08E454 /* OpenTS-macOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2493E983F8C24E25D57A3570 /* OpenTS-macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 61A7897769D250EF297173A6 /* Build configuration list for PBXNativeTarget "OpenTS-macOS" */;
+			buildPhases = (
+				5A23CEF90B9159C8A96BABBC /* Sources */,
+				74A5E96472351D27335723BE /* Resources */,
+				655F440316EE2E7244C488F4 /* Bundle the WebAssembly engine */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "OpenTS-macOS";
+			packageProductDependencies = (
+			);
+			productName = "OpenTS-macOS";
+			productReference = 893B4417683BD6EDDF08E454 /* OpenTS-macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		680ECC53B2CBEB5E7994E66F /* OpenTS-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C501AB72F1EF416DA7CD28B9 /* Build configuration list for PBXNativeTarget "OpenTS-iOS" */;
+			buildPhases = (
+				ECCBABDE4CD6B61879576A28 /* Sources */,
+				E44CBA0A982F5AA94CF031E8 /* Resources */,
+				3D557759D72439B7DAEBCAF3 /* Bundle the WebAssembly engine */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "OpenTS-iOS";
+			packageProductDependencies = (
+			);
+			productName = "OpenTS-iOS";
+			productReference = 6C7EFCD0F9A92F0DBF00F613 /* OpenTS-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0F0E3AC62E40E9ED6514DE41 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					2493E983F8C24E25D57A3570 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					680ECC53B2CBEB5E7994E66F = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = B92AF2C1416CF9FB68A10345 /* Build configuration list for PBXProject "OpenTS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 203D24641BEDC6E659DB56EF;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F3ED7F784940CA41360A7085 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2493E983F8C24E25D57A3570 /* OpenTS-macOS */,
+				680ECC53B2CBEB5E7994E66F /* OpenTS-iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		74A5E96472351D27335723BE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1E2D89FD764F267CA473BDF9 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E44CBA0A982F5AA94CF031E8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D482179A7E5E79BC45D6E27B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		3D557759D72439B7DAEBCAF3 /* Bundle the WebAssembly engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle the WebAssembly engine";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/Support/copy-web.sh\"";
+		};
+		655F440316EE2E7244C488F4 /* Bundle the WebAssembly engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle the WebAssembly engine";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/Support/copy-web.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5A23CEF90B9159C8A96BABBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				629A867AEA8EDC038DDAF309 /* AppDelegate.swift in Sources */,
+				528962DDE1EC24A14E79041C /* DiscLibrary.swift in Sources */,
+				79C2C74ABD6D18718BCB59C0 /* DiscScheme.swift in Sources */,
+				B2738AA214E8278FF91BA820 /* GameSession.swift in Sources */,
+				82F49C4D1A482FDA28562DEE /* SettingsViewController.swift in Sources */,
+				410F8A48087FF592C1EE58E1 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ECCBABDE4CD6B61879576A28 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F4E73D374F085EE04870690 /* AppDelegate.swift in Sources */,
+				29B3AFDC6A7D204CCA03A607 /* DiscLibrary.swift in Sources */,
+				8CE2C7F1A3523D9EF6872BA6 /* DiscScheme.swift in Sources */,
+				020D9F3BD43BBA81A9B467EA /* GameSession.swift in Sources */,
+				65CB70BD66AC145A1276AF70 /* RootViewController.swift in Sources */,
+				084529486C9DC01E451096E6 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		29F22686EED4C6FC0C37A18B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "$(OPENTS_ENTITLEMENTS)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				PRODUCT_BUNDLE_IDENTIFIER = org.opents.shell;
+				PRODUCT_NAME = OpenTS;
+				SDKROOT = macosx;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = NO;
+			};
+			name = Release;
+		};
+		2A5109034A30666C4B068863 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				INFOPLIST_FILE = iOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.opents.shell;
+				PRODUCT_NAME = OpenTS;
+				SDKROOT = iphoneos;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		37DF64C19E9FADBA99241936 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				OPENTS_ENTITLEMENTS = "";
+				OPENTS_WEB_DIRS = "$(SRCROOT)/../build-wasm/bin:$(SRCROOT)/../build-wasm-asyncify/bin";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		520F581033A267F8C2B24123 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "$(OPENTS_ENTITLEMENTS)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				PRODUCT_BUNDLE_IDENTIFIER = org.opents.shell;
+				PRODUCT_NAME = OpenTS;
+				SDKROOT = macosx;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = NO;
+			};
+			name = Debug;
+		};
+		8A9793B458A4FAA3859338BA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OPENTS_ENTITLEMENTS = "";
+				OPENTS_WEB_DIRS = "$(SRCROOT)/../build-wasm/bin:$(SRCROOT)/../build-wasm-asyncify/bin";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F950A97E54BE6CFC534AB66E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				INFOPLIST_FILE = iOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.opents.shell;
+				PRODUCT_NAME = OpenTS;
+				SDKROOT = iphoneos;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		61A7897769D250EF297173A6 /* Build configuration list for PBXNativeTarget "OpenTS-macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				520F581033A267F8C2B24123 /* Debug */,
+				29F22686EED4C6FC0C37A18B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B92AF2C1416CF9FB68A10345 /* Build configuration list for PBXProject "OpenTS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A9793B458A4FAA3859338BA /* Debug */,
+				37DF64C19E9FADBA99241936 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C501AB72F1EF416DA7CD28B9 /* Build configuration list for PBXNativeTarget "OpenTS-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A5109034A30666C4B068863 /* Debug */,
+				F950A97E54BE6CFC534AB66E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 0F0E3AC62E40E9ED6514DE41 /* Project object */;
+}

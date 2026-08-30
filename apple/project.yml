@@ -1,0 +1,81 @@
+#                                O P E N  T S
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 OpenTS contributors
+#
+# See LICENSE.md for applicable additional terms and warranty disclaimers.
+#
+# The Xcode project is generated from this file by XcodeGen, so that what a reader has to
+# understand is a target list rather than a pbxproj. See apple/README.md.
+
+name: OpenTS
+options:
+  bundleIdPrefix: org.opents
+  createIntermediateGroups: true
+  defaultConfig: Release
+  minimumXcodeGenVersion: 2.38.0
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    CLANG_ENABLE_MODULES: YES
+    # The web artifacts are copied in by a script phase, which the default sandbox denies.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    # Where that phase takes them from: a JSPI build's bin, then an ASYNCIFY build's.
+    OPENTS_WEB_DIRS: "$(SRCROOT)/../build-wasm/bin:$(SRCROOT)/../build-wasm-asyncify/bin"
+    # The Mac target runs outside the App Sandbox by default, because a sandboxed build
+    # cannot remember the discs a player picked unless it is signed with a real identity:
+    # the system refuses a persistent security scoped bookmark to an ad hoc signature.
+    # A signed build sets this to macOS/Sandbox.entitlements. See apple/README.md.
+    OPENTS_ENTITLEMENTS: ""
+
+targetTemplates:
+  Shell:
+    type: application
+    settings:
+      base:
+        PRODUCT_NAME: OpenTS
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+        GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    postBuildScripts:
+      - name: Bundle the WebAssembly engine
+        script: "\"$SRCROOT/Support/copy-web.sh\""
+        basedOnDependencyAnalysis: false
+
+targets:
+  OpenTS-macOS:
+    templates: [Shell]
+    platform: macOS
+    deploymentTarget: "13.3"
+    sources:
+      - path: Shared
+      - path: macOS
+      - path: macOS/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.opents.shell
+        INFOPLIST_FILE: macOS/Info.plist
+        CODE_SIGN_ENTITLEMENTS: "$(OPENTS_ENTITLEMENTS)"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  OpenTS-iOS:
+    templates: [Shell]
+    platform: iOS
+    deploymentTarget: "16.4"
+    sources:
+      - path: Shared
+      - path: iOS
+      - path: iOS/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.opents.shell
+        INFOPLIST_FILE: iOS/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic

@@ -1,0 +1,113 @@
+# OpenTS for macOS and iOS
+
+A native shell around the WebAssembly engine. The engine, its page and its modules are
+built by CMake and copied into the app bundle; the app supplies a window, a menu, and one
+thing a browser cannot: a scheme handler that answers the engine's ranged reads out of a
+disc image on this device.
+
+OpenTS supplies the engine and not the game data. Nothing here names a source for it: a
+fresh installation has no discs and asks for them.
+
+## What it needs
+
+- Xcode 15 or later (built and run against Xcode 26).
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) to regenerate the project after
+  editing `project.yml`. `brew install xcodegen`.
+- A WebAssembly build of the engine — see [Building OpenTS](../docs/BUILDING.md) for the
+  Emscripten toolchain.
+
+## Building
+
+The engine is built twice, because the two suspension strategies are separate
+configurations and the page chooses between them at load time. WKWebView has no JavaScript
+Promise Integration, so on Apple platforms the page loads the Asyncify module; the JSPI
+module is bundled alongside it so the same app switches to the faster one if WebKit ever
+ships the feature.
+
+```sh
+source ~/emsdk/emsdk_env.sh
+
+emcmake cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DOPENTS_WASM_NODERAWFS=OFF \
+  -DCMAKE_EXE_LINKER_FLAGS="-sEXPORTED_RUNTIME_METHODS=FS,callMain"
+ninja -C build-wasm OpenTS
+
+emcmake cmake -S . -B build-wasm-asyncify -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DOPENTS_WASM_NODERAWFS=OFF -DOPENTS_WASM_SUSPEND=ASYNCIFY \
+  -DCMAKE_EXE_LINKER_FLAGS="-sEXPORTED_RUNTIME_METHODS=FS,callMain"
+ninja -C build-wasm-asyncify OpenTS
+```
+
+Then generate the Xcode project and build:
+
+```sh
+cd apple
+xcodegen generate
+open OpenTS.xcodeproj
+```
+
+`OPENTS_WEB_DIRS` is where the bundling script takes the artifacts from — a colon separated
+list of `bin` directories, defaulting to the two above. Point it elsewhere on the command
+line if your build directories are named differently:
+
+```sh
+xcodebuild -project OpenTS.xcodeproj -scheme OpenTS-macOS -configuration Release \
+  OPENTS_WEB_DIRS="$PWD/../build-wasm/bin:$PWD/../build-wasm-asyncify/bin" build
+```
+
+The build fails rather than producing an app with nothing to run if it finds no page and no
+module.
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `project.yml` | The XcodeGen spec the project is generated from. |
+| `Shared/DiscLibrary.swift` | The configured discs and their persistence as bookmarks. |
+| `Shared/DiscScheme.swift` | The `disc:` scheme: the bundled engine, and ranged reads of an image from a file or a server. |
+| `Shared/GameSession.swift` | The webview, the run's status, and the browser side storage. |
+| `macOS/` | The Mac window, menu and settings panel. |
+| `iOS/` | The iPhone and iPad window and setup screen. |
+| `Support/copy-web.sh` | Copies the page and modules into the bundle at build time. |
+| `Support/make-icons.swift` | Renders the app icons from the project's mark. Run it when the mark changes. |
+
+## Discs
+
+A player points the app at their own images. On macOS that is an open panel; on iOS a
+document picker, or a file dropped into the app's own Documents folder over file sharing.
+Either way what is recorded is a bookmark, so the same files reopen on a later launch
+without asking again.
+
+Images can also be read from a server that answers ranged requests, entered by address in
+the settings panel. Nothing is supplied: the field is empty and the app knows no address.
+
+Local images are read straight off the device, so the engine is told not to cache them —
+there is nothing a cache could make faster. Blocks fetched from a server are kept in
+browser storage, and the settings panel reports how much that is holding and can empty it.
+Emptying deletes the block store by name and leaves saved games, which are stored
+separately on the same origin, where they are.
+
+## Signing
+
+The macOS target is ad hoc signed and runs outside the App Sandbox by default. A sandboxed
+build cannot remember the discs a player picked unless it is signed with a real identity:
+macOS refuses a persistent security scoped bookmark to an ad hoc signature, and the app
+then falls back to a plain bookmark, which the sandbox will not reopen.
+
+For a sandboxed build, set a team and the entitlements:
+
+```sh
+xcodebuild -project OpenTS.xcodeproj -scheme OpenTS-macOS \
+  DEVELOPMENT_TEAM=XXXXXXXXXX CODE_SIGN_STYLE=Automatic \
+  OPENTS_ENTITLEMENTS=macOS/Sandbox.entitlements build
+```
+
+The iOS target builds and runs in the Simulator without signing. A device build needs a
+development team and a provisioning profile for `org.opents.shell`.
+
+## Icons
+
+`Support/make-icons.swift` renders both asset catalogs from
+`manual/site/public/favicon.svg`, the project's own mark. The rendered PNGs are checked in
+so a build needs nothing but Xcode. macOS insets the mark inside the platform's rounded
+shape; iOS fills the square and drops the alpha channel, which iOS icons may not have.
