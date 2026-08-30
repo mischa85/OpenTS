@@ -647,9 +647,8 @@ HRESULT SaveVersionInfo::Load(IStorage *storage)
 /// before the version information moved into a property set.
 /// </summary>
 /// <param name="id">The property identifier naming the stream to open.</param>
-/// <returns>Returns with the result of the read. A failure means the stream is absent or
-/// ended before the text was terminated.</returns>
-/// <remarks>Be sure that the destination buffer is big enough to hold the string.</remarks>
+/// <returns>Returns with the result of the read. A failure means the stream is absent.</returns>
+/// <remarks>Be sure that the destination buffer holds at least 128 characters.</remarks>
 HRESULT SaveVersionInfo::Load_String(IStorage *storage, int id, char *string)
 {
 	*string = '\0';
@@ -662,21 +661,32 @@ HRESULT SaveVersionInfo::Load_String(IStorage *storage, int id, char *string)
 		return(res);
 	}
 
+	/*
+	 * The text ends at its terminator, but the buffer bounds the read as well, so a stream
+	 * that carries no terminator ends the string rather than running off the end of it. The
+	 * conversion is given the count that was read for the same reason: a length measured
+	 * afterwards would be measured in the wrong sized characters on this target.
+	 */
+	WCHAR buf[128];
 	int i = 0;
-	while (true) {
-		WCHAR buf[128];
-		res = stm->Read(&buf[i], sizeof(buf[i]), NULL);
+
+	while (i < ARRAY_SIZE(buf) - 1) {
+		ULONG got = 0;
+
+		res = stm->Read(&buf[i], (ULONG)sizeof(buf[i]), &got);
 		if (FAILED(res)) {
 			return(res);
 		}
-		if (buf[i] == '\0') {
-			WideCharToMultiByte(CP_ACP, 0, buf, -1, string, ARRAY_SIZE(buf) - 1, 0, 0);
-			return(res);
+		if (got != (ULONG)sizeof(buf[i]) || buf[i] == '\0') {
+			break;
 		}
 		i++;
 	}
 
-	return(S_OK);
+	buf[i] = '\0';
+	WideCharToMultiByte(CP_ACP, 0, buf, i + 1, string, ARRAY_SIZE(buf), 0, 0);
+
+	return(res);
 }
 
 
@@ -795,9 +805,24 @@ HRESULT SaveVersionInfo::Load_Int_Set(IPropertySetStorage *storageset, int id, i
 /// committed.</returns>
 HRESULT SaveVersionInfo::Save_String(IStorage *storage, int id, char *string)
 {
-	WCHAR buf[128];
+	/*
+	 * Text too long for the stream is clipped rather than refused, and the conversion is
+	 * what says how much was produced, the terminator included. Measuring the wide text
+	 * afterwards would not survive this target: it builds with a two byte wchar_t against a
+	 * library that assumes four, and the compiler answers a length loop with that library's
+	 * wcslen.
+	 */
+	char clipped[128];
 
-	MultiByteToWideChar(CP_ACP, 0, string, -1, buf, ARRAY_SIZE(buf));
+	clipped[ARRAY_SIZE(clipped) - 1] = '\0';
+	strncpy(clipped, string, ARRAY_SIZE(clipped) - 1);
+
+	WCHAR buf[ARRAY_SIZE(clipped)];
+
+	int const length = MultiByteToWideChar(CP_ACP, 0, clipped, -1, buf, ARRAY_SIZE(buf));
+	if (length <= 0) {
+		return(E_FAIL);
+	}
 
 	IStreamPtr stm(NULL);
 
@@ -806,7 +831,7 @@ HRESULT SaveVersionInfo::Save_String(IStorage *storage, int id, char *string)
 		return(res);
 	}
 
-	res = stm->Write(buf, sizeof(WCHAR) * wcslen(buf) + 2, NULL);
+	res = stm->Write(buf, (ULONG)(sizeof(WCHAR) * (unsigned int)length), NULL);
 	if (FAILED(res)) {
 		return(res);
 	}
