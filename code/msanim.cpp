@@ -20,6 +20,7 @@
 #include "dbgprint.h"
 #include "draw.h"
 #include "dsaudio.h"
+#include "dsurface.h"
 #include "globals.h"
 #include "goptions.h"
 #include "mixfile.h"
@@ -1658,4 +1659,119 @@ Rect MSPCXAnim::Get_Rect(void) const
 bool MSPCXAnim::Has_Finished(void) const
 {
 	return(Drawn);
+}
+
+
+/*
+ * How much brightness the heart of a stroke keeps when the lettering is dimmed, and the
+ * whole it is a part of. Nine sixteenths is what the disabled artwork the game data does
+ * ship holds its lettering at, measured against the ordinary face of the same choice.
+ */
+enum {
+	DIM_LEVEL = 9,
+	DIM_WHOLE = 16
+};
+
+/*
+ * The color a transparent blit treats as a hole rather than as a color (BlitTrans in
+ * blitblit.h). Dimming must neither disturb it nor arrive at it.
+ */
+enum {
+	TRANSPARENT_PIXEL = 0
+};
+
+
+/// <summary>
+/// Dims the lettering of this picture, leaving the backdrop baked into it alone.
+/// A menu face carries the piece of menu backdrop it sits on as well as its lettering, so
+/// darkening the picture whole would darken the menu behind the words too. Another face of
+/// the same subject is drawn over that identical backdrop, so how far the two disagree at a
+/// pixel is how much of it the lettering owns. The pixel is dimmed by that much, which
+/// leaves the backdrop where it was and fades the dimming out through the glow around the
+/// words instead of stopping at an edge.
+/// </summary>
+/// <param name="alternate">Another face of the same subject, over the same backdrop.</param>
+/// <returns>bool; Was the lettering dimmed?</returns>
+bool MSPCXAnim::Dim_Lettering(MSPCXAnim const & alternate)
+{
+	Surface * face = Image;
+	Surface const * other = alternate.Image;
+
+	if (face == NULL || other == NULL) {
+		return(false);
+	}
+
+	/*
+	**	Only a hicolor picture can be dimmed. A paletted one holds color indices, which no
+	**	amount of arithmetic turns into a darker color.
+	*/
+	if (face->Bytes_Per_Pixel() != (int)sizeof(unsigned short) || other->Bytes_Per_Pixel() != (int)sizeof(unsigned short)) {
+		return(false);
+	}
+	if (face->Get_Width() != other->Get_Width() || face->Get_Height() != other->Get_Height()) {
+		return(false);
+	}
+
+	unsigned short * dest = (unsigned short *)face->Lock();
+	unsigned short const * source = (unsigned short const *)other->Lock();
+	int peak = 0;
+
+	if (dest != NULL && source != NULL) {
+		int width = face->Get_Width();
+		int height = face->Get_Height();
+		int dest_pitch = face->Stride() / (int)sizeof(unsigned short);
+		int source_pitch = other->Stride() / (int)sizeof(unsigned short);
+
+		/*
+		**	The widest disagreement between the two faces is a stroke at full strength. It is
+		**	the scale the rest of the picture is weighed against. A hole in the picture is no
+		**	part of that scale, since it is never dimmed.
+		*/
+		for (int y = 0; y < height; y++) {
+			unsigned short const * dest_row = dest + y * dest_pitch;
+			unsigned short const * source_row = source + y * source_pitch;
+			for (int x = 0; x < width; x++) {
+				if (dest_row[x] != TRANSPARENT_PIXEL) {
+					int difference = DSurface::Deconstruct_Hicolor_Pixel(dest_row[x]).Difference(DSurface::Deconstruct_Hicolor_Pixel(source_row[x]));
+					if (difference > peak) {
+						peak = difference;
+					}
+				}
+			}
+		}
+
+		if (peak > 0) {
+			for (int y = 0; y < height; y++) {
+				unsigned short * dest_row = dest + y * dest_pitch;
+				unsigned short const * source_row = source + y * source_pitch;
+				for (int x = 0; x < width; x++) {
+					if (dest_row[x] == TRANSPARENT_PIXEL) {
+						continue;
+					}
+
+					RGBClass rgb = DSurface::Deconstruct_Hicolor_Pixel(dest_row[x]);
+					int difference = rgb.Difference(DSurface::Deconstruct_Hicolor_Pixel(source_row[x]));
+					int level = DIM_WHOLE * peak - (DIM_WHOLE - DIM_LEVEL) * difference;
+					unsigned short pixel = (unsigned short)DSurface::Build_Hicolor_Pixel(
+						rgb.Get_Red() * level / (DIM_WHOLE * peak),
+						rgb.Get_Green() * level / (DIM_WHOLE * peak),
+						rgb.Get_Blue() * level / (DIM_WHOLE * peak));
+
+					/*
+					**	A pixel that dims all the way onto the transparent color would become a
+					**	hole rather than a darker color, so it keeps the color it had. It is
+					**	within one step of black already.
+					*/
+					if (pixel != TRANSPARENT_PIXEL) {
+						dest_row[x] = pixel;
+					}
+				}
+			}
+		}
+	}
+
+	face->Unlock();
+	other->Unlock();
+
+	return(peak > 0);
 }

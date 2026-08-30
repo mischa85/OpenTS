@@ -180,9 +180,10 @@ that serves an image is one serving data it has the right to serve.
 
 The menu withholds what a page cannot play. The three network games and the World
 Domination Tour are shown but not offered, and the exit is dropped entirely, since
-there is nothing to quit back to (`code/newmenu.cpp:199`). A choice the game data drew
-no disabled face for keeps its ordinary face rather than disappearing
-(`code/grphmimg.cpp:196`), so the menu reads as complete.
+there is nothing to quit back to (`code/newmenu.cpp:199`). An unavailable choice wears a disabled face
+dimmed from its own lettering rather than the one the game data drew for it, so that
+every withheld choice reads the same way whether artwork was supplied for it or not
+(`code/grphmimg.cpp:127`). Every other target still uses the supplied artwork.
 
 The first-run `EVA.VQA` sequence does not play here. It belongs to a first run
 that follows an installation, and a page installs nothing, so it covers no

@@ -67,7 +67,9 @@ GraphicMenuItem * GM_Read_Image_Item(const char * name, INIClass const & ini, MS
 /// This routine loads the normal, highlighted and disabled artwork as animations and
 /// hands them to the menu engine to display. Only the normal image starts out visible;
 /// the others are activated as the item gains the selection or is disabled. Any of the
-/// images may be omitted, in which case that state simply shows nothing.
+/// images may be omitted, in which case that state simply shows nothing. The browser
+/// build is the exception: it dims a copy of the normal artwork and uses that as the
+/// disabled face, whether or not the game data drew one.
 /// </summary>
 /// <param name="origin">The screen position to display the artwork at.</param>
 /// <param name="rect">The screen area the mouse must be within to select this item.</param>
@@ -96,11 +98,14 @@ GraphicMenuImageItem::GraphicMenuImageItem(int id, MSEngine & engine, Point2D co
 
 	strncpy(SelectVQ, select_vq != NULL ? select_vq : "", sizeof(SelectVQ));
 
+	MSPCXAnim * highlight = NULL;
+
 	if (strlen(highlight_image)) {
-		HighlightImage = new MSPCXAnim(highlight_image, engine.Get_Anims(), origin, true);
-		if (HighlightImage != NULL) {
-			HighlightImage->Set_Active(false);
-			engine.Add_Animation(HighlightImage);
+		highlight = new MSPCXAnim(highlight_image, engine.Get_Anims(), origin, true);
+		HighlightImage = highlight;
+		if (highlight != NULL) {
+			highlight->Set_Active(false);
+			engine.Add_Animation(highlight);
 		}
 	}
 
@@ -111,7 +116,27 @@ GraphicMenuImageItem::GraphicMenuImageItem(int id, MSEngine & engine, Point2D co
 		}
 	}
 
-	if (strlen(disabled_image)) {
+#if defined(__EMSCRIPTEN__)
+	/*
+	**	Only a few choices were ever drawn a disabled face, and the ones this target
+	**	withholds are mostly not among them. Dimming a copy of the ordinary face gives every
+	**	choice one, so that a withheld choice reads as unavailable instead of going missing,
+	**	and so that the withheld choices all read alike. A choice with no ordinary face or no
+	**	second face to find the lettering against falls through to the artwork below.
+	*/
+	if (highlight != NULL && strlen(image)) {
+		MSPCXAnim * dimmed = new MSPCXAnim(image, engine.Get_Anims(), origin, true);
+		if (dimmed->Dim_Lettering(*highlight)) {
+			DisabledImage = dimmed;
+			dimmed->Set_Active(false);
+			engine.Add_Animation(dimmed);
+		} else {
+			delete dimmed;
+		}
+	}
+#endif
+
+	if (DisabledImage == NULL && strlen(disabled_image)) {
 		DisabledImage = new MSPCXAnim(disabled_image, engine.Get_Anims(), origin, true);
 		if (DisabledImage != NULL) {
 			DisabledImage->Set_Active(false);
@@ -195,19 +220,8 @@ void GraphicMenuImageItem::On_Visible_Change(bool)
 /// </summary>
 void GraphicMenuImageItem::Update_Images(void)
 {
-	bool standin = false;
-
-#if defined(__EMSCRIPTEN__)
-	/*
-	**	Not every choice was drawn a disabled face, and a choice this target withholds may
-	**	well be one of them. Standing its ordinary face in keeps it on the page, where a
-	**	choice that has simply gone missing would read as a broken menu.
-	*/
-	standin = Visible && !Enabled && DisabledImage == NULL;
-#endif
-
 	if (Image != NULL) {
-		Image->Set_Active((Visible && Enabled && !Selected) || standin);
+		Image->Set_Active(Visible && Enabled && !Selected);
 	}
 	if (HighlightImage != NULL) {
 		HighlightImage->Set_Active(Visible && Enabled && Selected);
