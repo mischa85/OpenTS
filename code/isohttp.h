@@ -7,10 +7,14 @@
  * See LICENSE.md for applicable additional terms and warranty disclaimers.
  ******************************************************************************/
 
-// Where a browser build gets its game data. A page has no filesystem to run out of, so
-// the disc image is left on a web server and read with range requests. iso9660.h asks a
-// block source for nothing but a synchronous read at an absolute offset, which is exactly
-// what one ranged GET answers, so the parser is the same one a local image goes through.
+// Where a browser build gets its game data. A page has no filesystem to run out of, so the
+// disc images are left on a web server and read with range requests. iso9660.h asks a block
+// source for nothing but a synchronous read at an absolute offset, which is exactly what one
+// ranged GET answers, so the parser is the same one a local image goes through.
+//
+// A game is spread over more than one disc, so what is named is a list of images and each
+// one gets a source of its own. Everything below is per image: what a run has fetched, what
+// the browser's database is holding, and the key the two are found under.
 
 #pragma once
 
@@ -47,6 +51,11 @@ class ISOBlockIndexClass
 		/// or a modification date -- or an empty string when it names none.</param>
 		/// <returns>The key, or an empty string when the image cannot be identified.</returns>
 		static std::string Signature(char const * url, std::uint64_t length, char const * validator);
+
+		/// <summary>Builds the key the store holds one image's blocks and record under.</summary>
+		/// <param name="url">The image's absolute URL.</param>
+		/// <returns>The key, or an empty string when the image cannot be identified.</returns>
+		static std::string Store_Slot(char const * url);
 
 		void Reset(std::string const & signature);
 
@@ -170,11 +179,21 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		void Store_Write(void);
 		void Store_Discard(void);
 
+		/// <summary>Writes any open image's batch that has been left sitting.</summary>
+		/// <remarks>A disc the game has finished with is read no more, so its own reads can
+		/// no longer be what flushes it. The disc still being read carries it instead.</remarks>
+		static void Store_Settle(void);
+
 		std::string Url;
 		std::uint64_t Length;
 		std::vector<BlockType> Cache;
 
+		// Where this image's figures are counted, since every image is read separately and
+		// a block number means nothing without the image it belongs to.
+		std::size_t Meter;
+
 		std::string Signature;
+		std::string Slot;
 		std::string Removals;
 		ISOBlockIndexClass Index;
 		StoreStateType StoreState;
@@ -184,12 +203,15 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 };
 
 
-/// <summary>Reports where the page or the host says the disc image is.</summary>
-/// <returns>A URL, a local path, or an empty string when no image was named.</returns>
-/// <remarks>A page names one by setting Module.opentsImage before the module loads; under
-/// node the OPENTS_IMAGE environment variable does the same. A page that names none still
-/// gets the default location, since a browser build has nowhere else to read from.</remarks>
-char const * ISO_Image_Location(void);
+/// <summary>Reports where the page or the host says the disc images are.</summary>
+/// <param name="locations">Receives one URL or local path per image, in the order they are
+/// to be searched, and nothing at all when none was named.</param>
+/// <remarks>A page names them by setting Module.opentsImage before the module loads, as an
+/// array of locations or as one string holding them separated by commas; under node the
+/// OPENTS_IMAGE environment variable does the same. A string naming a single image is the
+/// one-element case of that. A page that names none still gets the default location, since
+/// a browser build has nowhere else to read from.</remarks>
+void ISO_Image_Locations(std::vector<std::string> & locations);
 
 /// <summary>Builds the block source that serves a location.</summary>
 /// <param name="location">A URL, or a path on whatever filesystem the module has.</param>

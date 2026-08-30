@@ -137,22 +137,39 @@ EM_JS(double, ISO_Http_Probe, (char const * url, char * identity, int identitysi
 
 
 /*
-** Where the image is. The page is asked first so that a harness can point the module at
-** one of several images without rebuilding it, and the environment second so that the same
-** module answers to a shell running it under node.
+** Where the images are. The page is asked first so that a harness can point the module at
+** other discs without rebuilding it, and the environment second so that the same module
+** answers to a shell running it under node.
+**
+** A game is spread over several discs, so what is named is a list: an array of locations,
+** or one string holding them separated by commas. A string naming a single image is the
+** one-element case of that and keeps meaning what it did. The list comes back separated by
+** newlines, which no location may contain.
 */
 EM_JS(int, ISO_Image_Location_Query, (char * buffer, int size), {
-	var text = "";
+	var named;
 
 	if (typeof Module !== "undefined" && Module["opentsImage"]) {
-		text = "" + Module["opentsImage"];
+		named = Module["opentsImage"];
 	} else if (typeof process !== "undefined" && process.env && process.env["OPENTS_IMAGE"]) {
-		text = "" + process.env["OPENTS_IMAGE"];
+		named = process.env["OPENTS_IMAGE"];
 	} else if (typeof document !== "undefined") {
-		text = "opents-data.iso";
+		named = "opents-data.iso";
+	} else {
+		named = [];
 	}
 
+	var listed = Array.isArray(named) ? named : ("" + named).split(",");
+	var wanted = [];
+
+	listed.forEach(function (one) {
+		var location = ("" + one).trim();
+		if (location.length > 0) wanted.push(location);
+	});
+
+	var text = wanted.join("\n");
 	var count = 0;
+
 	while (count < text.length && count + 1 < size) {
 		var code = text.charCodeAt(count);
 		HEAPU8[buffer + count] = (code > 127) ? 63 : code;
@@ -189,6 +206,10 @@ EM_JS(int, ISO_Store_Under_Main, (void), {
 		state.main = false;
 		state.db = null;
 		state.usable = false;
+		state.given = false;
+
+		// One batch of staged blocks per image, since several are read at once and each
+		// writes its own batch.
 		state.staged = new Map();
 		globalThis.__opentsIsoStore = state;
 
@@ -223,30 +244,43 @@ EM_JS(int, ISO_Store_Under_Main, (void), {
 
 
 /*
-** Opens the database and hands back the record describing what it holds. A database that
-** cannot be opened -- a private window, storage the user has turned off -- is not an error
-** the run has to care about, so it is reported as simply having nothing.
+** Opens the database and hands back the record describing what it holds for one image. A
+** database that cannot be opened -- a private window, storage the user has turned off -- is
+** not an error the run has to care about, so it is reported as simply having nothing.
+**
+** The database is opened once and shared; only the record is per image. Version 1 keyed the
+** blocks by number alone, which no more than one image can answer to, and nothing in that
+** layout says which image a block came from, so the upgrade throws it away.
 */
-EM_ASYNC_JS(int, ISO_Store_Open, (char * record, int size), {
+EM_ASYNC_JS(int, ISO_Store_Open, (char const * slot, char * record, int size), {
 	var state = globalThis.__opentsIsoStore;
-	if (state === undefined || state === null) return 0;
+	if (state === undefined || state === null || state.given) return 0;
 
 	try {
-		state.db = await new Promise(function (resolve, reject) {
-			var request = indexedDB.open("opents-iso", 1);
-			request.onupgradeneeded = function () {
-				var db = request.result;
-				if (!db.objectStoreNames.contains("blocks")) db.createObjectStore("blocks");
-				if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
-			};
-			request.onsuccess = function () { resolve(request.result); };
-			request.onerror = function () { reject(request.error); };
-			request.onblocked = function () { reject(new Error("blocked")); };
-		});
+		if (state.db === null) {
+			state.db = await new Promise(function (resolve, reject) {
+				var request = indexedDB.open("opents-iso", 2);
+				request.onupgradeneeded = function (event) {
+					var db = request.result;
+					if (!db.objectStoreNames.contains("blocks")) db.createObjectStore("blocks");
+					if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+
+					if (event.oldVersion === 1) {
+						request.transaction.objectStore("blocks").clear();
+						request.transaction.objectStore("meta").clear();
+					}
+				};
+				request.onsuccess = function () { resolve(request.result); };
+				request.onerror = function () { reject(request.error); };
+				request.onblocked = function () { reject(new Error("blocked")); };
+			});
+		}
+
+		var key = UTF8ToString(slot);
 
 		var text = await new Promise(function (resolve, reject) {
 			var transaction = state.db.transaction("meta", "readonly");
-			var get = transaction.objectStore("meta").get("record");
+			var get = transaction.objectStore("meta").get(key);
 			get.onsuccess = function () { resolve(get.result || ""); };
 			transaction.onerror = function () { reject(transaction.error); };
 			transaction.onabort = function () { reject(transaction.error); };
@@ -279,19 +313,24 @@ EM_ASYNC_JS(int, ISO_Store_Open, (char * record, int size), {
 ** Reads a span out of the store. The whole span is done in one transaction, so an extent
 ** the game reads in a single call costs one wait rather than one per block, and a block the
 ** current batch has staged but not yet written is served from the batch.
+**
+** A block is held under its image's key and its number, so the same block number on another
+** disc is another entry rather than the same one.
 */
-EM_ASYNC_JS(int, ISO_Store_Read, (double offset, void * buffer, unsigned int length, unsigned int blocksize), {
+EM_ASYNC_JS(int, ISO_Store_Read, (char const * slot, double offset, void * buffer, unsigned int length, unsigned int blocksize), {
 	var state = globalThis.__opentsIsoStore;
 	if (state === undefined || state === null || !state.usable || state.db === null) return 0;
 
 	try {
+		var key = UTF8ToString(slot);
+		var batch = state.staged.get(key);
 		var first = Math.floor(offset / blocksize);
 		var last = Math.floor((offset + length - 1) / blocksize);
 		var wanted = [];
 		var index = 0;
 
 		for (index = first; index <= last; index++) {
-			if (!state.staged.has(index)) wanted.push(index);
+			if (!batch || !batch.has(index)) wanted.push(index);
 		}
 
 		var found = new Map();
@@ -300,9 +339,9 @@ EM_ASYNC_JS(int, ISO_Store_Read, (double offset, void * buffer, unsigned int len
 			await new Promise(function (resolve, reject) {
 				var transaction = state.db.transaction("blocks", "readonly");
 				var blocks = transaction.objectStore("blocks");
-				wanted.forEach(function (key) {
-					var get = blocks.get(key);
-					get.onsuccess = function () { if (get.result) found.set(key, get.result); };
+				wanted.forEach(function (number) {
+					var get = blocks.get(key + "|" + number);
+					get.onsuccess = function () { if (get.result) found.set(number, get.result); };
 				});
 				transaction.oncomplete = function () { resolve(0); };
 				transaction.onerror = function () { reject(transaction.error); };
@@ -313,7 +352,7 @@ EM_ASYNC_JS(int, ISO_Store_Read, (double offset, void * buffer, unsigned int len
 		var written = 0;
 
 		for (index = first; index <= last; index++) {
-			var data = state.staged.has(index) ? state.staged.get(index) : found.get(index);
+			var data = (batch && batch.has(index)) ? batch.get(index) : found.get(index);
 			if (!data) return 0;
 
 			var at = index * blocksize;
@@ -337,12 +376,20 @@ EM_ASYNC_JS(int, ISO_Store_Read, (double offset, void * buffer, unsigned int len
 ** from moves when it grows, and because the block is the engine's buffer, which the engine
 ** goes on using.
 */
-EM_JS(int, ISO_Store_Stage, (double index, void const * buffer, unsigned int length), {
+EM_JS(int, ISO_Store_Stage, (char const * slot, double index, void const * buffer, unsigned int length), {
 	var state = globalThis.__opentsIsoStore;
 	if (state === undefined || state === null || !state.usable || state.db === null) return 0;
 
 	try {
-		state.staged.set(index, HEAPU8.slice(buffer, buffer + length));
+		var key = UTF8ToString(slot);
+		var batch = state.staged.get(key);
+
+		if (!batch) {
+			batch = new Map();
+			state.staged.set(key, batch);
+		}
+
+		batch.set(index, HEAPU8.slice(buffer, buffer + length));
 		return 1;
 	} catch (error) {
 		return 0;
@@ -355,10 +402,11 @@ EM_JS(int, ISO_Store_Stage, (double index, void const * buffer, unsigned int len
 ** the one transaction that makes them agree. Running out of quota is an ordinary outcome
 ** here: the store is given up for the rest of the run and the run carries on off the network.
 */
-EM_ASYNC_JS(int, ISO_Store_Write, (char const * record, char const * removals), {
+EM_ASYNC_JS(int, ISO_Store_Write, (char const * slot, char const * record, char const * removals), {
 	var state = globalThis.__opentsIsoStore;
 	if (state === undefined || state === null || !state.usable || state.db === null) return 0;
 
+	var key = UTF8ToString(slot);
 	var text = UTF8ToString(record);
 	var drop = UTF8ToString(removals);
 
@@ -366,37 +414,48 @@ EM_ASYNC_JS(int, ISO_Store_Write, (char const * record, char const * removals), 
 		await new Promise(function (resolve, reject) {
 			var transaction = state.db.transaction(Array("blocks", "meta"), "readwrite");
 			var blocks = transaction.objectStore("blocks");
+			var batch = state.staged.get(key);
 
+			/*
+			** Only this image's blocks are ever dropped. The others are described by records
+			** of their own and are none of this one's business.
+			*/
 			if (drop === "*") {
-				blocks.clear();
+				blocks.delete(IDBKeyRange.bound(key + "|", key + "|" + String.fromCharCode(65535)));
 			} else if (drop.length > 0) {
-				drop.split(",").forEach(function (key) {
-					var index = parseFloat(key);
-					if (!state.staged.has(index)) blocks.delete(index);
+				drop.split(",").forEach(function (number) {
+					var index = parseFloat(number);
+					if (!batch || !batch.has(index)) blocks.delete(key + "|" + index);
 				});
 			}
 
-			state.staged.forEach(function (data, index) { blocks.put(data, index); });
-			transaction.objectStore("meta").put(text, "record");
+			if (batch) batch.forEach(function (data, index) { blocks.put(data, key + "|" + index); });
+			transaction.objectStore("meta").put(text, key);
 
 			transaction.oncomplete = function () { resolve(0); };
 			transaction.onerror = function () { reject(transaction.error); };
 			transaction.onabort = function () { reject(transaction.error); };
 		});
 
-		state.staged.clear();
+		state.staged.delete(key);
 		return 1;
 	} catch (error) {
-		state.staged.clear();
+		state.staged.delete(key);
+
+		/*
+		** The quota belongs to the origin rather than to any one image, so a store that has
+		** run out of it is given up for every image and for the rest of the run.
+		*/
 		state.usable = false;
+		state.given = true;
 		return ((error && error.name) === "QuotaExceededError") ? -1 : 0;
 	}
 });
 
 // Lets go of a batch that will not be written, which is the only thing teardown may do.
-EM_JS(void, ISO_Store_Forget, (void), {
+EM_JS(void, ISO_Store_Forget, (char const * slot), {
 	var state = globalThis.__opentsIsoStore;
-	if (state !== undefined && state !== null && state.staged) state.staged.clear();
+	if (state !== undefined && state !== null && state.staged) state.staged.delete(UTF8ToString(slot));
 });
 
 #endif	// OPENTS_WASM_JSPI
@@ -444,6 +503,27 @@ std::string ISOBlockIndexClass::Signature(char const * url, std::uint64_t length
 
 	if (key.size() > SIGNATURE_MAX) key.resize(SIGNATURE_MAX);
 	return(key);
+}
+
+
+/// <summary>Builds the key the store holds one image's blocks and record under.</summary>
+/// <remarks>
+/// The URL alone, so that a new version of an image is written over the old one rather than
+/// left beside it with nothing left to find it by. What decides whether those blocks may
+/// still be served is the signature inside the record kept under this key.
+/// </remarks>
+std::string ISOBlockIndexClass::Store_Slot(char const * url)
+{
+	if (url == nullptr || *url == '\0') return(std::string());
+
+	std::string slot(url);
+
+	for (char & character : slot) {
+		if (character < 0x20 || character > 0x7E) character = '?';
+	}
+
+	if (slot.size() > SIGNATURE_MAX) slot.resize(SIGNATURE_MAX);
+	return(slot);
 }
 
 
@@ -564,8 +644,98 @@ void ISOBlockIndexClass::Note(std::uint64_t index, std::uint64_t size, std::vect
 }
 
 
+/*
+**	What the images have cost so far. Requests counts round trips and Fetched the bytes they
+**	carried, both across every source; Touched marks every block-sized window a request has
+**	covered, and holds one set of them per image, since the same block number on two discs
+**	names two different blocks. Their combined population is the working set -- the part of
+**	the discs the game turns out to need, which is the figure that says whether reading on
+**	demand was worth it.
+*/
+static unsigned int _Requests = 0;
+static std::uint64_t _Fetched = 0;
+static std::vector<std::vector<bool>> _Touched;
+
+// Every image currently open, so that one of them can write out a batch another has been
+// left holding.
+static std::vector<ISOHttpSourceClass *> _Open;
+
+/*
+**	And what the store saved. Hits counts the blocks it answered for and Bytes what they
+**	carried, Kept the blocks written to it, and State what became of it -- which is the only
+**	way a page can tell a store that was never reached from one that was given up.
+*/
+static unsigned int _StoreHits = 0;
+static std::uint64_t _StoreBytes = 0;
+static unsigned int _StoreKept = 0;
+static unsigned int _StoreState = 0;
+static unsigned int _StoreDiscarded = 0;
+
+
+static std::size_t Account_For_Image(void)
+{
+	_Touched.emplace_back();
+	return(_Touched.size() - 1);
+}
+
+
+static void Account_For_Transfer(std::size_t meter, std::uint64_t offset, unsigned int length)
+{
+	_Requests++;
+	_Fetched += length;
+
+	if (meter >= _Touched.size()) return;
+
+	std::vector<bool> & touched = _Touched[meter];
+	std::uint64_t const first = offset / ISOHttpSourceClass::BLOCK_SIZE;
+	std::uint64_t const last = (offset + length - 1) / ISOHttpSourceClass::BLOCK_SIZE;
+
+	if (touched.size() <= last) {
+		touched.resize((std::size_t)last + 1, false);
+	}
+
+	for (std::uint64_t index = first; index <= last; index++) {
+		touched[(std::size_t)index] = true;
+	}
+}
+
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Requests(void) {return(_Requests);}
+EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Fetched(void) {return((double)_Fetched);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Block_Size(void) {return(ISOHttpSourceClass::BLOCK_SIZE);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Images(void) {return((unsigned int)_Touched.size());}
+
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Unique_Blocks(void)
+{
+	unsigned int count = 0;
+
+	for (std::vector<bool> const & image : _Touched) {
+		for (bool touched : image) {
+			if (touched) count++;
+		}
+	}
+
+	return(count);
+}
+
+/*
+** 0 the store was never reached, 1 it is serving, 2 it was given up. A run that reports 0
+** with the scaffold built in never got as far as a read underneath main.
+*/
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_State(void) {return(_StoreState);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Hits(void) {return(_StoreHits);}
+EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Store_Bytes(void) {return((double)_StoreBytes);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Kept(void) {return(_StoreKept);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Discarded(void) {return(_StoreDiscarded);}
+
+}
+
+
 ISOHttpSourceClass::ISOHttpSourceClass(void) :
 	Length(0),
+	Meter(0),
 	StoreState(STORE_UNTRIED),
 	Staged(0),
 	StagedAt(0.0)
@@ -602,6 +772,8 @@ bool ISOHttpSourceClass::Open(char const * url)
 	}
 
 	Length = (std::uint64_t)length;
+	Meter = Account_For_Image();
+	_Open.push_back(this);
 
 	/*
 	**	The store is not opened here. Open is reached from the first file the host cannot
@@ -609,8 +781,10 @@ bool ISOHttpSourceClass::Open(char const * url)
 	**	constructed, and a wait there is not yet legal. What the probe learned is kept until
 	**	a read arrives at a point where one is.
 	*/
-	Signature = ISOBlockIndexClass::Signature(
-		(identity[0] != '\0') ? identity.data() : Url.c_str(), Length, validator.data());
+	char const * const resolved = (identity[0] != '\0') ? identity.data() : Url.c_str();
+
+	Signature = ISOBlockIndexClass::Signature(resolved, Length, validator.data());
+	Slot = ISOBlockIndexClass::Store_Slot(resolved);
 
 	return(true);
 }
@@ -625,84 +799,17 @@ void ISOHttpSourceClass::Close(void)
 	*/
 	Store_Discard();
 
+	_Open.erase(std::remove(_Open.begin(), _Open.end(), this), _Open.end());
+
 	Url.clear();
 	Signature.clear();
+	Slot.clear();
 	Removals.clear();
 	Length = 0;
 	Cache.clear();
 	Index.Reset(std::string());
 	StoreState = STORE_UNTRIED;
 	Staged = 0;
-}
-
-
-/*
-**	What the images have cost so far, across every source. Requests counts round trips and
-**	Fetched the bytes they carried; Touched marks every block-sized window any request has
-**	covered, so its population is the working set -- the part of the image the game turns
-**	out to need, which is the figure that says whether reading on demand was worth it.
-*/
-static unsigned int _Requests = 0;
-static std::uint64_t _Fetched = 0;
-static std::vector<bool> _Touched;
-
-/*
-**	And what the store saved. Hits counts the blocks it answered for and Bytes what they
-**	carried, Kept the blocks written to it, and State what became of it -- which is the only
-**	way a page can tell a store that was never reached from one that was given up.
-*/
-static unsigned int _StoreHits = 0;
-static std::uint64_t _StoreBytes = 0;
-static unsigned int _StoreKept = 0;
-static unsigned int _StoreState = 0;
-static unsigned int _StoreDiscarded = 0;
-
-
-static void Account_For_Transfer(std::uint64_t offset, unsigned int length)
-{
-	_Requests++;
-	_Fetched += length;
-
-	std::uint64_t const first = offset / ISOHttpSourceClass::BLOCK_SIZE;
-	std::uint64_t const last = (offset + length - 1) / ISOHttpSourceClass::BLOCK_SIZE;
-
-	if (_Touched.size() <= last) {
-		_Touched.resize((std::size_t)last + 1, false);
-	}
-
-	for (std::uint64_t index = first; index <= last; index++) {
-		_Touched[(std::size_t)index] = true;
-	}
-}
-
-
-extern "C" {
-
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Requests(void) {return(_Requests);}
-EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Fetched(void) {return((double)_Fetched);}
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Block_Size(void) {return(ISOHttpSourceClass::BLOCK_SIZE);}
-
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Unique_Blocks(void)
-{
-	unsigned int count = 0;
-
-	for (bool touched : _Touched) {
-		if (touched) count++;
-	}
-
-	return(count);
-}
-
-/*
-** 0 the store was never reached, 1 it is serving, 2 it was given up. A run that reports 0
-** with the scaffold built in never got as far as a read underneath main.
-*/
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_State(void) {return(_StoreState);}
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Hits(void) {return(_StoreHits);}
-EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Store_Bytes(void) {return((double)_StoreBytes);}
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Kept(void) {return(_StoreKept);}
-EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Discarded(void) {return(_StoreDiscarded);}
-
 }
 
 
@@ -724,7 +831,7 @@ bool ISOHttpSourceClass::Store_Ready(void)
 	if (StoreState == STORE_READY) return(true);
 	if (StoreState == STORE_OFF) return(false);
 
-	if (Signature.empty()) {
+	if (Signature.empty() || Slot.empty()) {
 		StoreState = STORE_OFF;
 		_StoreState = 2;
 		return(false);
@@ -735,7 +842,7 @@ bool ISOHttpSourceClass::Store_Ready(void)
 	std::vector<char> record(ISOBlockIndexClass::RECORD_MAX);
 	record[0] = '\0';
 
-	if (ISO_Store_Open(record.data(), (int)record.size()) != 1) {
+	if (ISO_Store_Open(Slot.c_str(), record.data(), (int)record.size()) != 1) {
 		StoreState = STORE_OFF;
 		_StoreState = 2;
 		return(false);
@@ -744,7 +851,7 @@ bool ISOHttpSourceClass::Store_Ready(void)
 	if (!Index.Adopt(record.data(), Signature)) {
 		_StoreDiscarded++;
 
-		if (ISO_Store_Write(Index.Encode().c_str(), "*") != 1) {
+		if (ISO_Store_Write(Slot.c_str(), Index.Encode().c_str(), "*") != 1) {
 			StoreState = STORE_OFF;
 			_StoreState = 2;
 			return(false);
@@ -774,7 +881,7 @@ bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsign
 		if (!Index.Holds(index)) return(false);
 	}
 
-	if (ISO_Store_Read((double)offset, buffer, length, (unsigned int)BLOCK_SIZE) != 1) {
+	if (ISO_Store_Read(Slot.c_str(), (double)offset, buffer, length, (unsigned int)BLOCK_SIZE) != 1) {
 
 		/*
 		**	The record and the blocks are written together, so they cannot disagree by
@@ -817,7 +924,7 @@ void ISOHttpSourceClass::Store_Keep(std::uint64_t offset, void const * buffer, u
 		if (at + size > stop) break;
 
 		if (!Index.Holds(index)) {
-			if (ISO_Store_Stage((double)index, (unsigned char const *)buffer + (at - offset),
+			if (ISO_Store_Stage(Slot.c_str(), (double)index, (unsigned char const *)buffer + (at - offset),
 					(unsigned int)size) == 1) {
 
 				std::vector<std::uint64_t> evicted;
@@ -851,7 +958,7 @@ void ISOHttpSourceClass::Store_Write(void)
 	if (StoreState != STORE_READY) return;
 	if (Staged == 0 && Removals.empty()) return;
 
-	int const written = ISO_Store_Write(Index.Encode().c_str(), Removals.c_str());
+	int const written = ISO_Store_Write(Slot.c_str(), Index.Encode().c_str(), Removals.c_str());
 
 	Staged = 0;
 	Removals.clear();
@@ -871,10 +978,23 @@ void ISOHttpSourceClass::Store_Write(void)
 }
 
 
+/// <summary>Writes any open image's batch that has been left sitting.</summary>
+void ISOHttpSourceClass::Store_Settle(void)
+{
+#if defined(OPENTS_WASM_JSPI)
+	double const now = emscripten_get_now();
+
+	for (ISOHttpSourceClass * source : _Open) {
+		if (source->Staged > 0 && (now - source->StagedAt) > STORE_IDLE) source->Store_Write();
+	}
+#endif
+}
+
+
 void ISOHttpSourceClass::Store_Discard(void)
 {
 #if defined(OPENTS_WASM_JSPI)
-	ISO_Store_Forget();
+	ISO_Store_Forget(Slot.c_str());
 	Staged = 0;
 	Removals.clear();
 #endif
@@ -886,7 +1006,7 @@ bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned 
 	unsigned char * cursor = (unsigned char *)buffer;
 	unsigned int remaining = length;
 
-	Account_For_Transfer(offset, length);
+	Account_For_Transfer(Meter, offset, length);
 
 	/*
 	**	A server is entitled to answer a range with less than was asked for, so the request
@@ -956,9 +1076,11 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 
 	/*
 	**	A batch left over from a burst of loading is written once the loading stops, so that
-	**	what a run fetched is on disc rather than waiting for a batch that never fills.
+	**	what a run fetched is on disc rather than waiting for a batch that never fills. Every
+	**	open image is settled here, not just this one: a disc the game is finished with is
+	**	read no more and would otherwise hold its last batch for the rest of the run.
 	*/
-	if (Staged > 0 && (emscripten_get_now() - StagedAt) > STORE_IDLE) Store_Write();
+	Store_Settle();
 
 	unsigned char * cursor = (unsigned char *)buffer;
 	unsigned int remaining = length;
@@ -1005,18 +1127,29 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 }
 
 
-char const * ISO_Image_Location(void)
+void ISO_Image_Locations(std::vector<std::string> & locations)
 {
-	static char location[512];
+	static char named[2048];
 	static bool asked = false;
+
+	locations.clear();
 
 	if (!asked) {
 		asked = true;
-		location[0] = '\0';
-		ISO_Image_Location_Query(location, (int)sizeof(location));
+		named[0] = '\0';
+		ISO_Image_Location_Query(named, (int)sizeof(named));
 	}
 
-	return(location);
+	std::string const list(named);
+	std::size_t cursor = 0;
+
+	while (cursor < list.size()) {
+		std::size_t stop = list.find('\n', cursor);
+		if (stop == std::string::npos) stop = list.size();
+
+		if (stop > cursor) locations.push_back(list.substr(cursor, stop - cursor));
+		cursor = stop + 1;
+	}
 }
 
 

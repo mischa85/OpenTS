@@ -80,11 +80,18 @@ void Win32_Unsupported_Reached(char const * description);
 ** The read-only half of the filesystem.
 **
 ** A page has no host directory to run out of, so the file layer looks a name it cannot
-** resolve up inside a mounted ISO9660 image instead. The image sits underneath the host,
+** resolve up inside a mounted ISO9660 image instead. The images sit underneath the host,
 ** never over it: a name both can answer resolves to the host's copy, which is what lets a
-** file the engine writes shadow the one it shipped with. An image is mounted on the first
-** file the host cannot answer for, from the location isohttp.h describes; these are for a
-** caller that needs to choose the image itself, such as a test harness.
+** file the engine writes shadow the one it shipped with.
+**
+** A game comes on more than one disc, so several images may be mounted at once. They are
+** searched in the order they were mounted, each contributing its installed data directory
+** ahead of its own root, and the first that carries a name answers for it; a wildcard search
+** reports what all of them hold together. Mounting appends, so the caller's order is the
+** search order and the disc whose copies should win is mounted first.
+**
+** The images named by isohttp.h are mounted on the first file the host cannot answer for.
+** These are for a caller that needs to choose them itself, such as a test harness.
 */
 bool Win32_Mount_Image(char const * location);
 void Win32_Unmount_Image(void);

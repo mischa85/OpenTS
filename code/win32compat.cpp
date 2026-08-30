@@ -619,56 +619,76 @@ static void Release_Handle(HandleEntryType * entry)
 
 
 /*
-** The mounted image. One is mounted at most, on the first name the host cannot answer
-** for, so that a build with no image beside it pays a single failed lookup rather than a
-** cost at startup -- and, on the suspending transport, so that no fetch is attempted from
-** a static constructor, where the module is not yet inside a promising export.
+** The mounted images. A game is spread over several discs, so the list is ordered and a
+** name is answered by the first disc that carries it; each disc offers its installed data
+** directory ahead of its own root, which is the order cdfile.cpp searches an image in.
+**
+** They are mounted on the first name the host cannot answer for, so that a build with no
+** image beside it pays a single failed lookup rather than a cost at startup -- and, on the
+** suspending transport, so that no fetch is attempted from a static constructor, where the
+** module is not yet inside a promising export.
 */
-static std::shared_ptr<ISOVolumeClass> ImageVolume;
+struct MountedImageType
+{
+	std::shared_ptr<ISOVolumeClass> Volume;
+	std::vector<std::string> Directories;
+};
+
+static std::vector<MountedImageType> & Image_Table(void)
+{
+	static std::vector<MountedImageType> images;
+
+	return(images);
+}
+
 static bool ImageMountTried = false;
 
 
 bool Win32_Mount_Image(char const * location)
 {
 	ImageMountTried = true;
-	ImageVolume.reset();
 
 	std::unique_ptr<ISOBlockSourceClass> source = ISO_Open_Location(location);
 	if (!source) return(false);
 
-	std::shared_ptr<ISOVolumeClass> volume = std::make_shared<ISOVolumeClass>();
-	if (!volume->Attach(std::move(source))) return(false);
+	MountedImageType mounted;
 
-	ImageVolume = volume;
+	mounted.Volume = std::make_shared<ISOVolumeClass>();
+	if (!mounted.Volume->Attach(std::move(source))) return(false);
+
+	ISO_Search_Directories(*mounted.Volume, mounted.Directories);
+	Image_Table().push_back(std::move(mounted));
 	return(true);
 }
 
 
 void Win32_Unmount_Image(void)
 {
-	ImageVolume.reset();
+	Image_Table().clear();
 	ImageMountTried = true;
 }
 
 
-static ISOVolumeClass * Mounted_Image(void)
+static std::vector<MountedImageType> const & Mounted_Images(void)
 {
 	if (!ImageMountTried) {
-		char const * const location = ISO_Image_Location();
+		std::vector<std::string> locations;
 
-		if (location == nullptr || *location == '\0') {
-			ImageMountTried = true;
-		} else if (Win32_Mount_Image(location)) {
-			fprintf(stderr, "OpenTS: reading game data out of the image at %s.\n", location);
-			fflush(stderr);
-		} else {
-			fprintf(stderr, "OpenTS: no image mounted from %s; only files the host answers "
-				"for can be read.\n", location);
+		ISO_Image_Locations(locations);
+		ImageMountTried = true;
+
+		for (std::string const & location : locations) {
+			if (Win32_Mount_Image(location.c_str())) {
+				fprintf(stderr, "OpenTS: reading game data out of the image at %s.\n", location.c_str());
+			} else {
+				fprintf(stderr, "OpenTS: no image mounted from %s; only files the host answers "
+					"for can be read.\n", location.c_str());
+			}
 			fflush(stderr);
 		}
 	}
 
-	return(ImageVolume.get());
+	return(Image_Table());
 }
 
 
@@ -713,18 +733,37 @@ static bool Image_Path(char const * path, std::string & inside)
 
 
 /*
-** Looks a name up on the image. The volume is left mounted, so a handle taken out on the
-** entry keeps reading from it for as long as it is open.
+** Joins one of a disc's search directories to a path relative to its root.
 */
-static bool Image_Entry(char const * filename, ISOEntryClass & entry)
+static std::string Image_Within(std::string const & directory, std::string const & inside)
 {
-	ISOVolumeClass * const volume = Mounted_Image();
-	if (volume == nullptr) return(false);
+	if (directory.empty()) return(inside);
+	if (inside.empty()) return(directory);
 
+	return(directory + '/' + inside);
+}
+
+
+/*
+** Looks a name up across the mounted images, taking the first disc and the first of its
+** search directories that carries it. The volumes are left mounted, so a handle taken out
+** on the entry keeps reading from the one it was found on for as long as it is open.
+*/
+static std::shared_ptr<ISOVolumeClass> Image_Entry(char const * filename, ISOEntryClass & entry)
+{
 	std::string inside;
-	if (!Image_Path(filename, inside) || inside.empty()) return(false);
+	if (!Image_Path(filename, inside) || inside.empty()) return(nullptr);
 
-	return(volume->Find(inside.c_str(), entry) && !entry.IsDirectory);
+	for (MountedImageType const & image : Mounted_Images()) {
+		for (std::string const & directory : image.Directories) {
+			std::string const path = Image_Within(directory, inside);
+
+			if (image.Volume->Find(path.c_str(), entry) && !entry.IsDirectory) return(image.Volume);
+		}
+	}
+
+	entry.Reset();
+	return(nullptr);
 }
 
 
@@ -949,14 +988,15 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 	*/
 	if (!present && !wantswrite && (creation == OPEN_EXISTING || creation == OPEN_ALWAYS)) {
 		ISOEntryClass found;
+		std::shared_ptr<ISOVolumeClass> volume = Image_Entry(filename, found);
 
-		if (Image_Entry(filename, found)) {
+		if (volume) {
 			std::size_t const index = Allocate_Handle();
 			HandleEntryType & entry = Handle_Table()[index];
 
 			entry.Kind = HANDLE_KIND_IMAGE;
 			entry.Path = filename;
-			entry.Volume = ImageVolume;
+			entry.Volume = std::move(volume);
 			entry.Image = found;
 			entry.Cursor = 0;
 
@@ -1453,6 +1493,7 @@ DWORD GetFileAttributesA(LPCSTR filename)
 	struct stat info;
 
 	if (::stat(path.c_str(), &info) != 0) {
+		int const failure = errno;
 		ISOEntryClass found;
 
 		/*
@@ -1464,7 +1505,7 @@ DWORD GetFileAttributesA(LPCSTR filename)
 			return(FILE_ATTRIBUTE_READONLY);
 		}
 
-		SetLastError(Win32_Error_From_Errno(errno));
+		SetLastError(Win32_Error_From_Errno(failure));
 		return(INVALID_FILE_ATTRIBUTES);
 	}
 
@@ -1727,44 +1768,50 @@ static void Persistent_Matches(std::string const & directory, std::string const 
 
 
 /*
-** Adds what the image holds to a search the host has already answered.
+** Adds what the images hold to a search the host has already answered. Every disc and every
+** search directory on it contributes, so a search finds a file wherever among them it is --
+** which is what lets one scan for MAPS*.MIX collect the archive each disc carries under that
+** name.
 **
 ** Both halves are matched by Match_Wildcard rather than by the reader's own matcher, which
 ** does not carry the DOS rule that `*.*` means every file. One matcher over both halves is
 ** what makes a search of an image and a search of a directory report the same set.
 **
-** A name the host already answered for is left alone, so that a file written beside the
-** image shadows the one on it, as it does through CreateFileA.
+** A name already answered for is left alone, so a search reports the same copy of a name
+** that CreateFileA opens: the host's, then the first disc in order that carries it.
 */
 static void Image_Matches(std::string const & directory, std::string const & leaf, std::vector<FindMatchType> & matches)
 {
-	ISOVolumeClass * const volume = Mounted_Image();
-	if (volume == nullptr) return;
-
 	std::string inside;
 	if (!Image_Path(directory.c_str(), inside)) return;
 
-	ISOEntryClass folder = volume->Root();
-	if (!inside.empty() && (!volume->Find(inside.c_str(), folder) || !folder.IsDirectory)) return;
+	for (MountedImageType const & image : Mounted_Images()) {
+		for (std::string const & search : image.Directories) {
+			std::string const path = Image_Within(search, inside);
 
-	std::vector<std::string> names;
-	if (!volume->Enumerate(folder, names)) return;
+			ISOEntryClass folder = image.Volume->Root();
+			if (!path.empty() && (!image.Volume->Find(path.c_str(), folder) || !folder.IsDirectory)) continue;
 
-	for (std::string const & name : names) {
-		if (!Match_Wildcard(leaf.c_str(), name.c_str())) continue;
+			std::vector<std::string> names;
+			if (!image.Volume->Enumerate(folder, names)) continue;
 
-		bool taken = false;
+			for (std::string const & name : names) {
+				if (!Match_Wildcard(leaf.c_str(), name.c_str())) continue;
 
-		for (FindMatchType const & already : matches) {
-			if (::strcasecmp(already.Name.c_str(), name.c_str()) == 0) taken = true;
+				bool taken = false;
+
+				for (FindMatchType const & already : matches) {
+					if (::strcasecmp(already.Name.c_str(), name.c_str()) == 0) taken = true;
+				}
+				if (taken) continue;
+
+				FindMatchType match;
+				match.Name = name;
+
+				if (!image.Volume->Find_In(folder, name.c_str(), match.Image)) continue;
+				matches.push_back(std::move(match));
+			}
 		}
-		if (taken) continue;
-
-		FindMatchType match;
-		match.Name = name;
-
-		if (!volume->Find_In(folder, name.c_str(), match.Image)) continue;
-		matches.push_back(std::move(match));
 	}
 }
 

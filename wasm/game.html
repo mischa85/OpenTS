@@ -161,9 +161,9 @@
 		apply();
 	}());
 
-	// Reads out of a disc image, when one is being used. A preloaded build never fetches,
-	// so the whole clause is left out rather than reporting zeroes. Unique blocks is the
-	// working set: the part of the image the game actually turned out to need.
+	// Reads out of the disc images, when they are being used. A preloaded build never
+	// fetches, so the whole clause is left out rather than reporting zeroes. Unique blocks
+	// is the working set: the part of the discs the game actually turned out to need.
 	function iso() {
 		if (typeof Module === "undefined" || !Module._OpenTS_Iso_Requests) return("");
 
@@ -196,7 +196,12 @@
 				(Module._OpenTS_Iso_Store_Discarded() ? ", store discarded" : ""));
 		}
 
-		return("image " + requests + " requests  |  " + mib(Module._OpenTS_Iso_Fetched()) +
+		var discs = Module._OpenTS_Iso_Images ? Module._OpenTS_Iso_Images() : 1;
+
+		window.OpenTS_State.isoImages = discs;
+
+		return(discs + " discs  |  image " + requests + " requests  |  " +
+			mib(Module._OpenTS_Iso_Fetched()) +
 			" fetched  |  " + blocks + " unique blocks (" + mib(blocks * size) + ")" +
 			store + "  |  ");
 	}
@@ -241,6 +246,17 @@
 		}
 
 		return args.concat(query.getAll("arg"));
+	}
+
+	// The discs the game data is read from, in search order. The engine takes the first disc
+	// that carries a name, so Firestorm comes first: it is the newest of the three, and where
+	// it repeats an archive the base discs also carry -- MULTI.MIX, LANGUAGE.DLL, SCORES.MIX,
+	// SIDECD01.MIX -- its copy is the one an installed game would be running out of.
+	// "?image=" names other files instead, once per disc and in the order to search them.
+	function OpenTS_Images() {
+		var named = new URLSearchParams(window.location.search).getAll("image");
+
+		return named.length > 0 ? named : ["FIRESTORM.iso", "TS1.iso", "TS2.iso"];
 	}
 
 	// The one directory that survives the tab. Everything else the engine can see is memory:
@@ -298,6 +314,7 @@
 
 	var Module = {
 		arguments: OpenTS_Arguments(),
+		opentsImage: OpenTS_Images(),
 		canvas: document.getElementById("canvas"),
 		noInitialRun: true,
 		print: function (text) { console.log(text); OpenTS_Record(text); },

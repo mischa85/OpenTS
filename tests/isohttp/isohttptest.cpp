@@ -19,6 +19,7 @@
 #include "isohttp.h"
 #include "win32compat.h"
 
+#include <emscripten/emscripten.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -316,6 +317,113 @@ std::vector<std::string> Search(char const * pattern)
 
 /*
 **	------------------------------------------------------------------------------------
+**	How the host names the discs. A page sets Module.opentsImage and a shell sets
+**	OPENTS_IMAGE; either may name one image or several, and the reading of that is the same
+**	code for both. The environment is the half a harness can set, so it is the half tested.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Image_Locations(void)
+{
+	EM_ASM({ process.env["OPENTS_IMAGE"] = " one.iso ,two.iso, ,three.iso "; });
+
+	std::vector<std::string> locations;
+
+	ISO_Image_Locations(locations);
+
+	Check(locations.size() == 3, "a comma separated list names one image per entry");
+	Check(locations.size() == 3 && locations[0] == "one.iso" && locations[1] == "two.iso"
+		&& locations[2] == "three.iso",
+		"in the order given, trimmed, and with nothing between two commas");
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	Several discs at once. A game comes on more than one of them, so what is checked here
+**	is that the mounted images are searched in order, that each offers its installed data
+**	directory ahead of its own root, and that a wildcard search reports what all of them
+**	hold together.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Several_Images(void)
+{
+	std::vector<unsigned char> const oldmulti = Pattern(11, 700);
+	std::vector<unsigned char> const newmulti = Pattern(12, 1500);
+	std::vector<unsigned char> const tibsun = Pattern(13, 900);
+	std::vector<unsigned char> const expand = Pattern(14, 300);
+
+	/*
+	**	The expansion disc, the first of the three, carries its own copy of MULTI.MIX. The
+	**	base disc carries an older one in its root, and the second base disc neither.
+	*/
+	std::vector<FileSpec> expansionroot;
+	expansionroot.push_back(FileSpec{"MAPS03.MIX", Pattern(15, 100)});
+
+	DirSpec expansioninstall;
+	expansioninstall.Name = "INSTALL";
+	expansioninstall.Files.push_back(FileSpec{"MULTI.MIX", newmulti});
+	expansioninstall.Files.push_back(FileSpec{"EXPAND01.MIX", expand});
+
+	std::vector<FileSpec> firstroot;
+	firstroot.push_back(FileSpec{"MAPS01.MIX", Pattern(16, 100)});
+	firstroot.push_back(FileSpec{"MULTI.MIX", oldmulti});
+
+	DirSpec firstinstall;
+	firstinstall.Name = "INSTALL";
+	firstinstall.Files.push_back(FileSpec{"TIBSUN.MIX", tibsun});
+
+	std::vector<FileSpec> secondroot;
+	secondroot.push_back(FileSpec{"MAPS02.MIX", Pattern(17, 100)});
+
+	DirSpec secondinstall;
+	secondinstall.Name = "INSTALL";
+
+	Check(Write_File("discthree.iso", Build_Image(expansionroot, expansioninstall))
+		&& Write_File("discone.iso", Build_Image(firstroot, firstinstall))
+		&& Write_File("disctwo.iso", Build_Image(secondroot, secondinstall)),
+		"three test images are written");
+
+	Check(Win32_Mount_Image("discthree.iso") && Win32_Mount_Image("discone.iso")
+		&& Win32_Mount_Image("disctwo.iso"), "all three mount, and mounting appends");
+
+	std::vector<unsigned char> read;
+
+	Check(Read_Through_Handle("MULTI.MIX", read) && read == newmulti,
+		"a name several discs carry resolves on the first of them");
+	Check(Read_Through_Handle("TIBSUN.MIX", read) && read == tibsun,
+		"a name only a later disc carries resolves there");
+	Check(Read_Through_Handle("EXPAND01.MIX", read) && read == expand,
+		"and the installed directory of a disc is searched ahead of its root");
+	Check(GetFileAttributesA("TIBSUN.MIX") == FILE_ATTRIBUTE_READONLY,
+		"a name on any of the discs reports read only attributes");
+
+	std::vector<std::string> found = Search("MAPS*.MIX");
+
+	Check(found.size() == 3 && found[0] == "MAPS01.MIX" && found[1] == "MAPS02.MIX"
+		&& found[2] == "MAPS03.MIX", "a wildcard search reports what every disc holds");
+
+	found = Search("MULTI.MIX");
+	Check(found.size() == 1, "and reports a name several discs carry once");
+
+	WIN32_FIND_DATAA data;
+	HANDLE const handle = FindFirstFileA("MULTI.MIX", &data);
+
+	Check(handle != INVALID_HANDLE_VALUE && data.nFileSizeLow == (DWORD)newmulti.size(),
+		"reporting it as the copy that opens");
+	FindClose(handle);
+
+	Win32_Unmount_Image();
+
+	Check(Search("MAPS*.MIX").empty(), "unmounting takes every disc away");
+
+	std::remove("discthree.iso");
+	std::remove("discone.iso");
+	std::remove("disctwo.iso");
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
 **	What the browser's database is allowed to be believed about. The transport needs a
 **	server and a document, but the decision that a stored block belongs to the image now
 **	being read is arithmetic over a key and a list, and that is what is checked here.
@@ -345,6 +453,19 @@ void Check_Block_Index(void)
 	std::string const flattened = ISOBlockIndexClass::Signature("http://host/x.iso", 1, "a\nb\tc\x80");
 	Check(flattened.find('\n') == std::string::npos && flattened.find('\t') == std::string::npos,
 		"a key carries nothing that would end the line it is stored on");
+
+	/*
+	**	The slot is where one image's blocks are kept, so two images must never share one,
+	**	and a new version of the same image must land on the one it already has.
+	*/
+	Check(ISOBlockIndexClass::Store_Slot("http://host/ts1.iso")
+		!= ISOBlockIndexClass::Store_Slot("http://host/ts2.iso"),
+		"two images are held in slots of their own");
+	Check(ISOBlockIndexClass::Store_Slot("http://host/ts1.iso")
+		== ISOBlockIndexClass::Store_Slot("http://host/ts1.iso"),
+		"and one image answers to the same slot however it is identified");
+	Check(ISOBlockIndexClass::Store_Slot(nullptr).empty() && ISOBlockIndexClass::Store_Slot("").empty(),
+		"an image that cannot be identified has no slot, and so no store");
 
 	/*
 	**	A store that was written for this image is taken on; one written for any other is
@@ -586,6 +707,8 @@ int main(int argc, char ** argv)
 
 	std::remove(imagepath.c_str());
 
+	Check_Image_Locations();
+	Check_Several_Images();
 	Check_Block_Index();
 
 	std::printf("\n%s\n", Failures == 0 ? "all checks passed" : "checks failed");
