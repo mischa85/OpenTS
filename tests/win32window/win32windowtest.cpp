@@ -322,6 +322,33 @@ static void Test_Pointer(void)
 
 
 /*
+ * Windows has one null cursor and a window class standing by to end it. A canvas has
+ * neither, so the substitute says the two apart: the null falls back to the page's own
+ * pointer, and the blank cursor is the one that draws nothing.
+ */
+static void Test_Blank_Cursor(void)
+{
+	HCURSOR const arrow = LoadCursorA(NULL, IDC_ARROW);
+	HCURSOR const blank = Win32_Window_Blank_Cursor();
+
+	Check("the blank cursor is a cursor", blank != NULL);
+	Check("it is not the page's own pointer", blank != arrow);
+	Check("it is the same cursor every time", Win32_Window_Blank_Cursor() == blank);
+
+	/*
+	 * It outlives its callers the way a system cursor does, because the pointer is hidden
+	 * and shown again for as long as the game runs.
+	 */
+	Check("it is not destroyed on request", DestroyCursor(blank) == FALSE);
+	Check("it survives the attempt", Win32_Window_Blank_Cursor() == blank);
+
+	SetCursor(blank);
+	Check("selecting it reports what it replaced", SetCursor(arrow) == blank);
+	Check("selecting the arrow reports the same", SetCursor(NULL) == arrow);
+}
+
+
+/*
 ** ---------------------------------------------------------------------------------------
 ** What the substitute reaches for and the engine would otherwise supply. The canvas is
 ** the harness's own, so the geometry checks have a size to hold the substitute to.
@@ -336,13 +363,12 @@ void Win32_Unsupported_Reached(char const * description)
 
 
 /// <summary>
-/// Stands in for the game's answer to what the pointer should be.
+/// Stands in for the game putting its own pointer back.
 /// </summary>
-/// <returns>bool; Always false. There is no game cursor here, which is the answer a
-/// released mouse gives.</returns>
-bool Win_Cursor_Handle_Set_Cursor(void)
+/// <remarks>There is no game cursor here, so nothing is drawn and the checks watch the
+/// handles rather than the canvas.</remarks>
+void Win_Cursor_Apply(void)
 {
-	return(false);
 }
 
 
@@ -429,6 +455,7 @@ int main(void)
 #if defined(__EMSCRIPTEN__)
 	Test_Geometry();
 	Test_Pointer();
+	Test_Blank_Cursor();
 #endif
 
 	printf("%d checks, %d failures\n", Checks, Failures);

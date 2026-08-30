@@ -20,6 +20,7 @@
 #if defined(__EMSCRIPTEN__)
 
 #include "win32compat.h"
+#include "win32user.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -37,6 +38,52 @@ int Browser_Mouse_X(void) { return(0); }
 int Browser_Mouse_Y(void) { return(0); }
 
 void Game_Point_To_Window(POINT &) {}
+
+
+/*
+** The dialog manager asks the resource layer how long a template it was handed is, so that
+** a walk over one stops where the resource does. A harness builds its templates in memory
+** rather than fetching them, so there is no resource and no length to report.
+*/
+void const * Fetch_Resource(LPCSTR, LPCSTR, unsigned int * ressize)
+{
+	if (ressize != nullptr) {
+		*ressize = 0;
+	}
+
+	return(nullptr);
+}
+
+
+unsigned int Fetch_Resource_Size(void const *)
+{
+	return(0);
+}
+
+
+/*
+** Where a window is. win32window.cpp answers these out of the manager's registry and falls
+** back to the canvas for a handle the registry does not know; there is no canvas here, so
+** an unknown handle is simply nowhere.
+*/
+BOOL GetClientRect(HWND window, LPRECT rect)
+{
+	if (rect == nullptr) {
+		return(FALSE);
+	}
+
+	return(Win32_User_Client_Rect(window, rect) ? TRUE : FALSE);
+}
+
+
+BOOL GetWindowRect(HWND window, LPRECT rect)
+{
+	if (rect == nullptr) {
+		return(FALSE);
+	}
+
+	return(Win32_User_Window_Rect(window, rect) ? TRUE : FALSE);
+}
 
 
 // The capture is nobody's, which is what makes every hit test in the harness a hit test.

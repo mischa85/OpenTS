@@ -82,16 +82,36 @@ EM_JS(void, Audio_Web_Arm_Gesture_Resume, (void), {
 namespace {
 
 /*
-** Queue geometry, expressed as fractions of the caller's ring so that the numbers follow a
-** ring of any size. The lookahead is what the device holds beyond the play cursor, and it
-** stays inside the quarter ring that the sound driver keeps written ahead of that cursor,
-** so nothing the device takes is ever data the driver has not yet decoded.
+** Queue geometry. The chunk is the granularity the device takes the ring in, and it is a
+** fraction of the ring so that the number follows a ring of any size; the queue is deep
+** enough to hold a lookahead's worth of those chunks.
 */
 enum {
-	QUEUE_DEPTH = 8,
+	QUEUE_DEPTH = 16,
 	CHUNK_DIVISOR = 32,
-	LOOKAHEAD_DIVISOR = 8,
+	LOOKAHEAD_DIVISOR = 4,
 };
+
+/*
+** How much audio the device is kept holding beyond the play cursor.
+**
+** A page is not a DMA engine. It schedules the audio it has been handed onto the output
+** clock from a timer of its own, reaching a fixed distance ahead, and a queue shallower
+** than that distance empties between two of the timer's passes: the source stops, the gap
+** is heard, and -- because the movie player reads its clock off the play cursor -- the
+** movie stops with it. So the lookahead is a duration rather than a fraction of a ring
+** whose size says nothing about how long it lasts.
+**
+** The bound on it is what the caller has actually written. Neither caller keeps less than
+** a quarter of its ring written ahead of the play cursor: the sound driver refills a
+** quarter whenever the cursor comes within a quarter of what it last wrote, and the movie
+** player refills half a ring whenever the cursor crosses into the other half. Taking more
+** than that would carry out the previous lap of the ring in place of audio not yet
+** decoded, so the duration is clamped to a quarter ring and the shorter of the two wins.
+** A caller whose ring is too short to hold the duration inside that quarter is asking for
+** a buffer the target cannot carry, and asks for a longer one instead.
+*/
+int const LOOKAHEAD_MS = 90;
 
 /*
 ** Playback state has to keep advancing even when the page is not making a sound, or the
@@ -476,6 +496,12 @@ AudioBackendStream * Audio_Backend_Open_Stream(int ringbytes, int rate, int bits
 	}
 
 	stream->Lookahead = ringbytes / LOOKAHEAD_DIVISOR;
+
+	int const wanted = Byte_Rate(stream) * LOOKAHEAD_MS / 1000;
+	if (wanted < stream->Lookahead) {
+		stream->Lookahead = wanted;
+	}
+
 	if (stream->Lookahead < stream->ChunkSize) {
 		stream->Lookahead = stream->ChunkSize;
 	}
@@ -614,6 +640,16 @@ int Audio_Backend_Write_Cursor(AudioBackendStream const * stream)
 	}
 
 	return((int)((stream->PlayBase + stream->SubmittedBytes) % stream->RingSize));
+}
+
+
+int Audio_Backend_Lookahead(AudioBackendStream const * stream)
+{
+	if (stream == nullptr) {
+		return(0);
+	}
+
+	return(stream->Lookahead);
 }
 
 

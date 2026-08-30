@@ -71,6 +71,63 @@ void Test_Stream_Rejects_Bad_Formats(void)
 }
 
 
+/*
+** The two buffer shapes the engine actually creates, as bytes of ring and the byte rate
+** the ring plays out at: the sound driver's thirty two kilobyte effect buffer at twenty
+** two kilohertz sixteen bit mono, and the movie player's two audio blocks at twenty two
+** kilohertz sixteen bit stereo.
+*/
+struct BufferShapeType
+{
+	char const * Name;
+	int RingSize;
+	int Rate;
+	int Bits;
+	int Channels;
+};
+
+BufferShapeType const _Shapes[] = {
+	{"the sound driver's effect buffer", 32768, 22050, 16, 1},
+	{"the movie player's audio buffer", 32768, 22050, 16, 2},
+};
+
+
+/*
+** A page hands its audio to the output from a scheduler of its own that reaches a fixed
+** distance ahead, so a stream kept supplied for less than that empties between two of its
+** passes: the device stops, and a caller reading the play cursor back for a clock -- which
+** is what the movie player does -- stops with it. The other side of it is that the device
+** must not be handed a lap of the ring the caller has not written yet, and no caller keeps
+** less than a quarter of its ring written ahead of the cursor.
+*/
+void Test_Lookahead_Is_Long_Enough_And_Safe(void)
+{
+	int const NEEDED_MS = 60;
+
+	for (BufferShapeType const & shape : _Shapes) {
+		AudioBackendStream * stream = Audio_Backend_Open_Stream(shape.RingSize, shape.Rate, shape.Bits, shape.Channels);
+
+		if (stream == nullptr) {
+			Report(shape.Name, false);
+			continue;
+		}
+
+		int byterate = shape.Rate * (shape.Bits / 8) * shape.Channels;
+		int lookahead = Audio_Backend_Lookahead(stream);
+
+		char line[160];
+
+		std::snprintf(line, sizeof(line), "%s is kept at least %d ms ahead", shape.Name, NEEDED_MS);
+		Report(line, lookahead >= byterate * NEEDED_MS / 1000);
+
+		std::snprintf(line, sizeof(line), "%s is not taken beyond a quarter ring", shape.Name);
+		Report(line, lookahead <= shape.RingSize / 4);
+
+		Audio_Backend_Close_Stream(stream);
+	}
+}
+
+
 void Test_Ring_Starts_Silent(void)
 {
 	AudioBackendStream * eight = Audio_Backend_Open_Stream(256, 22050, 8, 1);
@@ -392,6 +449,7 @@ int main(void)
 
 	Test_Stream_Rejects_Bad_Formats();
 	Test_Ring_Starts_Silent();
+	Test_Lookahead_Is_Long_Enough_And_Safe();
 	Test_Cursor_Advances_And_Wraps();
 
 	Audio_Backend_Shutdown();

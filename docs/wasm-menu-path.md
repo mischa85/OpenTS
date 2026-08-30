@@ -1,18 +1,22 @@
 # The WebAssembly path to the main menu
 
 > [!IMPORTANT]
-> The WebAssembly target is in progress and unsupported.
-> [Building OpenTS](BUILDING.md) owns build support. Nothing here is a support
-> claim, and the only runtime observations recorded below were made under node,
-> which has no canvas and therefore stops before the menu is reachable.
-> Everything past that stop is read from source, not observed.
+> **This is a record of an investigation, dated August 29, 2026, and the
+> question it asked has since been answered.** The menu was reached the
+> following day, and the game behind it runs; [Building OpenTS](BUILDING.md)
+> owns what has been built and run. The page is kept because most of its
+> analysis is still the best map of this part of the engine, and because the
+> few things it got wrong are worth knowing. Where a later observation settled a
+> question, [8](#8--what-happened) says so; the body below is left as it was
+> written, apart from three corrections marked in place.
 
 [WebAssembly port design](WASM-PORT.md) sizes the whole port.
-[WebAssembly compile status](wasm-compile-status.md) records what compiles.
-This page answers a narrower question: between where the engine stops today and
-the first frame of the graphical main menu, what is actually missing? It is a
-snapshot of a tree three workstreams are editing at once; regenerate the line
-references rather than trusting them.
+[WebAssembly target status](wasm-compile-status.md) records the substitute the
+port stands on. This page answered a narrower question at the time it was
+written: between where the engine stopped and the first frame of the graphical
+main menu, what was actually missing? It is a snapshot of a tree three
+workstreams were editing at once; regenerate the line references rather than
+trusting them.
 
 ## Contents
 
@@ -24,6 +28,7 @@ references rather than trusting them.
 - [5 — Input](#5--input)
 - [6 — The verdict](#6--the-verdict)
 - [7 — Corrections to the port design](#7--corrections-to-the-port-design)
+- [8 — What happened](#8--what-happened)
 
 ## What was measured
 
@@ -158,7 +163,9 @@ The menu loop itself, and it is short:
 `Windows_Message_Handler()`, `Sleep(0)`. Both `Call_Back`
 (`code/conquer.cpp:516`–`:527`) and `Windows_Message_Handler`
 (`code/msgloop.cpp:98`–`:113`) already hand the thread back on this target, and
-`Sleep` is an inert stub (`code/win32compat.cpp:2022`). **The menu's own loop
+`Sleep` is an inert stub. *(Corrected: `Sleep` moved to
+`code/win32timer.cpp:217` and is a yielding wait when the scaffold is built in,
+which strengthens rather than changes the conclusion.)* **The menu's own loop
 needs no flattening.** It is already a per-frame loop that services the page.
 
 ## 2 — Subsystem state along the path
@@ -177,7 +184,7 @@ and are excluded.
 | `vqa.cpp` | `TranslateMessage`, `Sleep` | The raw pump at `:47`, called from `Play_VQA` at `:523`. Inert, and therefore silently non-yielding. |
 | `ahandle.cpp` | `timeSetEvent`, 24 critical-section calls | Movie audio. Fails cleanly: `Open_Audio_Handler` returns `VQAERR_AUDIO` when `Audio_Available()` is false (`code/ahandle.cpp:198`), and the VQA falls back to the wall clock. |
 | `wwmouse.cpp` | `ShowCursor`, `ClipCursor`, `GetCursorPos`, `GetClientRect`, `ClientToScreen` | `Browser_Create_Mouse` overrides only the three position accessors (`code/browser.cpp:558`–`:566`). |
-| `wincursor.cpp` | `CreateDIBSection`, `CreateBitmap`, `CreateIconIndirect`, `SetCursor`, `DestroyCursor` | **Total.** The cursor cannot be built at all. |
+| `wincursor.cpp` | `CreateDIBSection`, `CreateBitmap`, `CreateIconIndirect`, `SetCursor`, `DestroyCursor` | **Total.** The cursor cannot be built at all. *(Corrected: `code/wincursor.cpp:180` now routes the Emscripten build to `Win32_Window_Create_Cursor`, which encodes the frame as a PNG data URL for `canvas.style.cursor` (`code/win32window.cpp:541`). Whether a player sees it is a separate question — see [8](#8--what-happened).)* |
 | `keyboard.cpp` | `GetKeyState`, `ToAscii`, `GetAsyncKeyState` | All three already have `__EMSCRIPTEN__` branches (`:230`, `:321`, `:399`). |
 | `winstub.cpp`, `ownrdraw.cpp`, `loaddlg.cpp`, `options.cpp`, dialog procs in `init.cpp` | many | Win32 front end. Only two of `ownrdraw.cpp`'s functions are on the menu path, and both are portable. |
 | `dsaudio.cpp` | `timeSetEvent`, `timeGetDevCaps`, critical sections | Owned by the audio backend workstream. |
@@ -308,6 +315,13 @@ map is not zoomed (`code/gscreen.cpp:543`–`:548`). It affects stretched
 fullscreen movies, and it is a latent trap for everything after the menu.
 
 ### 4.2 There is no cursor
+
+> **Corrected.** The first paragraph below was true when this was written and is
+> not now: `Build_Cursor` takes an Emscripten branch (`code/wincursor.cpp:180`)
+> that builds a CSS cursor instead of an `HCURSOR`. Everything after it — the
+> `Capture_Mouse` interaction, and the observation that a canvas has no OS
+> pointer to hand over to — still describes the code, and the pointer a player
+> sees is still the browser's arrow. See [8](#8--what-happened).
 
 This is the finding most likely to be assumed away. OpenTS no longer draws the
 mouse pointer into the frame — `code/wincursor.cpp` converts a `ShapeSet` frame
@@ -442,24 +456,38 @@ It is also the cheapest thing on this list to settle: one `DebugString` after
 
 ## 7 — Corrections to the port design
 
-Three statements in [WebAssembly port design](WASM-PORT.md) are contradicted by
-the code as it now stands. They are recorded here rather than edited there,
-because that document is being revised concurrently.
+Three statements in [WebAssembly port design](WASM-PORT.md) were contradicted by
+the code as it stood, and were recorded here because that document was being
+revised concurrently. They have since been carried into it — C.9's movie probe,
+B.1's cursor seam, and B.3's third GDI site — so that document owns them now.
 
-- **C.9 states that the `MOVIES*.MIX` probe "is a wildcard scan that finds
-  nothing gracefully"** and builds a tiered import on it, with movies optional.
-  It is not graceful: `code/init.cpp:2727` returns false and the game does not
-  start. The tiering proposal needs either that check relaxed or the movie
-  archives moved into the required tier, and the choice should be made
-  deliberately — relaxing it changes behavior on the Win32 target too.
+## 8 — What happened
 
-- **B.1 describes the mouse cursor as `code/wwmouse.cpp`, "small and narrow:
-  `ShowCursor`, `ClipCursor`, `GetCursorPos`. Cheap to seam."** The cursor moved
-  to `code/wincursor.cpp` and is now a real `HCURSOR` built with
-  `CreateDIBSection` and `CreateIconIndirect`. Seaming `wwmouse.cpp` alone
-  produces a game with no pointer.
+The menu was reached on August 30, 2026, and the game behind it runs.
+[Building OpenTS](BUILDING.md#what-has-been-run) records the observations. This
+section closes out the verdict above rather than restating them.
 
-- **B.3 says the GDI residue is text metrics in `ownrdraw.cpp` and one guarded
-  site in `tactical.cpp`.** `DSurface::Blit_From` is a third, and it is not
-  text: with no device context the stretch path is unreachable and the software
-  path silently crops instead (`code/dsurface.cpp:502`, `code/blit.cpp:342`).
+| # | Item | Outcome |
+| --- | --- | --- |
+| 1 | `Video_Init` on a real canvas | Done. A page that lays a canvas out passes the test, as predicted. |
+| 2 | `MOVIES*.MIX` present | Unchanged in the code. `code/init.cpp:2727` still returns false, so the archives remain mandatory; the install this was measured against has since acquired them. |
+| 3 | `GMENU.MIX` reachable | Answered by observation: the graphical menu renders, so it is reachable and the `Main_Menu` fallback never runs. **This was the biggest risk in the document, and it did not happen.** |
+| 4 | The data mount answering directory scans | Done, on two paths: the host filesystem under node, and an ISO volume, which in a page is served over HTTP range requests (`code/isohttp.cpp`). |
+| 5 | Audio answering honestly | Superseded. `code/audiobackend.cpp` is a real OpenAL-over-Web-Audio backend rather than an honest refusal. Whether anything is audible is not established. |
+| 6 | `Play_VQA` yielding | Done. `VQA_Message_Handler` takes an Emscripten branch that services the page and yields (`code/vqa.cpp:53`–`:69`), and movies have been observed playing. |
+| 7 | A cursor | Attempted, not settled. The prediction that the answer was a data URL on `canvas.style.cursor` was right (`code/win32window.cpp:541`), but what a player sees is still the browser's arrow. |
+| 8 | Scaled blits | Open, and still only read rather than observed. `DSurface::AllowStretchBlits` is still true (`code/dsurface.cpp:79`) and `Bit_Blit` still copies `std::min(srect.Height, drect.Height)` rows (`code/blit.cpp:342`), so a destination larger than its source is still not stretched. Movies play; whether a stretched one is cropped has not been checked. |
+| 9 | Heap footprint at the menu | Still not measured. |
+
+Two judgements in [6](#6--the-verdict) are worth marking as having held. The
+graphical menu really was portable as written — nothing in `newmenu.cpp`,
+`grphmenu.cpp`, `msanim.cpp`, or `theme.cpp` needed changing — and the menu's
+own loop really did need no flattening.
+
+One framing was too optimistic. "Needed to play a game: everything Part C sizes,
+and in particular `code/ownrdraw.cpp`'s 7,001-line control toolkit, because the
+first click on any menu item lands in it" is the right shape but the wrong
+conclusion about the toolkit: campaign missions can be started without it,
+because a command-line switch selects a scenario directly and skips the chooser.
+What the toolkit still gates is everything reached by a dialog — options,
+skirmish setup, the lobby, and save and load.

@@ -1,11 +1,55 @@
 # WebAssembly port design
 
 > [!IMPORTANT]
-> This document records a design, not a result. Nothing described here has been
-> built or run. [Building OpenTS](BUILDING.md) remains the authority on what is
-> supported, and it records the WebAssembly target as in progress and
-> unsupported. Every measurement below is a static count taken from the tree; a
-> count is not a runtime observation.
+> **This document records the design the port was started from, dated August
+> 2026. The port has since been built and run, and parts of this design were
+> wrong.** It is kept, and corrected in place rather than rewritten, because a
+> plan that was tried and did not work is more useful stated than quietly
+> edited to match what happened. [Outcome](#outcome) is the summary;
+> corrections appear against the sections they belong to and are marked as such.
+> [Building OpenTS](BUILDING.md) remains the authority on what is supported and
+> on what has been run. Every measurement below is a static count taken from the
+> tree as it then stood; a count is not a runtime observation, and the counts
+> have moved.
+
+## Outcome
+
+The engine builds, links, and runs in a browser: the main menu, a campaign
+mission played from the player's own disc image, unit movement and selection,
+building placement, terrain, radar, sidebar, and movies.
+[Building OpenTS](BUILDING.md#what-has-been-run) records what was observed and,
+just as importantly, what was not.
+
+Four things in this design turned out differently.
+
+- **[A.5](#a5-recommendation)'s recommendation could not be implemented as
+  written.** It proposed standing up `emscripten_set_main_loop` *and* enabling
+  the JSPI scaffold. Those two are mutually exclusive, and that was established
+  by experiment rather than by reading. What was built instead keeps the
+  engine's own stack and yields from inside it. See the correction in
+  [A.5](#a5-recommendation) and [A.6](#a6-migration-sequence).
+- **The premise of [C.3](#c3-com-and-what-it-means-for-the-save-format) — that
+  there is no COM runtime to activate an object with — is no longer true.** An
+  in-process class registry answers `CoCreateInstance` out of the same 67
+  factories the Win32 build registers, which is what made units constructible.
+  The save *container* remains exactly as this section describes it.
+- **[C.9](#c9-assets-and-licensing)'s asset proposal was overtaken.** It
+  proposed an IDBFS import with a manifest. What was built reads an ISO 9660
+  image over HTTP range requests, which needs no import step and no manifest,
+  because the volume answers directory scans directly. Its licensing analysis is
+  unchanged and still governs.
+- **The Win32 front end was not the first thing to go.** [C.1](#c1-the-win32-front-end)
+  called it the longest pole, and it still is, but a window manager landed
+  underneath it (`code/win32user.cpp`) while the dialog-template step did not,
+  so the toolkit compiles and runs and no dialog opens. A campaign mission is
+  reachable anyway, through a command-line switch that skips the chooser.
+
+Three judgements held and are worth recording as such: the platform seam in
+[Part B](#part-b--the-platform-seam) was the right shape and `bgfxbackend.h` was
+the right model for it; the threading conclusion in [C.7](#c7-threading) held
+exactly — no pthreads, no `SharedArrayBuffer`, no cross-origin isolation; and
+the floating-point reasoning in [C.6](#c6-determinism) has not been contradicted,
+though it has not been tested either.
 
 OpenTS is a 385,199-line Win32 engine (379 `.cpp` files under `code/`) built
 today only as a 32-bit MSVC target. Porting it to WebAssembly through
@@ -21,12 +65,14 @@ here: replacing the x86 assembly with C++, and adding the Emscripten CMake
 path. Both are landing as this is written — `code/CMakeLists.txt:6` and
 `CMakeLists.txt:16` already branch on `EMSCRIPTEN`, and only
 `code/winasm.asm` remains of the assembly — so treat any statement here about
-their state as a snapshot. This document owns the two pieces that cannot be
+their state as a snapshot. Both have since landed: no `.asm` file remains under
+`code/`, and [Building OpenTS](BUILDING.md) owns the Emscripten build. This document owns the two pieces that cannot be
 parallelized blindly, the main-loop restructure and the platform seam, and
 sizes the remaining subsystem work behind them.
 
 ## Contents
 
+- [Outcome](#outcome)
 - [Part A — the main-loop restructure](#part-a--the-main-loop-restructure)
 - [Part B — the platform seam](#part-b--the-platform-seam)
 - [Part C — remaining subsystem work](#part-c--remaining-subsystem-work)
@@ -91,7 +137,7 @@ from outside — a network peer, a user click, an audio stream reaching its end.
 | `code/ownrdraw.cpp:1778`–`:1893` | The dialog reveal wipe, paced by `Sleep(wait)` at `:1875` and yielded with `Sleep(0)` at `:1890`, running entirely inside one `WM_PAINT`. Already half a state machine — `data->animState` is set to `2` at `:1897`. |
 | `code/conquer.cpp:932`, `:961`, `:974` | Map-editor paths (`_DEBUG` only). |
 | `code/taction.cpp:2006` | `Sleep(1000)` in a trigger action, after a render. A cosmetic pause that is also a latent multiplayer hazard. |
-| `code/except.cpp:1442` | Crash-handler path; the whole file is excluded from the wasm build (see [C.8](#c8-structured-exception-handling)). |
+| `code/except.cpp:1442` | Crash-handler path, inside the half of the file the wasm build compiles out (see [C.8](#c8-structured-exception-handling)). |
 
 Nine of these are loops in the 93-loop set; the `conquer.cpp` and
 `taction.cpp` entries are bare `Sleep()` calls with no loop around them. Nine
@@ -215,6 +261,37 @@ needed for the part of the port that runs in the inner loop.
 
 ## A.5 Recommendation
 
+> [!WARNING]
+> **Corrected. This recommendation cannot be implemented as written, and the two
+> halves of it are mutually exclusive.**
+>
+> A callback registered with `emscripten_set_main_loop` is invoked by the
+> runtime, not from underneath a promising export, so a JSPI suspend taken
+> inside it throws `SuspendError`. That was established with a standalone test
+> rather than inferred, and it is the reason the sentence below cannot stand:
+> the destination and the scaffold cannot coexist, so the scaffold has to carry
+> the whole engine or none of it.
+>
+> **What was built instead.** `main` (`code/startup.cpp:723`) calls
+> `Browser_Init` and then `WinMain` (`:739`), and never returns while the engine
+> is running — the return is a promise the page holds. The engine keeps its own
+> C++ stack, and `Browser_Yield` (`code/browser.cpp:439`) hands the thread back
+> from wherever it happens to be by awaiting `requestAnimationFrame`
+> (`code/browser.cpp:111`), falling back to a timer in a hidden tab. Every one
+> of the sixty-odd waits is carried that way, and
+> `Browser_Blocking_Wait_Count` (`code/browser.cpp:489`) is the number the page
+> displays and the number that has to reach zero.
+>
+> This is a deeper commitment to the scaffold than A.5 intended, and the
+> time-boxing below matters more, not less, because of it. The reasoning that
+> follows — why not Asyncify, why flattening is the destination — is unaffected;
+> only the claim that the two can be run side by side is wrong. The migration
+> order in [A.6](#a6-migration-sequence) is affected, at step 4.
+>
+> `emscripten_set_main_loop` survives in the tree in exactly one place:
+> `wasm/demo.cpp:488`, the standalone renderer demo, which takes no JSPI suspend
+> and therefore has no conflict.
+
 **Restructure to `emscripten_set_main_loop`. Use JSPI as an explicitly
 temporary scaffold for the not-yet-flattened waits, behind a build flag, and
 plan to remove it. Do not use Asyncify.**
@@ -289,9 +366,15 @@ browser build running.
    multiplayer branch at `code/mainloop.cpp:167` already breaks out
    unconditionally, so the behavior a network game sees is unchanged.
 
-4. **Stand up `emscripten_set_main_loop` around `Game_Frame` and turn on the
-   JSPI scaffold.** At this point the engine reaches a browser frame. Everything
-   still nested still blocks, and JSPI carries it.
+4. ~~**Stand up `emscripten_set_main_loop` around `Game_Frame` and turn on the
+   JSPI scaffold.**~~ **Not achievable as written; see the correction in
+   [A.5](#a5-recommendation).** A callback the runtime invokes cannot suspend.
+   What was done instead: `main` calls `WinMain` and does not return, and a
+   yield point inside the engine's own stack awaits an animation frame. The
+   engine reaches a browser frame at this step either way, and everything still
+   nested still blocks, carried by the scaffold. Steps 1 to 3 were not
+   prerequisites for it and were not done first; they remain the right work, and
+   they are now what step 9 needs rather than what step 4 needed.
 
 5. **Flatten the in-game waits, highest value first.** `Wait_For_Players`
    (`code/queue.cpp:1212`) is the one that matters: it already renders and takes
@@ -350,7 +433,7 @@ of a 565 buffer.
 | Archive access | `code/mixfile.h:26` | Portable already; sits on `FileClass`. |
 | Surface backing | `code/dsurface.h` | Partial. The pixel buffer is allocated by `CreateDIBSection` (`code/dsurface.cpp:146`) and the class exposes a GDI device context (`code/dsurface.h:66`). See [B.3](#b3-the-gdi-text-residue). |
 | In-game GUI | `GadgetClass` and its 18 file pairs, 10,750 lines | Complete and portable. Zero `HWND`, zero `WM_`; it draws through `LogicalSurface` (`code/dialog.cpp:107`–`:127`, `code/textbtn.cpp:280`–`:338`). The sidebar, radar, HUD, and chat all sit on it. Nothing to do. |
-| Mouse cursor | `code/wwmouse.cpp`, 403 lines | Small and narrow: `ShowCursor`, `ClipCursor`, `GetCursorPos`. Cheap to seam. |
+| Mouse cursor | `code/wwmouse.cpp`, 403 lines | **Corrected.** This row was wrong: it read the wrong file. The pointer is no longer drawn into the frame, and `code/wincursor.cpp` turns a `ShapeSet` frame into a real `HCURSOR` through `CreateDIBSection` and `CreateIconIndirect`. Seaming `wwmouse.cpp` alone produces a game with no pointer. The Emscripten branch at `code/wincursor.cpp:180` encodes the frame as a PNG data URL for `canvas.style.cursor` instead; what a player sees is still the browser's arrow. |
 | Scaled input routing | `code/msgroute.cpp:155` | Already converts window coordinates to game coordinates because the engine renders scaled. Keep it; a browser needs the same conversion. |
 
 ## B.2 Seams that do not exist at all
@@ -366,6 +449,19 @@ of a 565 buffer.
 | **Sockets** | See [C.5](#c5-networking). | A `Send_To`/`Receive_From` transport interface; `UDPInterfaceClass` already has one internally. |
 
 ## B.3 The GDI text residue
+
+> **Corrected: the residue is not all text.** `DSurface::Blit_From`
+> (`code/dsurface.cpp:492`) is a third site and a functional one. It sends a
+> blit to the software blitter when the source is not GDI-backed (`:502`) and
+> otherwise stretches it with `StretchBlt` (`:529`). On this target
+> `Is_GDI_Backed` is always false (`code/dsurface.h:122`), so every blit takes
+> the software path — and that path does not scale: `Bit_Blit` copies
+> `std::min(srect.Height, drect.Height)` rows (`code/blit.cpp:342`). A
+> destination larger than its source gets a 1:1 copy in the corner.
+> `DSurface::AllowStretchBlits` is still initialized to true
+> (`code/dsurface.cpp:79`), and the comment beside its declaration claiming
+> surfaces stretch in software does not match `Bit_Blit`. No scaled blit has
+> been observed either way.
 
 `DSurface` hands out a Windows device context (`code/dsurface.h:66`), and four
 places draw text through it: `code/ownrdraw.cpp:4940`, `:5687`, `:6152`, and
@@ -393,6 +489,23 @@ the validation a compatibility-boundary change needs under
 [Contributing](../CONTRIBUTING.md).
 
 ## C.1 The Win32 front end
+
+> **Where this stands.** Phase 1 is half built and the half that is missing is
+> the one that matters. `code/win32user.cpp` is the portable shim this section
+> proposes — handles, a message queue, `SendMessage`/`DispatchMessage`, the
+> dialog-item protocol — and `Fetch_Resource` already hands back the 72 dialog
+> templates in their shipped layout, as [C.4](#c4-languagedll) predicted it
+> would. What does not exist is the step between them: `CreateDialogParam`,
+> `CreateDialogIndirectParam`, and `DialogBoxParam` are still stubs
+> (`code/win32compat.cpp:2613`–`:2615`), so `OwnerDraw::Begin_Dialog` returns
+> null (`code/ownrdraw.cpp:6737`) and every dialog is dead. The toolkit compiles
+> and runs; nothing ever asks it to draw.
+>
+> One consequence the section did not anticipate: the graphical main menu does
+> not depend on the toolkit, so it renders anyway, and a campaign mission can be
+> started by a command-line switch that skips the chooser
+> (`code/init.cpp:1854`). The front end is still the longest pole; it is no
+> longer the thing standing between the port and a played mission.
 
 **This is the longest pole.** The entire out-of-game experience — main menu,
 options, skirmish setup, multiplayer lobby, save/load, message boxes — is real
@@ -594,6 +707,24 @@ load-bearing:
 
 None of `ole32` exists under Emscripten. So the replacement has to answer a
 compatibility question, not just a portability one.
+
+> **Corrected, in one half.** "None of `ole32` exists" is no longer true of
+> activation. `code/win32compat.cpp:2203`–`:2344` is an in-process class
+> registry: `CoRegisterClassObject` publishes a factory and `CoCreateInstance`
+> is a table lookup followed by `IClassFactory::CreateInstance`, with no
+> registry, no marshalling, and no second process. `RegisterClasses`
+> (`code/startup.cpp:241`) publishes the same 67 factories it publishes on
+> Windows, so a locomotor activates and a unit is constructible. In effect the
+> first half of proposal 1 below was answered by keeping the COM shape rather
+> than by replacing it, which is cheaper and leaves the argument for replacing
+> it intact.
+>
+> The container half is untouched. `StgCreateDocfile` and `StgOpenStorage`
+> report `E_NOTIMPL` (`code/win32compat.cpp:2676`, `:2677`), so `Save_Game`
+> writes nothing (`code/saveload.cpp:937`) and `Load_Game` fails before it opens
+> a stream (`:1184`). Saving and loading do not work, and a saved file would in
+> any case land on a filesystem the tab discards. Proposal 2 is therefore still
+> the live decision, unchanged.
 
 **Proposal, in two independent pieces:**
 
@@ -926,9 +1057,24 @@ on: `Fatal()` (`code/except.h:58`) and the custom exception codes raised at
 to the console, a JavaScript stack capture, and `abort()`. Emscripten's own
 `-sASSERTIONS` and demangled stack traces do the rest.
 
+> **Adjusted.** The shape is what was done; the packaging is not. The file is
+> compiled rather than excluded, and the split is inside it: everything from
+> `code/except.cpp:79` to `:1996` is `#if !defined(__EMSCRIPTEN__)`, and a
+> WebAssembly half at `:1997` keeps the entry points and announces its own
+> absence. A fault reaches the host as a wasm trap and is reported with the
+> browser's or node's own JavaScript stack. Keeping one file avoids a second
+> declaration of the same entry points, which is the whole of the difference.
+
 Worth noting separately: the engine uses **no C++ exceptions at all** — zero
 `catch` blocks across `code/*.cpp`. `-fno-exceptions` is available for engine
 code, subject to what bgfx and bx require.
+
+> **Corrected.** The build passes `-fwasm-exceptions`, not `-fno-exceptions`,
+> and the reason is the yield scaffold rather than the engine's own use of
+> exceptions: `-fexceptions` routes every call that can unwind through an
+> `invoke_` import, and Emscripten declares every `invoke_` import suspending
+> whenever JSPI is on, so a static initializer would try to suspend outside a
+> promising boundary and trap (`code/CMakeLists.txt:157`–`:165`).
 
 Estimated **1–2 weeks**.
 
@@ -984,7 +1130,35 @@ availability checks. So the import can be tiered — required archives first,
 movies and alternate score sets optional — which keeps the common case well
 inside quota and makes the first run fast.
 
+> **Corrected: the movie probe is not graceful.** `Init_Secondary_Mixfiles`
+> returns false when no `MOVIES*.MIX` was found (`code/init.cpp:2727`), which
+> makes `Init_Game` return −1 and ends the run before the menu. `SCORES.MIX` is
+> fatal in the same way (`:2692`), and so is the `MAPS*.MIX` scan (`:2641`). The
+> tiering above therefore needs either those checks relaxed or the movie
+> archives moved into the required tier, and that choice should be made
+> deliberately: relaxing the check changes behavior on the Win32 target too.
+
 ### Proposal
+
+> **Superseded.** The proposal below was not what was built, and the reason is
+> that the engine scans directories. What was built reads an **ISO 9660 image**,
+> mounted lazily on the first name the host cannot answer for
+> (`code/win32compat.cpp:535`) and, in a page, served over HTTP range requests
+> (`code/isohttp.cpp`). The volume answers `FindFirstFile` directly, so
+> requirement 2 below — a manifest built at import time — does not arise, and
+> neither does the import UX that most of the estimate was for. Requirement 3
+> held exactly: nothing above `FileClass` changed.
+>
+> The transport is a synchronous `XMLHttpRequest`, and that is forced rather
+> than chosen: the engine's first file open happens in a static constructor,
+> before `main`, where a JSPI suspend is illegal, so an asynchronous fetch there
+> would end the run (`code/isohttp.cpp:13`–`:21`). It is the one place in the
+> port where the scaffold could not be used.
+>
+> The licensing analysis above is unchanged and still governs: the image is the
+> player's own, named by the page or the host, and the project serves none.
+> [Building OpenTS](BUILDING.md#where-the-webassembly-target-finds-game-data)
+> owns how it is configured.
 
 **User-supplied files, persisted in IDBFS, with no project-hosted data path.**
 
@@ -1088,6 +1262,15 @@ project. And they should be read against the fact that the automated safety net
 is thin: `tests/` currently contains a single test
 (`tests/logstress/logstress.cpp`), so almost all verification is manual
 play-through against the Win32 build.
+
+> **Corrected.** The safety net is no longer that thin, though it is still thin
+> for what this section estimates. Eleven tests are registered under Emscripten
+> and eleven under MSVC, covering the decoders, the lighting and voxel paths,
+> the ISO reader, the Win32 file layer, the PE resource reader, and the audio
+> backend; [Building OpenTS](BUILDING.md#tests) lists them. None of them
+> exercises the simulation, so the replay harness [C.6](#c6-determinism) calls
+> for is still unbuilt and manual play-through is still the only check on the
+> parts these estimates are about.
 
 ## D.4 Genuine risks
 

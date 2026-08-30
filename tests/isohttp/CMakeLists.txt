@@ -12,6 +12,7 @@ add_executable(ISOHttpTest
     "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
     "${CMAKE_SOURCE_DIR}/code/isohttp.cpp"
     "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
+    "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
 )
 
 target_compile_features(ISOHttpTest PRIVATE cxx_std_20)
@@ -22,6 +23,8 @@ target_include_directories(ISOHttpTest PRIVATE "${CMAKE_SOURCE_DIR}/code")
 # same narrow wchar_t and MSVC keyword handling the engine is built with.
 target_compile_options(ISOHttpTest PRIVATE
     -fshort-wchar
+    -fno-builtin-wcslen
+    -fno-builtin-wcsnlen
     -fexceptions
     -fdeclspec
     -D__cdecl=

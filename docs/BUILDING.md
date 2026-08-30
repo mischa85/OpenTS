@@ -19,8 +19,8 @@
 
 Other generators, compilers, architectures, and configurations are not
 supported by the current tree. A WebAssembly target is
-[in progress](#webassembly-in-progress-and-unsupported) and configures under
-Emscripten; it does not build and it is not supported.
+[in progress](#webassembly-in-progress-and-unsupported); it builds, links, and
+runs under Emscripten, and it is not supported.
 
 Install Visual Studio 2022 with the **Desktop development with C++** workload,
 a Windows SDK, CMake 3.23 or newer, and Git for Windows.
@@ -81,70 +81,159 @@ Standard VSCode shortcuts (`Ctrl+Shift+B`, `F5`, `Ctrl+F5`) and interface apply.
 ## WebAssembly, in progress and unsupported
 
 > [!WARNING]
-> The WebAssembly target is under development. It configures, and some of its
-> translation units compile. The target itself does not build, it produces no
-> binary, and nothing about it has been run. It is not supported and
-> continuous integration does not build it.
+> The WebAssembly target builds, links, and runs, and it is still unsupported.
+> Continuous integration does not build it, no part of the port has been
+> compiled with MSVC, and the observations recorded under
+> [what has been run](#what-has-been-run) are the whole of the evidence for it.
+> Visual Studio 2022 Win32 remains the supported target.
 
-The build accepts the Emscripten toolchain alongside MSVC, so that the port can
-be worked on and measured. Emscripten's wasm32 is ILP32, which gives the engine
-the 4-byte pointers and 4-byte `long` its layouts assume, the same as Win32
-x86.
+The build accepts the Emscripten toolchain alongside MSVC. Emscripten's wasm32
+is ILP32, which gives the engine the 4-byte pointers and 4-byte `long` its
+layouts assume, the same as Win32 x86; the hard `FATAL_ERROR` on any other
+pointer width at `code/CMakeLists.txt:6` applies to both toolchains and wasm32
+satisfies it.
 
 ```bash
 source /path/to/emsdk/emsdk_env.sh
-emcmake cmake -S . -B build-wasm -G Ninja \
-    -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+emcmake cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Debug
+ninja -C build-wasm
 ```
 
-Configuration was last exercised on August 29, 2026 with Emscripten 6.0.8,
-CMake 4.4.2, and Ninja on macOS, in both Debug and Release. That establishes
-that CMake generates a build; it establishes nothing about compiling, linking,
-or running.
+Emscripten splits an executable in two, so a successful build writes the loader
+and the module it looks for beside it:
 
-The target differs from the Win32 one in what it contains:
+| Configuration | Build output under `build-wasm/bin/` |
+| --- | --- |
+| Debug | `GameD.js`, `GameD.wasm` |
+| Release | `Game.js`, `Game.wasm` |
+
+A post-build step stages both halves into `TS_RUN_DIR` (`code/CMakeLists.txt:465`
+and `:474`), which is what a node run needs. The page a browser run is served
+from is generated separately, as `build-wasm/bin/index.html` from
+`wasm/game.html` (`wasm/CMakeLists.txt:85`); it is not staged into the run
+directory, so a browser run is served out of `build-wasm/bin`.
+
+`wasm/demo.cpp` builds a second, unrelated target, `opents-wasm-demo`, that
+links the renderer seam and nothing else (`wasm/CMakeLists.txt:22`). It is not
+part of the game.
+
+### Build options
+
+Both options exist only under Emscripten and do not appear in an MSVC cache.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `OPENTS_WASM_JSPI` | `ON` | Defines `OPENTS_WASM_JSPI` and links `-sJSPI` (`code/CMakeLists.txt:345`). The engine's not-yet-flattened waits suspend on JavaScript Promise Integration; a build configured without it stops answering the page at the first wait, and says so once. |
+| `OPENTS_WASM_NODERAWFS` | `ON` | Links `-sNODERAWFS=1` (`code/CMakeLists.txt:359`), handing the module the host filesystem. It is node-only: a page built with it throws before `main` runs, so a browser build is configured with `-DOPENTS_WASM_NODERAWFS=OFF`. |
+
+### How the target differs from the Win32 one
 
 | Component | Treatment |
 | --- | --- |
-| `.rc` resources and MASM assembly | Excluded; both are Visual Studio toolchain inputs |
-| `code/language/` | Excluded; `Language.dll` is a Win32 resource library |
-| `tests/` | Excluded; the harness is written against the Win32 API |
-| Renderer | bgfx's OpenGL ES 3 renderer, which Emscripten reaches through WebGL 2 |
-
-Excluding `code/language/` removes every localized string the engine displays,
-because `data.cpp` loads them from `Language.dll` at runtime. A replacement
-string source is required before the target can display anything.
+| `.rc` resources | Excluded; a Visual Studio toolchain input (`code/CMakeLists.txt:72`). The version and icon resources have no replacement. |
+| `code/language/` | Not built (`CMakeLists.txt:71`), because `Language.dll` is a Win32 resource library. The strings are not lost: `code/peresource.cpp` reads the shipped library as a data file and walks its PE resource directory, so `Fetch_String` and `Fetch_Resource` answer out of the same library the Win32 build loads. |
+| `code/wonline.cpp` | Excluded (`code/CMakeLists.txt:53`); it drives a service retired in 2004 through ATL. `wonlinestub.cpp` supplies what the rest of the engine references. |
+| `tests/` | Built. `logstress` is Win32-only (`tests/CMakeLists.txt:2`) and `tests/audio` builds only here (`:18`). |
+| Renderer | bgfx's OpenGL ES 3 renderer, reached through WebGL 2 (`code/CMakeLists.txt:318`). `thirdparty/CMakeLists.txt:32` compiles the bgfx tree with `-msimd128`, because Emscripten reports an x86 processor and bx therefore asks for SSE4.2 intrinsics that clang lowers to WebAssembly SIMD only when that feature is enabled. |
+| Exceptions | `-fwasm-exceptions` rather than `-fexceptions` (`code/CMakeLists.txt:165`), because `-fexceptions` routes unwinding through `invoke_` imports that Emscripten declares suspending whenever JSPI is on, which traps in a static initializer. |
 
 ### Where the WebAssembly target finds game data
 
 The engine opens its archives out of the directory it runs in, through the Win32
-file API that `code/win32compat.cpp` puts on POSIX. Under node the directory that
-reaches is the host's own, which the `-sNODERAWFS=1` link option hands the module
-directly; the post-build step stages both halves of the Emscripten executable, the
-`.js` loader and the `.wasm` module beside it, into the run directory, so a run is
+file API that `code/win32compat.cpp` puts on POSIX. Paths are resolved
+case-insensitively when the exact spelling is missing, so an archive installed as
+`tibsun.mix` answers the engine's `TIBSUN.MIX` on a case-sensitive filesystem.
+
+**Under node**, the directory that reaches is the host's own, which
+`-sNODERAWFS=1` hands the module directly, so a run is
 
 ```bash
 cd Run && node GameD.js
 ```
 
-with the game data staged in `Run` exactly as the Win32 build expects it. Paths
-are resolved case-insensitively when the exact spelling is missing, so an archive
-installed as `tibsun.mix` answers the engine's `TIBSUN.MIX` on a case-sensitive
-filesystem.
+with the game data staged in `Run` exactly as the Win32 build expects it.
 
-`-sNODERAWFS=1` is node-only — a page built with it throws before `main` runs — so
-a browser build turns it off with `-DOPENTS_WASM_NODERAWFS=OFF` and brings its data
-in another way. No browser data path exists yet.
+**In a browser** there is no host filesystem, so the data is left on a web server
+as a disc image and read with HTTP range requests. Configure with
+`-DOPENTS_WASM_NODERAWFS=OFF`, serve `build-wasm/bin` and the image from a server
+that answers ranges, and open `index.html`. The image is named by
+`Module.opentsImage`, set on the page before the module loads, and otherwise
+defaults to `opents-data.iso` beside the page (`code/isohttp.cpp:104`, `:112`);
+the shipped `wasm/game.html` names none, so it takes the default. The volume is
+mounted lazily, on the first name the host cannot answer for
+(`code/win32compat.cpp:535`), and reads shorter than a block are served from a
+small block cache rather than one request apiece (`code/isohttp.h:56`).
 
-Individual translation units compile ahead of the link, which is how the port
-is measured:
+A server that ignores the range and answers with the whole image is rejected
+rather than accommodated: the transport requires a `206` and a `Content-Range`
+it can read (`code/isohttp.cpp:58`, `:85`). Under node the same image can be
+named through the `OPENTS_IMAGE` environment variable.
+
+The build offers no `--preload-file` bundling. [README](../README.md) is
+explicit that OpenTS supplies the engine and not the game data, so a deployment
+that serves an image is one serving data it has the right to serve.
+
+### Tests
+
+`tests/` builds under Emscripten, and the Emscripten toolchain file points
+`CMAKE_CROSSCOMPILING_EMULATOR` at the emsdk's node, so `ctest` runs the
+harnesses without further configuration:
 
 ```bash
-ninja -C build-wasm code/CMakeFiles/OpenTS.dir/lcw.cpp.o
+ctest --test-dir build-wasm
 ```
 
-[WebAssembly compile status](wasm-compile-status.md) records what compiles
-today and categorizes what does not.
+Eleven tests are registered there: `iso9660`, `lcw`, `lcwstream`, `lcwuncomp`,
+`soscodec`, `vqacodec`, `voxel`, `lighting`, `win32file`, `resources`, and
+`audiobackend`. An MSVC configuration registers the same set with `logstress` in
+place of `audiobackend`. None of them reads game data.
+
+### What has been run
+
+| | |
+| --- | --- |
+| Date | August 30, 2026 |
+| Tree | `732f984` |
+| Toolchain | Emscripten 6.0.8, CMake 4.4.2, Ninja 1.13.2, macOS host; node 24.19.0 from the emsdk for `ctest` |
+| Configuration | `Debug`, both options at their defaults |
+
+A fresh `emcmake` configure, an engine build, and `ctest --test-dir build-wasm`
+completed: eleven tests, eleven passed. Debug and Release engine binaries have
+both been produced.
+
+Observed in a browser, from a disc image over HTTP: the graphical main menu, a
+campaign mission started and played, unit movement and selection, building
+placement, terrain, the radar, the sidebar and its cameos, an audio device
+opening, and movies playing.
+
+Not established, and not to be read into the above:
+
+- **Sound.** The backend queues samples to OpenAL over Web Audio
+  (`code/audiobackend.cpp:280`), and it also carries a silent fallback that
+  advances the play cursors off the wall clock when the page will not start
+  audio (`code/audiobackend.cpp:226`). An advancing cursor is therefore not
+  evidence of a sound, and nobody has confirmed hearing one.
+- **Saving and loading.** `StgCreateDocfile` and `StgOpenStorage` report
+  `E_NOTIMPL` (`code/win32compat.cpp:2676`, `:2677`), so `Save_Game` writes
+  nothing and returns false (`code/saveload.cpp:937`) and `Load_Game` returns
+  false before it opens a stream (`code/saveload.cpp:1184`). A save would in any
+  case land on the in-memory filesystem the tab discards
+  (`code/win32disk.cpp:27`).
+- **The owner-draw Win32 front end.** `code/win32user.cpp` is a real in-process
+  window manager, but the dialog-template entry points are still stubs
+  (`code/win32compat.cpp:2613`–`:2615`), so `OwnerDraw::Begin_Dialog` returns
+  null (`code/ownrdraw.cpp:6737`). Skirmish setup and the save/load dialog then
+  do nothing at all, and `Main_Options_Dialog` spins on the null handle without
+  servicing the page (`code/mainopt.cpp:69`), which hangs the tab.
+- **The mouse cursor.** `code/win32window.cpp:541` encodes each cursor frame as
+  a PNG data URL for `canvas.style.cursor`, but what a player sees is still the
+  browser's own arrow, and that path is under active work.
+- **Anything under MSVC.** No part of this port has been compiled on Windows.
+
+[WebAssembly target status](wasm-compile-status.md) records the state of the
+port's subsystems and the Win32 substitute they are built on.
+[WebAssembly port design](WASM-PORT.md) records the design the port was started
+from, and where it was wrong.
 
 ## Build identity
 

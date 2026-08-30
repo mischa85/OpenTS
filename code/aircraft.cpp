@@ -1650,7 +1650,8 @@ int AircraftClass::Do_MISSION_PATROL(void)
 			}
 
 			if (Ammo != 0) {
-				ObjectClass *threat = Greatest_Threat(THREAT_AREA, PositionCoord, false)->As_ObjectClass();
+				AbstractClass * target = Greatest_Threat(THREAT_AREA, PositionCoord, false);
+				ObjectClass * threat = (target != NULL) ? target->As_ObjectClass() : NULL;
 				if (threat != NULL) {
 					Override_Mission(MISSION_ATTACK, threat, NULL);
 					Status = VALIDATE_LZ;

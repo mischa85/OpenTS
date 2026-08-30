@@ -644,7 +644,7 @@ int FootClass::Do_MISSION_PATROL(void)
 
 		case PATROL_FIND_TARGET: {
 			AbstractClass * target = Greatest_Threat(THREAT_AREA, Get_Coord(), false);
-			ObjectClass * optr = target->As_ObjectClass();
+			ObjectClass * optr = (target != NULL) ? target->As_ObjectClass() : NULL;
 			int primary = What_Weapon_Should_I_Use(optr);
 
 			if (optr != NULL && (In_Range(optr, primary) || Search.Test_Cell_Walk(Cell(Destination_Coord()), Cell(optr->Destination_Coord()), this, Is_Moving_Onto_Bridge(), optr->Is_Moving_Onto_Bridge(), MZONE_NONE) < dist)) {
@@ -691,7 +691,7 @@ int FootClass::Do_MISSION_PATROL(void)
 		}
 
 		case PATROL_ENGAGE_TARGET: {
-			ObjectClass * optr = TarCom->As_ObjectClass();
+			ObjectClass * optr = (TarCom != NULL) ? TarCom->As_ObjectClass() : NULL;
 			int primary = What_Weapon_Should_I_Use(optr);
 
 			/*
@@ -718,7 +718,7 @@ int FootClass::Do_MISSION_PATROL(void)
 			 */
 			if (TarCom == NULL) {
 				AbstractClass * target = Greatest_Threat(THREAT_AREA, PatrolCell->Center_Coord(), false);
-				ObjectClass * scanptr = target->As_ObjectClass();
+				ObjectClass * scanptr = (target != NULL) ? target->As_ObjectClass() : NULL;
 				int scanweapon = What_Weapon_Should_I_Use(scanptr);
 				if (scanptr != NULL && (In_Range(scanptr, scanweapon) || Search.Test_Cell_Walk(PatrolCell->CellID, Cell(scanptr->Destination_Coord()), this, PatrolCell->IsUnderBridge, scanptr->Is_Moving_Onto_Bridge(), MZONE_NONE) < dist)) {
 					Assign_Target(target);
@@ -753,7 +753,7 @@ int FootClass::Do_MISSION_PATROL(void)
 
 		case PATROL_RETURN: {
 			AbstractClass * target = Greatest_Threat(THREAT_AREA, PatrolCell->Center_Coord(), false);
-			ObjectClass * optr = target->As_ObjectClass();
+			ObjectClass * optr = (target != NULL) ? target->As_ObjectClass() : NULL;
 			int primary = What_Weapon_Should_I_Use(optr);
 
 			if (optr != NULL && (In_Range(optr, primary) || Search.Test_Cell_Walk(PatrolCell->CellID, Cell(optr->Destination_Coord()), this, PatrolCell->IsUnderBridge, optr->Is_Moving_Onto_Bridge(), MZONE_NONE) < dist)) {

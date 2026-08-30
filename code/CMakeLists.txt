@@ -150,6 +150,22 @@ set(OPENTS_COMPILE_OPTIONS
     # freely, so clang is held to the assumption the code was written under.
     -fno-strict-aliasing
 
+    # AbstractClass offers twenty-four As_*Class helpers, each a dynamic_cast of `this`, and
+    # the engine calls them on pointers that may be null. clang infers that a member's `this`
+    # is nonnull and dereferenceable and so deletes the null test dynamic_cast is required to
+    # make -- inline or out of line, since the inference is about `this` rather than about
+    # inlining. The cast then reads a vtable at address zero, which is addressable memory in
+    # WebAssembly, and traps. MSVC keeps the test, so this belongs to the clang target alone.
+    -fno-delete-null-pointer-checks
+
+    # The engine's wchar_t is 16 bits and the library's is 32, so no libc wide-string
+    # routine may be called. That is not enough on its own: at -O1 the loop-idiom pass
+    # recognizes a hand-written wide length scan and rewrites it back into a call to
+    # wcslen, which then counts the wrong character width. Two such helpers, written
+    # precisely to avoid the library, were compiled into calls to it.
+    -fno-builtin-wcslen
+    -fno-builtin-wcsnlen
+
     # MSVC's wchar_t is 16 bits and clang's is 32. The engine's structures are
     # layout-sensitive, so the narrow form is kept.
     -fshort-wchar
@@ -324,6 +340,15 @@ if (EMSCRIPTEN)
         # main returns to the page while the engine is still running inside it, so the
         # runtime has to outlive the return.
         -sEXIT_RUNTIME=0
+
+        # A saved game has to outlive the tab it was written in, so the directory the engine
+        # saves into is mounted on IndexedDB. Only that directory is: the game data is
+        # already on the page and must not be copied into a browser's database.
+        -lidbfs.js
+
+        # The page mounts that directory and reads it back before the engine starts, which
+        # means the page rather than the runtime decides when main is called.
+        -sEXPORTED_RUNTIME_METHODS=FS,callMain
 
         -fwasm-exceptions
     )

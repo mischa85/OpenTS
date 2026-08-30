@@ -445,8 +445,25 @@ R"ART(
 	if (argv != NULL) {
 		size_t used = 0;
 		for (int index = 1; index < argc; index++) {
+#if defined(__EMSCRIPTEN__)
+			// The engine builds with a 16 bit wchar_t against a library expecting 32, so the
+			// wide conversion cannot render these. The arguments are ASCII in practice.
+			char narrow[64];
+			size_t length = 0;
+
+			while (length < sizeof(narrow) - 1 && argv[index][length] != 0) {
+				wchar_t const wide = argv[index][length];
+				narrow[length] = (wide > 0 && wide < 0x80) ? (char)wide : '?';
+				length++;
+			}
+			narrow[length] = '\0';
+
+			int const written = snprintf(options + used, sizeof(options) - used, "%s%s",
+													used == 0 ? "" : " ", narrow);
+#else
 			int const written = snprintf(options + used, sizeof(options) - used, "%s%ls",
 													used == 0 ? "" : " ", argv[index]);
+#endif
 			if (written <= 0 || size_t(written) >= sizeof(options) - used) {
 				break;
 			}

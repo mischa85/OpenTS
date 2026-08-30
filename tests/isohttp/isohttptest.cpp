@@ -313,6 +313,112 @@ std::vector<std::string> Search(char const * pattern)
 	return found;
 }
 
+
+/*
+**	------------------------------------------------------------------------------------
+**	What the browser's database is allowed to be believed about. The transport needs a
+**	server and a document, but the decision that a stored block belongs to the image now
+**	being read is arithmetic over a key and a list, and that is what is checked here.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Block_Index(void)
+{
+	std::string const key = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"abc\"");
+
+	Check(!key.empty(), "an image that can be identified has a key");
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"abc\"") == key,
+		"the same image answers to the same key");
+	Check(ISOBlockIndexClass::Signature("http://host/other.iso", 4096, "\"abc\"") != key,
+		"a different URL is a different image");
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 8192, "\"abc\"") != key,
+		"a different length is a different image");
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"xyz\"") != key,
+		"a server that names a new version names a different image");
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "") != key,
+		"and a server that names none is not the same as one that does");
+
+	Check(ISOBlockIndexClass::Signature(nullptr, 4096, "").empty()
+		&& ISOBlockIndexClass::Signature("", 4096, "").empty()
+		&& ISOBlockIndexClass::Signature("http://host/opents-data.iso", 0, "").empty(),
+		"an image that cannot be identified has no key, and so no store");
+
+	std::string const flattened = ISOBlockIndexClass::Signature("http://host/x.iso", 1, "a\nb\tc\x80");
+	Check(flattened.find('\n') == std::string::npos && flattened.find('\t') == std::string::npos,
+		"a key carries nothing that would end the line it is stored on");
+
+	/*
+	**	A store that was written for this image is taken on; one written for any other is
+	**	refused and leaves nothing behind, which is what keeps another image's sectors from
+	**	being served as this one's.
+	*/
+	ISOBlockIndexClass index;
+
+	index.Reset(key);
+
+	std::vector<std::uint64_t> evicted;
+	index.Note(3, 65536, evicted);
+	index.Note(9, 65536, evicted);
+	index.Note(4, 1024, evicted);
+
+	Check(evicted.empty() && index.Count() == 3 && index.Bytes() == 65536 + 65536 + 1024,
+		"a fresh index records what was stored");
+	Check(index.Holds(3) && index.Holds(9) && index.Holds(4) && !index.Holds(5),
+		"and answers for the blocks it recorded");
+
+	index.Note(3, 65536, evicted);
+	Check(evicted.empty() && index.Count() == 3, "recording a block twice records it once");
+
+	std::string const record = index.Encode();
+
+	ISOBlockIndexClass restored;
+
+	Check(restored.Adopt(record.c_str(), key), "a record written for this image is taken on");
+	Check(restored.Count() == 3 && restored.Bytes() == index.Bytes()
+		&& restored.Holds(3) && restored.Holds(9) && restored.Holds(4),
+		"and reports the same blocks it was written with");
+
+	std::string const other = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"xyz\"");
+
+	Check(!restored.Adopt(record.c_str(), other), "a record written for another image is refused");
+	Check(restored.Count() == 0 && !restored.Holds(3), "and leaves no block behind to be served");
+
+	Check(!restored.Adopt("", key), "an empty record is not a record");
+	Check(!restored.Adopt("opents-iso-1\n", key), "a record with no key is refused");
+	Check(!restored.Adopt(("opents-iso-1\n" + key + "\n3:65536,9").c_str(), key),
+		"a record that does not parse is refused whole");
+	Check(!restored.Adopt(("something-else\n" + key + "\n3:65536").c_str(), key),
+		"a record another version wrote is refused");
+	Check(restored.Count() == 0, "and none of them leaves a block behind");
+
+	Check(restored.Adopt(("opents-iso-1\n" + key + "\n").c_str(), key) && restored.Count() == 0,
+		"a record for this image holding nothing is taken on empty");
+
+	/*
+	**	The cap. What no longer fits goes, oldest first, and the caller is told which blocks
+	**	to delete so the record and the database stay describing the same thing.
+	*/
+	ISOBlockIndexClass bounded;
+
+	bounded.Reset(key);
+
+	std::uint64_t const blocks = ISOBlockIndexClass::STORE_LIMIT / 65536;
+
+	for (std::uint64_t index_number = 0; index_number < blocks; index_number++) {
+		evicted.clear();
+		bounded.Note(index_number, 65536, evicted);
+	}
+
+	Check(bounded.Count() == (std::size_t)blocks && bounded.Bytes() == ISOBlockIndexClass::STORE_LIMIT,
+		"the store fills to the cap");
+
+	evicted.clear();
+	bounded.Note(blocks, 65536, evicted);
+
+	Check(evicted.size() == 1 && evicted[0] == 0, "and the next block evicts the oldest one");
+	Check(!bounded.Holds(0) && bounded.Holds(blocks), "which stops being served and is replaced");
+	Check(bounded.Bytes() == ISOBlockIndexClass::STORE_LIMIT, "leaving the store no larger than the cap");
+}
+
 } // namespace
 
 
@@ -479,6 +585,8 @@ int main(int argc, char ** argv)
 	Check(Search("*.MIX").empty(), "and nothing is left to search");
 
 	std::remove(imagepath.c_str());
+
+	Check_Block_Index();
 
 	std::printf("\n%s\n", Failures == 0 ? "all checks passed" : "checks failed");
 	return (Failures == 0) ? 0 : 1;

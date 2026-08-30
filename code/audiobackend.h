@@ -64,6 +64,11 @@ void Audio_Backend_Seek(AudioBackendStream * stream, int offset);
 int Audio_Backend_Play_Cursor(AudioBackendStream const * stream);
 int Audio_Backend_Write_Cursor(AudioBackendStream const * stream);
 
+// How far beyond the play cursor the device is kept supplied, which is how far the write
+// cursor can run ahead. It has to be long enough that the page's own scheduler never finds
+// the stream empty, and short enough to stay inside what the caller keeps written.
+int Audio_Backend_Lookahead(AudioBackendStream const * stream);
+
 // Playback gain as a linear multiplier, where 1 is unattenuated.
 void Audio_Backend_Set_Gain(AudioBackendStream * stream, float gain);
 

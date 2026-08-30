@@ -3931,7 +3931,7 @@ BulletClass * TechnoClass::Fire_At(AbstractClass * target, int which)
 			int abs_z = abs(displacement.Z);
 			if (abs_z > 200) {
 				double y = 20.0;
-				BuildingClass * building = TarCom->As_BuildingClass();
+				BuildingClass * building = (TarCom != NULL) ? TarCom->As_BuildingClass() : NULL;
 				if (building != NULL) {
 					displacement.Z = 200 * building->Class->ZHeight - turret_coord.Z;
 					abs_z = abs((displacement.Z));

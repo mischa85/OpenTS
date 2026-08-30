@@ -39,3 +39,10 @@ if(EMSCRIPTEN)
 endif()
 
 add_subdirectory(bgfx.cmake)
+
+# bimg's encoder is a texture-compression tool the engine never links, and it reaches for
+# x86 intrinsics that no WebAssembly target can satisfy. Left in the default set it stops
+# an ordinary build before anything else is made.
+if(EMSCRIPTEN AND TARGET bimg_encode)
+    set_target_properties(bimg_encode PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()

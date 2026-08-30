@@ -206,7 +206,19 @@ VQAClass::VQAClass(char const * filename, int flags, VQA_SURF_LOCK_CALLBACK surf
 	}
 
 	Config.AudioHandler = Stream_Audio_Handler;
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Twice the block the player was written around, because the block is also what sizes
+	 * the sound buffer it plays out of: two of them. A page's output has to be handed
+	 * about a tenth of a second of audio in advance or it stops between two passes of the
+	 * scheduler that carries it, and the movie takes its clock from the play cursor, so a
+	 * buffer too short to keep that much in hand stops the movie as well as the sound.
+	 */
+	Config.HMIBufSize = 16384;
+#else
 	Config.HMIBufSize = 8192;
+#endif
 
 	//-------------------------------------------------------------------------
 	// Initialize private class variables.

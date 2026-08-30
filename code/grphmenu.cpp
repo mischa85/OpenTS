@@ -154,6 +154,24 @@ void GraphicMenu::Set_Item_Enabled(int id, bool enabled)
 
 
 /// <summary>
+/// Shows or hides the menu items carrying an identifier.
+/// A hidden item is not drawn and cannot be picked, so the shell menu handler uses this
+/// routine for the choices that do not belong on the page at all, rather than the ones
+/// that are merely unavailable.
+/// </summary>
+/// <param name="id">The identifier of the items to change.</param>
+/// <param name="visible">Should the items be part of the page?</param>
+void GraphicMenu::Set_Item_Visible(int id, bool visible)
+{
+	for (GraphicMenuItem * item : Items) {
+		if (item->Get_ID() == id) {
+			item->Set_Visible(visible);
+		}
+	}
+}
+
+
+/// <summary>
 /// Runs the menu until the player picks something.
 /// This routine starts the menu's theme and then takes over the mouse and keyboard,
 /// highlighting whichever item the player is pointing at, until an item is chosen.
@@ -281,7 +299,7 @@ void GraphicMenu::Add_Item(GraphicMenuItem * item)
 GraphicMenuItem * GraphicMenu::Get_Item_Under_Mouse(Point2D const & mouse)
 {
 	for (GraphicMenuItem * item : Items) {
-		if (item->Is_Mouse_Over(mouse)) {
+		if (item->Is_Visible() && item->Is_Mouse_Over(mouse)) {
 			return(item);
 		}
 	}
@@ -297,7 +315,7 @@ GraphicMenuItem * GraphicMenu::Get_Item_Under_Mouse(Point2D const & mouse)
 GraphicMenuItem * GraphicMenu::Get_Item_For_Key(KeyNumType key)
 {
 	for (GraphicMenuItem * item : Items) {
-		if (item->Is_Input_Key(key)) {
+		if (item->Is_Visible() && item->Is_Input_Key(key)) {
 			return(item);
 		}
 	}

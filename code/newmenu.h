@@ -44,7 +44,7 @@ class NewMenuClass
 	private:
 		static __forceinline int Game_Select_Loop(NewMenuClass * menu);
 		int Display_Game_Select_Menu(char const * section);
-		int Display_Menu(char const * section, DynamicVectorClass<int> & options);
+		int Display_Menu(char const * section, DynamicVectorClass<int> & options, DynamicVectorClass<int> & hidden);
 		int Select_Game_Type(void);
 		int Display_Tiberian_Sun_Menu(void);
 		int Display_Firestorm_Menu(void);

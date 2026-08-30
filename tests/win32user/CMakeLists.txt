@@ -10,7 +10,9 @@ if(EMSCRIPTEN)
     list(APPEND WIN32USER_TEST_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/win32usersupport.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32user.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32ctrl.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
 
         # The substitute resolves a name the host has no file for on a mounted disc image,
         # so the reader and the block source it is handed come with it.
@@ -43,6 +45,8 @@ if(EMSCRIPTEN)
     # the same narrow wchar_t and MSVC keyword handling the engine is built with.
     target_compile_options(Win32UserTest PRIVATE
         -fshort-wchar
+        -fno-builtin-wcslen
+        -fno-builtin-wcsnlen
         -fexceptions
         -fdeclspec
         -D__cdecl=

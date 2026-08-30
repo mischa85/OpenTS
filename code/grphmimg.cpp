@@ -150,15 +150,7 @@ bool GraphicMenuImageItem::Is_Mouse_Over(Point2D const & mouse)
 /// <param name="selected">Is this item now the selected one?</param>
 void GraphicMenuImageItem::On_Selected_Change(bool selected)
 {
-	if (Image != NULL) {
-		Image->Set_Active(Enabled && !selected);
-	}
-	if (HighlightImage != NULL) {
-		HighlightImage->Set_Active(Enabled && selected);
-	}
-	if (DisabledImage != NULL) {
-		DisabledImage->Set_Active(Enabled == false);
-	}
+	Update_Images();
 	Engine->Restore_Anims(ActiveRect);
 	Engine->Restore_And_Advance();
 	if (selected) {
@@ -174,20 +166,44 @@ void GraphicMenuImageItem::On_Selected_Change(bool selected)
 /// This routine swaps the disabled image in or out and then refreshes the part of the
 /// screen this item occupies so that the change is visible right away.
 /// </summary>
-/// <param name="active">Should this item be available for selection?</param>
-void GraphicMenuImageItem::On_Enabled_Change(bool active)
+void GraphicMenuImageItem::On_Enabled_Change(bool)
 {
-	if (Image != NULL) {
-		Image->Set_Active(active && !Selected);
-	}
-	if (HighlightImage != NULL) {
-		HighlightImage->Set_Active(active && Selected);
-	}
-	if (DisabledImage != NULL) {
-		DisabledImage->Set_Active(active == false);
-	}
+	Update_Images();
 	Engine->Restore_Anims(ActiveRect);
 	Engine->Restore_And_Advance();
+}
+
+
+/// <summary>
+/// Handles this item being taken off the page or put back on it.
+/// This routine takes all of the item's artwork off the screen, disabled artwork
+/// included, and then refreshes the area it occupied so that the backdrop shows through.
+/// </summary>
+void GraphicMenuImageItem::On_Visible_Change(bool)
+{
+	Update_Images();
+	Engine->Restore_Anims(ActiveRect);
+	Engine->Restore_And_Advance();
+}
+
+
+/// <summary>
+/// Activates the one piece of artwork this item's current state calls for.
+/// A hidden item shows none of it; otherwise the disabled image stands in for an
+/// unavailable item, and an available one is drawn highlighted or not according to
+/// whether it holds the menu selection.
+/// </summary>
+void GraphicMenuImageItem::Update_Images(void)
+{
+	if (Image != NULL) {
+		Image->Set_Active(Visible && Enabled && !Selected);
+	}
+	if (HighlightImage != NULL) {
+		HighlightImage->Set_Active(Visible && Enabled && Selected);
+	}
+	if (DisabledImage != NULL) {
+		DisabledImage->Set_Active(Visible && !Enabled);
+	}
 }
 
 

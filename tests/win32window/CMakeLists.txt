@@ -41,6 +41,8 @@ if(EMSCRIPTEN)
     # character that is not sixteen bits is a different test.
     target_compile_options(Win32WindowTest PRIVATE
         -fshort-wchar
+        -fno-builtin-wcslen
+        -fno-builtin-wcsnlen
         -fexceptions
         -fdeclspec
         -D__cdecl=

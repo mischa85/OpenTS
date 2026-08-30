@@ -24,6 +24,10 @@ class GraphicMenuImageItem : public GraphicMenuItem
 		virtual void Action(MSEngine * engine) override;
 		virtual void On_Selected_Change(bool) override;
 		virtual void On_Enabled_Change(bool) override;
+		virtual void On_Visible_Change(bool) override;
+
+	private:
+		void Update_Images(void);
 
 	public:
 		/*

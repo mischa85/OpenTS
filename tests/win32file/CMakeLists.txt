@@ -14,6 +14,7 @@ if(EMSCRIPTEN)
         "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
         "${CMAKE_SOURCE_DIR}/code/isohttp.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
     )
 endif()
 
@@ -41,6 +42,8 @@ if(EMSCRIPTEN)
     # the same narrow wchar_t and MSVC keyword handling the engine is built with.
     target_compile_options(Win32FileTest PRIVATE
         -fshort-wchar
+        -fno-builtin-wcslen
+        -fno-builtin-wcsnlen
         -fexceptions
         -fdeclspec
         -D__cdecl=
