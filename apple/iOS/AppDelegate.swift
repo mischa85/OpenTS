@@ -33,4 +33,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 	func applicationDidEnterBackground(_ application: UIApplication) {
 		DiscCache.shared.flush()
 	}
+
+	/// The stall record's lines are on disk as they are written, so this only closes the
+	/// file; a session the system takes away without calling this still leaves it complete.
+	func applicationWillTerminate(_ application: UIApplication) {
+		DiscCache.shared.flush()
+		GameSession.shared.closeStallRecord()
+	}
 }

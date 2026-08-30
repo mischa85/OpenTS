@@ -31,6 +31,13 @@
 // they are asked for. What arrives is kept on this device, so a round trip is paid once
 // ever rather than once per launch.
 //
+// A read that misses while one of those guesses is already fetching it waits for that
+// request instead of asking the link for the same bytes a second time -- but only once the
+// guess has been out long enough that waiting for the rest of it is the shorter of the two.
+// Both sides of that are measured on the link as the run goes, because a mirror's wait moves
+// by a factor of two inside an afternoon and a rule pinned to yesterday's number would
+// lengthen the reads it exists to shorten.
+//
 // Nothing here knows what a disc image holds. No offset, block or region is named: what is
 // kept is whatever was read, and what is guessed at is the megabyte a read landed in and the
 // ones after it. So it is the same cache for an image of any language, edition or layout,
@@ -100,6 +107,25 @@ final class DiscCache {
 	/// what the guessing costs and is worth being able to see.
 	private(set) var fetched: UInt64 = 0
 	private(set) var speculated: UInt64 = 0
+
+	/// Reads that could not be answered off this device, and how many of those waited on a
+	/// guess that was already fetching them rather than asking for the same bytes again.
+	private(set) var missed = 0
+	private(set) var joined = 0
+
+	/// Joins that gave up waiting and asked for their own bytes after all. A guess can stall
+	/// for as long as the request timeout allows, and a read the engine is blocked on cannot
+	/// be left waiting that long on the strength of a projection.
+	private(set) var hedged = 0
+
+	/// What a request costs on this link, kept apart for the two sizes that are asked for.
+	/// Against a mirror the wait dominates the transfer, so the two are within a second of
+	/// each other and which is the cheaper way to answer a read turns on that second.
+	///
+	/// Seeded with what was measured against archive.org and moved a quarter of the way
+	/// towards each answer, so a run settles on the link it actually has within a few reads.
+	private(set) var blockTrip: TimeInterval = 1.4
+	private(set) var unitTrip: TimeInterval = 2.4
 
 	private lazy var session: URLSession = {
 		let configuration = URLSessionConfiguration.ephemeral
@@ -208,13 +234,26 @@ final class DiscCache {
 			guess(held, around: span.lowerBound)
 			return done(.success(answer))
 		}
+		missed += 1
 		lock.unlock()
 
-		// The read the engine is blocked on asks for exactly what was wanted and nothing
-		// more, so that it waits for as little as a request can carry. The megabyte it sits
-		// in, and the ones after it, are asked for beside it rather than in front of it.
-		let blocks = (span.lowerBound / Self.block)...(span.upperBound / Self.block)
+		// Asked before anything new is guessed at, because this read is about to start a
+		// guess over the very megabyte it sits in and must not then wait for it.
+		let took = join(held, address: address, span: span, done: done)
+
+		// The megabyte the read sits in, and the ones after it, are asked for beside it
+		// rather than in front of it.
 		guess(held, around: span.lowerBound)
+
+		// The read the engine is blocked on asks for exactly what was wanted and nothing
+		// more, so that it waits for as little as a request can carry.
+		if !took { fetch(held, address: address, span: span, done: done) }
+	}
+
+	/// Asks for exactly the bytes a read wanted, and answers it out of what comes back.
+	private func fetch(_ held: Held, address: URL, span: ClosedRange<UInt64>,
+	                   done: @escaping (Result<Answer, Trouble>) -> Void) {
+		let blocks = (span.lowerBound / Self.block)...(span.upperBound / Self.block)
 
 		request(held, blocks: blocks, retry: true, attempt: 1) { [weak self] outcome in
 			guard let self else { return }
@@ -248,6 +287,106 @@ final class DiscCache {
 				                     validator: validator)))
 			}
 		}
+	}
+
+	// MARK: - Waiting on a guess instead of asking again
+
+	/// Waits on a guess that is already fetching the whole of a read, when waiting out what
+	/// is left of it costs less than asking for the read's own bytes. Says whether it took
+	/// the read; a read it did not take makes its own request as it always has.
+	///
+	/// The whole of it, and not part of it: a read that a guess covers only in part would
+	/// still have to ask for the rest, so joining would save no round trip and would answer
+	/// no sooner than the slower of the two. There is nothing to compose that is worth the
+	/// having, so such a read is left to ask for what it wants in one request.
+	///
+	/// Whether the join is the cheaper of the two is asked rather than assumed. A guess is
+	/// a megabyte and a read is a block, and against a mirror a megabyte takes about a
+	/// second longer; so a guess that has just gone out will answer the read later than a
+	/// request made now, and one that has been out longer than that difference will answer
+	/// it sooner. Both times are what this link has been measuring, not constants.
+	private func join(_ held: Held, address: URL, span: ClosedRange<UInt64>,
+	                  done: @escaping (Result<Answer, Trouble>) -> Void) -> Bool {
+		let blocks = (span.lowerBound / Self.block)...(span.upperBound / Self.block)
+
+		lock.lock()
+		guard let flight = held.fetching(blocks) else { lock.unlock(); return false }
+
+		let waited = Date().timeIntervalSince(flight.sent)
+		let left = max(0, unitTrip - waited)
+		let own = blockTrip
+
+		guard left < own else {
+			lock.unlock()
+			log.info("""
+				\(held.identity, privacy: .public) \(blocks.lowerBound)-\(blocks.upperBound) \
+				asked for itself: the request covering it went out \
+				\(waited, format: .fixed(precision: 3))s ago and has about \
+				\(left, format: .fixed(precision: 3))s left, against \
+				\(own, format: .fixed(precision: 3))s to ask again
+				""")
+			return false
+		}
+
+		// Whichever of the two paths below gets here first answers the read, so it is
+		// answered once whether the guess lands, fails, is dropped, or simply takes too
+		// long. Neither path can leave the read waiting: the guess always settles, and the
+		// deadline always fires.
+		let once = Pending()
+		flight.waiting.append { [weak self] in
+			guard once.claim() else { return }
+			self?.settle(held, address: address, span: span, done: done)
+		}
+		joined += 1
+		lock.unlock()
+
+		log.info("""
+			\(held.identity, privacy: .public) \(blocks.lowerBound)-\(blocks.upperBound) \
+			joined the request already fetching it, out \
+			\(waited, format: .fixed(precision: 3))s with about \
+			\(left, format: .fixed(precision: 3))s left
+			""")
+
+		// A guess may stall for as long as the request timeout allows, and the projection
+		// above is an average rather than a promise. So the wait is bounded at what was
+		// projected plus one whole request of slack, past which the read asks for its own
+		// bytes after all -- the duplicate this exists to remove, made only when leaving it
+		// out would have cost more than it saves.
+		let slack = left + own
+		let when = DispatchTime.now() + .milliseconds(Int(slack * 1000))
+		DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: when) { [weak self] in
+			guard let self, once.claim() else { return }
+
+			self.lock.lock(); self.hedged += 1; self.lock.unlock()
+			self.log.notice("""
+				\(held.identity, privacy: .public) \(blocks.lowerBound)-\(blocks.upperBound) \
+				waited \(slack, format: .fixed(precision: 3))s on the request covering it and \
+				is asking for itself
+				""")
+			self.settle(held, address: address, span: span, done: done)
+		}
+
+		return true
+	}
+
+	/// Answers a read that was waiting on a guess: out of what the guess brought if it
+	/// brought it, and by asking for the read's own bytes if it did not.
+	///
+	/// Reached whichever way the wait ended, so a read that joined a guess is never left
+	/// waiting on one. The engine's transport is synchronous and a read that never comes
+	/// back is a game that never draws another frame.
+	private func settle(_ held: Held, address: URL, span: ClosedRange<UInt64>,
+	                    done: @escaping (Result<Answer, Trouble>) -> Void) {
+		lock.lock()
+		if let data = held.take(span) {
+			let answer = Answer(data: data, first: span.lowerBound,
+			                    total: held.total, validator: held.validator)
+			lock.unlock()
+			return done(.success(answer))
+		}
+		lock.unlock()
+
+		fetch(held, address: address, span: span, done: done)
 	}
 
 	/// Bytes the cache occupies on this device, which for the sparse images it keeps is what
@@ -286,6 +425,11 @@ final class DiscCache {
 		inflight = 0
 		fetched = 0
 		speculated = 0
+		missed = 0
+		joined = 0
+		hedged = 0
+		blockTrip = 1.4
+		unitTrip = 2.4
 		lock.unlock()
 	}
 
@@ -364,26 +508,29 @@ final class DiscCache {
 			let stop = min(start + unit, count) - 1
 
 			lock.lock()
-			let take = inflight < Self.ahead + 2 && held.speculating < Self.ahead
-				&& held.claim(start...stop)
-			if take { held.speculating += 1 }
+			let room = inflight < Self.ahead + 2 && held.speculating < Self.ahead
+			let flight = room ? held.claim(start...stop) : nil
 			lock.unlock()
 
-			guard take else { continue }
+			guard let flight else { continue }
 
 			request(held, blocks: start...stop, retry: false, attempt: 1) { [weak self] outcome in
 				guard let self else { return }
 
 				self.lock.lock()
-				held.release(start...stop)
-				held.speculating -= 1
 				if case .success(let arrived) = outcome {
 					held.adopt(total: arrived.total, validator: arrived.validator, log: self.log)
 					held.put(blocks: start...stop, data: arrived.data)
 					self.fetched += UInt64(arrived.data.count)
 					self.speculated += UInt64(arrived.data.count)
 				}
+				// Released after the blocks are recorded, so a read waiting on this request
+				// finds them, and woken outside the lock, because waking one is what sends
+				// it back through this cache.
+				let waiting = held.release(flight)
 				self.lock.unlock()
+
+				for resume in waiting { resume() }
 			}
 		}
 	}
@@ -483,6 +630,8 @@ final class DiscCache {
 				return
 			}
 
+			self.observe(blocks: blocks.count, seconds: Date().timeIntervalSince(sent))
+
 			if let settled = http?.url, settled != target {
 				self.lock.lock()
 				if held.pinned == nil { held.pinned = settled }
@@ -497,6 +646,37 @@ final class DiscCache {
 			                      validator: http?.value(forHTTPHeaderField: "ETag")
 				                      ?? http?.value(forHTTPHeaderField: "Last-Modified") ?? "")))
 		}.resume()
+	}
+
+	/// Takes in what one request cost, against the size it asked for.
+	///
+	/// Only a request that answered: one that failed measures the mirror's bad minute
+	/// rather than the link, and a timeout would drag the estimate somewhere no read should
+	/// be deciding from.
+	private func observe(blocks: Int, seconds: TimeInterval) {
+		guard seconds > 0, seconds < 30 else { return }
+
+		lock.lock()
+		if blocks >= Int(Self.unit) {
+			unitTrip += (seconds - unitTrip) / 4
+		} else {
+			blockTrip += (seconds - blockTrip) / 4
+		}
+		lock.unlock()
+	}
+
+	/// Which of two paths answers a read that joined a guess: the guess settling, or the
+	/// deadline past which the read asks for itself. The first one here takes it.
+	private final class Pending {
+		private let lock = NSLock()
+		private var taken = false
+
+		func claim() -> Bool {
+			lock.lock(); defer { lock.unlock() }
+			guard !taken else { return false }
+			taken = true
+			return true
+		}
 	}
 
 	// MARK: - Bounding what is kept
@@ -568,10 +748,21 @@ private final class Held {
 	var opening = false
 	var waiting: [(String?) -> Void] = []
 
-	/// Speculative requests out for this image, and the blocks they cover, so two guesses
-	/// do not ask for the same megabyte.
-	var speculating = 0
-	private var claimed = Set<UInt64>()
+	/// One speculative request that is out right now: what it covers, when it went out, and
+	/// the reads that chose to wait for it rather than ask for the same bytes again.
+	final class Flight {
+		let blocks: ClosedRange<UInt64>
+		let sent = Date()
+		var waiting: [() -> Void] = []
+
+		init(_ blocks: ClosedRange<UInt64>) { self.blocks = blocks }
+	}
+
+	/// The speculative requests out for this image, so that two guesses do not ask for the
+	/// same megabyte and a read that one of them is already fetching can wait for it.
+	private var flights: [Flight] = []
+
+	var speculating: Int { flights.count }
 
 	private var fd: Int32 = -1
 	private var bits: [UInt8] = []
@@ -714,20 +905,35 @@ private final class Held {
 
 	/// Takes a span of blocks for one speculative request, or reports that it is not worth
 	/// asking for: another request already covers part of it, or it is all here.
-	func claim(_ blocks: ClosedRange<UInt64>) -> Bool {
-		var wanted = false
-		for index in blocks {
-			if claimed.contains(index) { return false }
-			if !has(index) { wanted = true }
-		}
-		guard wanted else { return false }
+	func claim(_ blocks: ClosedRange<UInt64>) -> Flight? {
+		guard !flights.contains(where: { $0.blocks.overlaps(blocks) }) else { return nil }
 
-		for index in blocks { claimed.insert(index) }
-		return true
+		var wanted = false
+		for index in blocks where !has(index) { wanted = true }
+		guard wanted else { return nil }
+
+		let flight = Flight(blocks)
+		flights.append(flight)
+		return flight
 	}
 
-	func release(_ blocks: ClosedRange<UInt64>) {
-		for index in blocks { claimed.remove(index) }
+	/// The speculative request already fetching every block of a read, if there is one.
+	///
+	/// Every block of it: a request covering part of a read leaves the rest to be asked for
+	/// anyway, so there is no round trip in joining it.
+	func fetching(_ blocks: ClosedRange<UInt64>) -> Flight? {
+		flights.first {
+			$0.blocks.lowerBound <= blocks.lowerBound && $0.blocks.upperBound >= blocks.upperBound
+		}
+	}
+
+	/// Retires a speculative request and hands back the reads that were waiting on it, which
+	/// are woken by the caller once it is out of the lock.
+	func release(_ flight: Flight) -> [() -> Void] {
+		flights.removeAll { $0 === flight }
+		let waiting = flight.waiting
+		flight.waiting = []
+		return waiting
 	}
 
 	/// Reads a span out of the kept copy, or reports that not all of it is here.

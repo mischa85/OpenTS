@@ -119,6 +119,13 @@ an image of any language or edition:
   as it lands, while the megabyte it sits in and the three after it are fetched beside it. A
   megabyte costs what a block costs, and eight requests beside each other cost what one
   costs; both are measured, not assumed.
+- A read one of those megabytes is already fetching waits for that request instead of asking
+  for the same bytes a second time, but only when the request has been out long enough that
+  what is left of it is shorter than a fresh one — both times taken from what this link has
+  been answering rather than from a constant. It joins only a request that covers the whole
+  read, since one covering part of it would leave the rest to be asked for anyway. A join
+  that has waited longer than it projected asks for its own bytes after all, so a stalled
+  megabyte cannot hold up the read the engine is blocked on.
 - Everything fetched is written into a sparse file as long as the image, with a bitmap in its
   header recording which blocks are there. A block is recorded only after its bytes have been
   flushed, so a crash costs a refetch and never a block that reads as present and is zeroes.
@@ -134,6 +141,38 @@ the same origin and are not touched.
 An image is checked against the server once per run, when it is opened: the length and
 validator in that answer decide whether the kept copy still describes the file the server
 has, and a copy that does not is dropped rather than served.
+
+## What a run leaves behind
+
+The shell writes to the unified log under the subsystem `org.opents.shell`, in four
+categories: `disc` for the reads the engine asked for, `cache` for what reached the network,
+`page` for what the page reports about the run, and `stall` for the engine's record of the
+reads it was blocked on. The first three are at info and debug level, which live in the
+memory buffer, so they are read with `log stream` while a run is going:
+
+```sh
+log stream --predicate 'subsystem == "org.opents.shell" and process == "OpenTS"' --level debug
+```
+
+`stall` is at notice level instead, because it is meant to be read once the session is over:
+
+```sh
+log show --predicate 'process == "OpenTS" and subsystem == "org.opents.shell"
+    and category == "stall"' --last 1h
+```
+
+One line per stall, carrying whatever the engine recorded for it — a sequence number, a
+monotonic timestamp, the image, the offset and length, the milliseconds it was blocked, and
+whether it was a read the engine waited on or a look-ahead that had not landed. The same
+lines go to `stalls-<when>.txt` in the app's Documents folder, one file per run, so a session
+can be handed over as one artefact; a run with no stalls leaves no file. The running total of
+seconds blocked is logged every ten seconds, so a session that ends unexpectedly still leaves
+a headline number.
+
+The record comes from the engine, and the shell reads it two ways: from
+`window.OpenTS_State.stalls` with `window.OpenTS_State.stallSeconds` beside it, or from
+`Module._OpenTS_Iso_Stalls(after)` with `Module._OpenTS_Iso_Stall_Seconds()`. An engine that
+offers neither is noted once and not asked again.
 
 ## Signing
 

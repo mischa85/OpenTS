@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	/// seconds of fetching.
 	func applicationWillTerminate(_ notification: Notification) {
 		DiscCache.shared.flush()
+		GameSession.shared.closeStallRecord()
 	}
 
 	// MARK: - What the window holds
