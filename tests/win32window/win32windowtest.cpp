@@ -247,6 +247,12 @@ static void Test_Round_Trip(void)
 #if defined(__EMSCRIPTEN__)
 
 
+// How many requests the substitute has announced it cannot serve. A check that a call is
+// answered rather than refused has to watch this as well as the value handed back, because
+// both a refusal and a Win32 failure result come back as NULL.
+static int UnsupportedReports = 0;
+
+
 static void Test_Geometry(void)
 {
 	RECT rect;
@@ -349,6 +355,29 @@ static void Test_Blank_Cursor(void)
 
 
 /*
+ * A null instance reaches the system's own cursors and nothing else. The engine asks for
+ * its own cursor that way here, because this target hands it no module handle to hold a
+ * resource against, and the answer Windows gives such a request -- NULL -- is a result and
+ * not a gap the substitute should be announcing.
+ */
+static void Test_Module_Cursor(void)
+{
+	// The identifier the engine's own cursor resource carries.
+	LPCSTR const cursor = MAKEINTRESOURCE(104);
+
+	static char module = 0;
+	int const reported = UnsupportedReports;
+
+	Check("a system cursor is answered", LoadCursorA(NULL, IDC_ARROW) != NULL);
+	Check("a module's own cursor is not", LoadCursorA(NULL, cursor) == NULL);
+	Check("and it is not reported as a gap", UnsupportedReports == reported);
+
+	Check("a cursor asked of a module is a gap", LoadCursorA((HINSTANCE)&module, cursor) == NULL);
+	Check("and it says so", UnsupportedReports > reported);
+}
+
+
+/*
 ** ---------------------------------------------------------------------------------------
 ** What the substitute reaches for and the engine would otherwise supply. The canvas is
 ** the harness's own, so the geometry checks have a size to hold the substitute to.
@@ -358,6 +387,7 @@ static void Test_Blank_Cursor(void)
 
 void Win32_Unsupported_Reached(char const * description)
 {
+	UnsupportedReports++;
 	printf("unsupported: %s\n", description);
 }
 
@@ -456,6 +486,7 @@ int main(void)
 	Test_Geometry();
 	Test_Pointer();
 	Test_Blank_Cursor();
+	Test_Module_Cursor();
 #endif
 
 	printf("%d checks, %d failures\n", Checks, Failures);

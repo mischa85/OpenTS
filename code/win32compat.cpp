@@ -2777,7 +2777,31 @@ HRSRC FindResourceA(HMODULE, LPCSTR, LPCSTR) { return(WIN32_STUB((HRSRC)nullptr)
 HGLOBAL LoadResource(HMODULE, HRSRC) { return(WIN32_STUB((HGLOBAL)nullptr)); }
 LPVOID LockResource(HGLOBAL) { return(WIN32_STUB((LPVOID)nullptr)); }
 DWORD SizeofResource(HMODULE, HRSRC) { return(WIN32_STUB(0)); }
-DWORD GetFileVersionInfoSizeA(LPCSTR, LPDWORD handle) { if (handle != nullptr) *handle = 0; return(WIN32_STUB(0)); }
+
+
+/*
+** Version information is a resource in a Portable Executable's directory. The running
+** module is a wasm binary, which has no such directory and so carries none: zero is what
+** Windows answers for a file without a version resource, and it is the result here rather
+** than a gap. A caller reading it takes the branch it already keeps for a program built
+** with no version resource of its own -- Version_Name leaves its placeholder standing.
+** Another file may well carry one this target does not read, so that request is reported.
+*/
+DWORD GetFileVersionInfoSizeA(LPCSTR filename, LPDWORD handle)
+{
+	if (handle != nullptr) *handle = 0;
+
+	char module[MAX_PATH];
+
+	if (filename != nullptr && GetModuleFileNameA(nullptr, module, sizeof(module)) > 0
+			&& strcmp(filename, module) == 0) {
+		return(0);
+	}
+
+	return(WIN32_STUB(0));
+}
+
+
 BOOL GetFileVersionInfoA(LPCSTR, DWORD, DWORD, LPVOID) { return(WIN32_STUB(FALSE)); }
 BOOL VerQueryValueA(LPCVOID, LPCSTR, LPVOID * buffer, PUINT length) { if (buffer != nullptr) *buffer = nullptr; if (length != nullptr) *length = 0; return(WIN32_STUB(FALSE)); }
 
@@ -2865,7 +2889,12 @@ BOOL Module32First(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
 BOOL Module32Next(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
 
 
-HMENU GetMenu(HWND) { return(WIN32_STUB((HMENU)nullptr)); }
+/*
+** No window on this target has a menu bar. The window layer keeps no menu of its own, and
+** the classes the engine registers name none, so NULL -- what Windows answers for a window
+** without a menu -- is the result rather than a gap.
+*/
+HMENU GetMenu(HWND) { return(nullptr); }
 HMENU GetSystemMenu(HWND, BOOL) { return(WIN32_STUB((HMENU)nullptr)); }
 BOOL DeleteMenu(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
 BOOL EnableMenuItem(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }

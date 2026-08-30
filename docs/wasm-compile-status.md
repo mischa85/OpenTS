@@ -89,6 +89,15 @@ returns on failure. Four forms, all declared in `code/win32compat.h:44`–`:76`:
 Reporting is once per entry point, or once per description, rather than once per
 call, so a stub inside a frame loop names itself without burying the log.
 
+An entry point returns the Win32 failure value silently only where Windows would
+return it too. `GetMenu` (`code/win32compat.cpp:2895`) answers null because no
+window here has a menu, not because nothing was written for it, and a page's
+`LoadCursor` (`code/win32window.cpp:599`) answers null for a resource identifier
+that names no system cursor, which is what a null module handle gets on Windows.
+The test is whether Windows on the same input would answer the same way; where
+it would not, the call keeps reporting, because a stub that stops saying so is
+worse than no stub at all.
+
 On the date above, 179 stub sites remained in `code/win32compat.cpp` and one in
 `code/win32timer.cpp`, against 24 `WIN32_UNSUPPORTED` sites spread across the
 five implementation files. The direction of both numbers is the measurement that

@@ -65,6 +65,12 @@ static unsigned short const _HighRange[32] = {
 // rather than a clipped one.
 static int const MAX_CURSOR_SIZE = 128;
 
+// The block of resource identifiers Windows keeps for the cursors, icons, and bitmaps it
+// supplies itself. The IDC_ names are numbers inside it, and nothing else is a system
+// cursor.
+static ULONG_PTR const FIRST_SYSTEM_CURSOR = 32512;
+static ULONG_PTR const LAST_SYSTEM_CURSOR = 32767;
+
 
 /*
 ** A cursor, once it is a thing the page can be handed. The pixels are not kept: the CSS
@@ -580,6 +586,18 @@ HCURSOR LoadCursorA(HINSTANCE instance, LPCSTR name)
 		}
 
 		return((HCURSOR)_shared[index]);
+	}
+
+	/*
+	** Windows reserves the identifiers from 32512 up for the resources it supplies itself,
+	** and those are the only ones a null instance reaches. A name outside that block asks
+	** a module for one of its own resources, and NULL is what Windows answers when there
+	** is no module to ask -- the result, not a gap. The engine's own cursor arrives that
+	** way, because this target hands the engine no module handle to hold it against, and
+	** the game draws that cursor onto its surface rather than through the pointer.
+	*/
+	if ((ULONG_PTR)name < FIRST_SYSTEM_CURSOR || (ULONG_PTR)name > LAST_SYSTEM_CURSOR) {
+		return(nullptr);
 	}
 
 	return(WIN32_UNSUPPORTED("LoadCursorA: a system cursor with no counterpart on a page", (HCURSOR)nullptr));
