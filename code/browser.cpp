@@ -369,13 +369,28 @@ static EM_BOOL Key_Callback(int type, EmscriptenKeyboardEvent const * event, voi
 	}
 
 	// A single character key value is the layout's own answer to what this key produces,
-	// and it is the only answer a browser offers. Anything longer is a name such as
-	// "Shift" or "ArrowUp" and produces no character at all.
+	// and it is the only answer a browser offers for a printable key. Anything longer is a
+	// name: most, such as "Shift" or "ArrowUp", produce no character, but the few below do
+	// carry one on Windows, and text entry reads them through To_ASCII like any other.
+	char character = '\0';
+
 	if (event->key[0] != '\0' && event->key[1] == '\0') {
+		character = event->key[0];
+	} else {
+		switch (key & 0xFF) {
+			case VK_RETURN:	character = '\r';	break;
+			case VK_BACK:	character = '\b';	break;
+			case VK_TAB:	character = '\t';	break;
+			case VK_ESCAPE:	character = 27;		break;
+			default:							break;
+		}
+	}
+
+	if (character != '\0') {
 		if ((_Modifiers & WWKEY_SHIFT_BIT) != 0) {
-			_ShiftedAscii[key & 0xFF] = event->key[0];
+			_ShiftedAscii[key & 0xFF] = character;
 		} else {
-			_Ascii[key & 0xFF] = event->key[0];
+			_Ascii[key & 0xFF] = character;
 		}
 	}
 
