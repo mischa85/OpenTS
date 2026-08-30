@@ -2051,8 +2051,11 @@ HICON LoadIconA(HINSTANCE, LPCSTR name)
 /*
 ** The dialog base units. Windows measures a template in units of a quarter of the system
 ** font's average character width and an eighth of its height. There is no system font on a
-** page, so the classic 8 by 16 the shipped templates were laid out against stands in for
-** it, and windlg.cpp measures its design space the same way.
+** page, so the classic 8 by 16 stands in for it. The shipped templates were not laid out
+** against those units -- they name MS Sans Serif 8, which is a good deal narrower -- but
+** the number chosen here does not decide the layout: windlg.cpp measures its reference
+** template through these same units and carries every dialog by the ratio, so a base unit
+** only has to be the one both sides agree on.
 */
 static int const DIALOG_BASE_UNIT_X = 8;
 static int const DIALOG_BASE_UNIT_Y = 16;
