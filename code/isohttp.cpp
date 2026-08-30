@@ -504,7 +504,7 @@ EM_JS(int, ISO_Store_Wanted, (void), {
 ** Builds the pool, which is where a request left in flight lives until something reads it.
 ** Everything below assumes it is there, so it is made before any of them are reached.
 */
-EM_JS(void, ISO_Http_Ahead_Ready, (void), {
+EM_JS(void, ISO_Http_Ahead_Ready, (unsigned int blocksize), {
 	if (globalThis.__opentsIsoAhead !== undefined) return;
 
 	var pool = {
@@ -516,14 +516,22 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 		** already on its way is abandoned the moment it resumes.
 		*/
 		plans: new Map(),
+
 		active: 0,
 		timer: null,
 		waste: 0,
 
 		// How long the reading has to have stopped, how much a speculative request asks
 		// for, and how much of it may be held unread, in milliseconds and bytes.
-		QUIET: 500,
 		HOLD: 12 * 1024 * 1024,
+
+		// How many guesses may be outstanding for one image, so the guessing takes a share
+		// of the connections a page is allowed rather than all of them.
+		GUESSES: 3,
+
+		// The unit everything here is fetched, believed and stored in. Only a whole one of
+		// these may be stored or served, so it is what a part-delivered span is cut back to.
+		BLOCK: blocksize,
 
 		find: function (key, offset, length) {
 			var list = this.spans.get(key);
@@ -536,24 +544,92 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 			return null;
 		},
 
+		// Whether a span is holding the bytes a read is asking for. A span is answered from
+		// as its bytes arrive, so this asks what has arrived rather than whether the request
+		// has finished.
+		ready: function (span, offset, length) {
+			return span.data !== null && offset >= span.start &&
+				offset + length <= span.start + span.filled;
+		},
+
 		/*
-		** Lets a span go and answers what of it was never read. A request still in
-		** flight is abandoned, since the run that wanted it has gone elsewhere.
+		** Hands a span's bytes to whatever is waiting for them, which is done as they
+		** arrive rather than at the end. A span that has finished wakes everything still
+		** waiting on it, since nothing more is coming and a wait that is never answered
+		** would hold the engine for the rest of the run.
 		*/
-		drop: function (key, span) {
+		wake: function (span) {
+			var edge = span.start + span.filled;
+			var keep = [];
+
+			for (var index = 0; index < span.waiters.length; index++) {
+				if (span.done || span.waiters[index].need <= edge) {
+					span.waiters[index].resolve(0);
+				} else {
+					keep.push(span.waiters[index]);
+				}
+			}
+
+			span.waiters = keep;
+		},
+
+		forget: function (key, span) {
 			var list = this.spans.get(key);
 			if (list) {
 				var at = list.indexOf(span);
 				if (at >= 0) list.splice(at, 1);
 			}
+		},
+
+		/*
+		** Lets a span go and answers what of it was received and never read. Bytes that
+		** never arrived are not waste: they are bandwidth correctly not spent, and counting
+		** them would say the guessing cost what it saved.
+		*/
+		drop: function (key, span) {
+			this.forget(key, span);
 
 			try { span.control.abort(); } catch (error) {}
-			return (span.stop - span.start) - span.used;
+
+			span.done = true;
+			this.wake(span);
+
+			var unread = span.filled - span.used;
+			return (unread > 0) ? unread : 0;
+		},
+
+		/*
+		** Abandons a span that is still arriving, keeping the whole blocks of it that got
+		** here. What has crossed the wire is paid for whether the run still wants it or not,
+		** so it stays as a guess of its own until something reads it or the store takes it;
+		** only the part block at the end is lost, since a part block may never be believed.
+		*/
+		release: function (key, span) {
+			try { span.control.abort(); } catch (error) {}
+
+			span.done = true;
+
+			var edge = span.start + span.filled;
+			var whole = Math.floor(edge / this.BLOCK) * this.BLOCK;
+
+			if (whole > span.start + span.used) {
+				var waste = edge - whole;
+
+				span.stop = whole;
+				span.filled = whole - span.start;
+				span.ok = true;
+				span.idle = true;
+				this.wake(span);
+				return (waste > 0) ? waste : 0;
+			}
+
+			this.wake(span);
+			return this.drop(key, span);
 		},
 
 		copy: function (key, span, offset, buffer, length) {
-			if (!span.ok || span.data === null) {
-				this.drop(key, span);
+			if (!this.ready(span, offset, length)) {
+				if (span.done) this.waste += this.drop(key, span);
 				return 0;
 			}
 
@@ -568,60 +644,63 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 		},
 
 		/*
-		** Lets go of everything asked for on a guess, which is what a run wanting the
-		** connection back is answered with. A request still in flight is abandoned
-		** rather than allowed to finish: the whole point of the guessing is that it
-		** costs the reading nothing, and a refill queued behind it does not.
+		** Says a run wants the connection back, which stops any further guessing at once.
+		** What is already in flight is left to finish rather than abandoned: its round
+		** trip is paid for whether it lands or not, it is on a connection of its own and
+		** is never waited on, so nothing is bought by throwing it away and the bytes it
+		** brings back go into the store. What a run must never queue behind is a request
+		** that has not been made yet, and that is what stopping here prevents.
 		*/
 		yield: function (key) {
-			var list = this.spans.get(key);
-			if (!list) return;
-
-			for (var index = list.length - 1; index >= 0; index--) {
-				if (list[index].idle && !list[index].done) this.waste += this.drop(key, list[index]);
-			}
+			this.active = (typeof performance === "object") ? performance.now() : Date.now();
 		},
 
 		/*
-		** Asks for the next piece of what the engine said it would want, once the
-		** reading has been stopped long enough that a request cannot be in anything's
-		** way. A movie is read a frame at a time and never leaves a gap this long, so
-		** playback excludes itself rather than being excluded by name.
+		** Asks for the next pieces of what the engine said it would want.
+		**
+		** It does not wait for the reading to stop, and this is the whole of what makes it
+		** worth having. A guess needs a round trip to land, and on a distant link the gap
+		** between two reads is shorter than one, so a guess that may only be made while
+		** nothing is being read is never made at all -- which is exactly what a run against
+		** a two-second link measures. What the reading is owed is that it never queues
+		** behind a guess, and it does not: a guess is one more connection of the six a page
+		** is allowed, is never waited on, and its bytes are banked in the store whether
+		** anything reads them or not.
+		**
+		** What is held down instead is how much of it there can be at once, so the guessing
+		** takes a share of the link rather than the whole of it.
 		*/
 		drain: function () {
-			var now = (typeof performance === "object") ? performance.now() : Date.now();
-			if (now - this.active < this.QUIET) return;
-
 			var pool = this;
 
 			this.plans.forEach(function (plan, key) {
 				if (plan.ranges.length === 0) return;
 
 				var list = pool.spans.get(key) || [];
+				var flying = 0;
 				var held = 0;
 
 				for (var index = 0; index < list.length; index++) {
-					// A run is being read ahead of, so the image is in use after all.
-					if (!list[index].idle) return;
+					if (!list[index].idle) continue;
 
-					// One guess at a time, so what is outstanding is always small
-					// enough to abandon without having cost much.
-					if (!list[index].done) return;
-
-					held += list[index].stop - list[index].start;
+					if (!list[index].done) flying++;
+					else held += list[index].filled - list[index].used;
 				}
 
 				if (held >= pool.HOLD) return;
 
-				var range = plan.ranges[0];
-				var take = Math.min(plan.span, range.stop - range.at);
+				while (flying < pool.GUESSES && plan.ranges.length > 0) {
+					var range = plan.ranges[0];
+					var take = Math.min(plan.span, range.stop - range.at);
 
-				if (pool.open(key, range.at, range.at + take, true) === 0) return;
+					if (pool.open(key, range.at, range.at + take, true) === 0) break;
 
-				plan.spent += take;
-				plan.asked++;
-				range.at += take;
-				if (range.at >= range.stop) plan.ranges.shift();
+					plan.spent += take;
+					plan.asked++;
+					range.at += take;
+					if (range.at >= range.stop) plan.ranges.shift();
+					flying++;
+				}
 			});
 		},
 
@@ -632,6 +711,13 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 		** transport would queue behind it -- which turns the read the window was
 		** supposed to get in front of into two round trips instead of one. Nothing is
 		** lost by refusing the cache; what is worth keeping is kept in the store.
+		**
+		** The body is read as it arrives rather than waited for. A span is answered from
+		** the moment the bytes a read wants are in it, so asking for a megabyte does not
+		** postpone the frame that needed the first block of it -- which is what makes
+		** reaching a long way in front of a movie an improvement rather than a longer
+		** wait for the first frame. It is also what makes abandoning a span cheap: what
+		** has crossed the wire is already here and only the part block at the end is lost.
 		*/
 		open: function (key, start, stop, idle) {
 			var list = this.spans.get(key);
@@ -640,9 +726,23 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 				this.spans.set(key, list);
 			}
 
+			var pool = this;
+			var total = stop - start;
+
 			var span = {
-				start: start, stop: stop, data: null, done: false, ok: false, used: 0,
-				idle: idle, control: new AbortController()
+				start: start, stop: stop, data: null, filled: 0, done: false, ok: false,
+				used: 0, idle: idle, waiters: [], control: new AbortController()
+			};
+
+			var take = function (chunk) {
+				var room = (span.stop - span.start) - span.filled;
+				var count = (chunk.length < room) ? chunk.length : room;
+
+				if (count > 0) {
+					span.data.set(chunk.subarray(0, count), span.filled);
+					span.filled += count;
+					pool.wake(span);
+				}
 			};
 
 			span.promise = fetch(key, {
@@ -651,21 +751,41 @@ EM_JS(void, ISO_Http_Ahead_Ready, (void), {
 					signal: span.control.signal
 				})
 				.then(function (response) {
+					// Checked before a byte of the body is touched: a server that answers
+					// the whole file rather than the range would otherwise be read as one.
 					if (response.status !== 206) throw new Error("range refused");
-					return response.arrayBuffer();
+
+					span.data = new Uint8Array(total);
+
+					if (!response.body || typeof response.body.getReader !== "function") {
+						return response.arrayBuffer().then(function (delivered) {
+							take(new Uint8Array(delivered));
+						});
+					}
+
+					var reader = response.body.getReader();
+					var pump = function () {
+						return reader.read().then(function (piece) {
+							if (piece.done) return;
+							take(piece.value);
+							return pump();
+						});
+					};
+
+					return pump();
 				})
-				.then(function (delivered) {
-					span.data = new Uint8Array(delivered);
-					span.ok = (span.data.length === (span.stop - span.start));
+				.then(function () {
+					span.ok = (span.filled === (span.stop - span.start));
 					span.done = true;
+					pool.wake(span);
 				})
 				.catch(function () {
 					span.done = true;
-					span.ok = false;
+					pool.wake(span);
 				});
 
 			list.push(span);
-			return stop - start;
+			return total;
 		}
 	};
 
@@ -717,8 +837,8 @@ EM_JS(double, ISO_Http_Ahead_Start, (char const * url, double offset, double len
 /*
 ** Says the image is being read, and hands back the bytes that cost. A read the engine is
 ** waiting on, or a window being refilled in front of one, wants the connection rather than
-** merely having it, so what was asked for on a guess is abandoned for it; a read the pool
-** answers by itself costs nothing and only says the reading has not stopped.
+** merely having it, so no further guess is made until it has had it; a read the pool answers
+** by itself costs nothing and only says the reading has not stopped.
 */
 EM_JS(double, ISO_Http_Ahead_Busy, (char const * url, int give), {
 	var pool = globalThis.__opentsIsoAhead;
@@ -778,6 +898,49 @@ EM_JS(double, ISO_Http_Idle_Add, (char const * url, double offset, double length
 
 
 /*
+** Hands over a run of whole blocks that a completed guess is holding and nothing has read,
+** so it can be put in the store rather than dropped when the span goes. What is handed over
+** is marked as taken, which is what lets the span be let go and what keeps it out of the
+** figure for bytes nobody wanted -- it is in the store, which is where the next run reads it
+** from. Only whole blocks are handed over, since only a whole block is fit to be stored.
+*/
+EM_JS(double, ISO_Http_Idle_Take, (char const * url, void * buffer, unsigned int max, unsigned int blocksize, double * at), {
+	var pool = globalThis.__opentsIsoAhead;
+
+	HEAPF64[at >> 3] = 0;
+	if (pool === undefined) return 0;
+
+	var key = UTF8ToString(url);
+	var list = pool.spans.get(key);
+
+	if (!list) return 0;
+
+	for (var index = 0; index < list.length; index++) {
+		var span = list[index];
+
+		if (!span.idle || span.data === null) continue;
+
+		var from = span.start + span.used;
+		var first = Math.ceil(from / blocksize) * blocksize;
+		var edge = Math.floor((span.start + span.filled) / blocksize) * blocksize;
+		var count = Math.min(max, edge - first);
+
+		count -= count % blocksize;
+		if (count <= 0) continue;
+
+		HEAPU8.set(span.data.subarray(first - span.start, first - span.start + count), buffer);
+		HEAPF64[at >> 3] = first;
+
+		span.used = (first + count) - span.start;
+		if (span.done && span.used >= span.stop - span.start) pool.forget(key, span);
+		return count;
+	}
+
+	return 0;
+});
+
+
+/*
 ** How many bytes the drainer has asked for since the last time it was asked, so what a
 ** guess costs is counted where every other request to an image is counted. The drainer runs
 ** on a timer of its own and cannot reach the counting itself.
@@ -787,6 +950,14 @@ EM_JS(double, ISO_Http_Idle_Spent, (char const * url, unsigned int * asked), {
 
 	HEAPU32[asked >> 2] = 0;
 	if (pool === undefined) return 0;
+
+	/*
+	** Carried on from here as well as from the timer. A page holds no timer at all while a
+	** synchronous request is in progress, and the loading is very nearly all synchronous
+	** requests, so the reads are the only thing that runs often enough to keep a queue
+	** moving while the engine is loading.
+	*/
+	pool.drain();
 
 	var plan = pool.plans.get(UTF8ToString(url));
 	if (!plan) return 0;
@@ -801,9 +972,11 @@ EM_JS(double, ISO_Http_Idle_Spent, (char const * url, unsigned int * asked), {
 
 
 /*
-** What the pool can do for a span the engine is about to read: 0 nothing, 1 a request that
-** has not answered yet, 2 the bytes themselves. A request that failed is let go here, so
-** the read falls back to the transport rather than asking about it again.
+** What the pool can do for a span the engine is about to read: 0 nothing, 1 a request whose
+** bytes have not got here yet, 2 the bytes themselves. A span still arriving answers 2 as
+** soon as the part being asked for is in it, whatever is left of the request. One that
+** finished without delivering them is let go here, so the read falls back to the transport
+** rather than asking about it again.
 */
 EM_JS(int, ISO_Http_Ahead_State, (char const * url, double offset, unsigned int length), {
 	var pool = globalThis.__opentsIsoAhead;
@@ -813,10 +986,10 @@ EM_JS(int, ISO_Http_Ahead_State, (char const * url, double offset, unsigned int 
 	var span = pool.find(key, offset, length);
 
 	if (span === null) return 0;
+	if (pool.ready(span, offset, length)) return 2;
 	if (!span.done) return 1;
-	if (span.ok) return 2;
 
-	pool.drop(key, span);
+	pool.waste += pool.drop(key, span);
 	return 0;
 });
 
@@ -839,9 +1012,10 @@ EM_JS(int, ISO_Http_Ahead_Copy, (char const * url, double offset, void * buffer,
 
 
 /*
-** Waits for a request the look-ahead started but that has not answered yet. The wait is the
-** engine's own suspension and is legal only underneath the promising export, which is why
-** the caller asks whether main has been entered first.
+** Waits for the part of a look-ahead span a read needs. The wait ends when those bytes have
+** arrived rather than when the whole request has, so a read never waits on bytes it is not
+** asking for. It is the engine's own suspension and is legal only underneath the promising
+** export, which is why the caller asks whether main has been entered first.
 */
 EM_ASYNC_JS(int, ISO_Http_Ahead_Wait, (char const * url, double offset, void * buffer, unsigned int length), {
 	var pool = globalThis.__opentsIsoAhead;
@@ -852,7 +1026,12 @@ EM_ASYNC_JS(int, ISO_Http_Ahead_Wait, (char const * url, double offset, void * b
 
 	if (span === null) return 0;
 
-	await span.promise;
+	if (!pool.ready(span, offset, length) && !span.done) {
+		await new Promise(function (resolve) {
+			span.waiters.push({ need: offset + length, resolve: resolve });
+		});
+	}
+
 	return pool.copy(key, span, offset, buffer, length);
 });
 
@@ -862,6 +1041,10 @@ EM_ASYNC_JS(int, ISO_Http_Ahead_Wait, (char const * url, double offset, void * b
 ** away has not been read yet and may never be, so it is speculation the connection has
 ** already paid for and belongs in the same figure as the spans that were let go: what is
 ** reported is bandwidth spent on bytes nobody wanted, whether or not the spending is over.
+**
+** What was asked for and never arrived is not in it. A request abandoned part way costs the
+** bytes that crossed the wire and no more, and counting the rest would report the guessing
+** as having cost what abandoning it saved.
 */
 EM_JS(double, ISO_Http_Ahead_Unread, (void), {
 	var pool = globalThis.__opentsIsoAhead;
@@ -871,7 +1054,9 @@ EM_JS(double, ISO_Http_Ahead_Unread, (void), {
 
 	pool.spans.forEach(function (list) {
 		for (var index = 0; index < list.length; index++) {
-			if (list[index].done) unread += (list[index].stop - list[index].start) - list[index].used;
+			var held = list[index].filled - list[index].used;
+
+			if (held > 0) unread += held;
 		}
 	});
 
@@ -893,7 +1078,12 @@ EM_JS(double, ISO_Http_Ahead_Drop, (char const * url), {
 	if (!list) return 0;
 
 	var waste = 0;
-	while (list.length > 0) waste += pool.drop(key, list[0]);
+	var index = list.length;
+
+	while (index-- > 0) {
+		if (index < list.length) waste += pool.release(key, list[index]);
+	}
+
 	return waste;
 });
 
@@ -915,7 +1105,7 @@ EM_JS(double, ISO_Http_Ahead_Drop_Range, (char const * url, double start, double
 
 	for (var index = list.length - 1; index >= 0; index--) {
 		var span = list[index];
-		if (span.start < stop && span.stop > start) waste += pool.drop(key, span);
+		if (span.start < stop && span.stop > start) waste += pool.release(key, span);
 	}
 
 	return waste;
@@ -1334,11 +1524,42 @@ bool ISOReadAheadClass::Span(std::uint64_t blocks, unsigned int window, unsigned
 	*/
 	if (!Bounded() && Wide >= (std::uint64_t)span) return(false);
 
+	/*
+	**	A run nobody declared may reach no further in front of the reading than the reading
+	**	has already covered, since the only evidence it will carry on is that it has. A
+	**	declared run has better evidence than that and opens its window at once: what
+	**	declared it knows the reading is sequential and knows where it stops, so reaching
+	**	the whole window can neither cross into another file nor over-read one that is read
+	**	to the end. Earning the window a block at a time is what left a declared file paying
+	**	a round trip per refill for as many blocks as the window is wide -- the file is read
+	**	far faster than a distant link answers, so it outran its own window every time.
+	**
+	**	A declared run also reaches its own distance rather than the one the link was
+	**	measured to be worth. A measurement that comes out too small is not a small mistake
+	**	here: a window narrower than one of the reader's own reads can never be in front of
+	**	it at all, so every read is a round trip and the estimate has no way to correct
+	**	itself. What the run costs if the reading stops is bounded by the file it is inside
+	**	and by what abandoning it gives back, not by the estimate.
+	*/
 	std::uint64_t reach = (std::uint64_t)window;
-	std::uint64_t const covered = Next - From;
+	std::uint64_t chunk = (std::uint64_t)span;
 
-	if (covered < reach) reach = covered;
-	if (reach < 2) reach = 2;
+	if (!Bounded()) {
+		std::uint64_t const covered = Next - From;
+
+		if (covered < reach) reach = covered;
+		if (reach < 2) reach = 2;
+	} else {
+		std::uint64_t const bites = Wide * (std::uint64_t)BOUND_READS;
+
+		if (reach < (std::uint64_t)BOUND_MIN) reach = (std::uint64_t)BOUND_MIN;
+		if (reach < bites) reach = bites;
+
+		// And one request asks for more than one read takes, so a reader taking large bites
+		// is not answered a bite at a time.
+		if (chunk < Wide * 2) chunk = Wide * 2;
+		if (chunk > reach) chunk = reach;
+	}
 
 	/*
 	**	The window is refilled once it is half spent rather than topped up after every read.
@@ -1349,7 +1570,7 @@ bool ISOReadAheadClass::Span(std::uint64_t blocks, unsigned int window, unsigned
 	if (Filled >= Next + reach / 2) return(false);
 
 	std::uint64_t stop = Next + reach;
-	if (stop > Filled + (std::uint64_t)span) stop = Filled + (std::uint64_t)span;
+	if (stop > Filled + chunk) stop = Filled + chunk;
 	if (stop > end) stop = end;
 	if (stop <= Filled) return(false);
 
@@ -1528,11 +1749,111 @@ static std::uint64_t _SoonBytes = 0;
 
 /*
 **	And what the file layer said, which is the difference between a run that had to be
-**	noticed and one that was declared. Runs counts the files it named as they were opened
-**	and Soon the ones it said would be wanted later.
+**	noticed and one that was declared. Runs counts the files it named as they were opened,
+**	Soon the ones it said would be wanted later, and Done the runs it gave up on.
 */
 static unsigned int _HintRuns = 0;
 static unsigned int _HintSoon = 0;
+static unsigned int _HintDone = 0;
+
+/*
+**	And what the reading cost the player in time they spent looking at nothing. A read the
+**	block cache or a landed span answers costs nothing and is not counted; a read that goes
+**	to the network, waits on a span that has not landed, or waits on the store is counted
+**	for as long as the engine sits in it. The count says whether it was many small hitches
+**	or a few long ones and the worst says whether any of them was long enough to be seen,
+**	which is the difference between a run that is slow and a run that stops.
+*/
+static unsigned int _Stalls = 0;
+static double _StallMs = 0.0;
+static double _StallWorst = 0.0;
+static std::uint64_t _StallWorstAt = 0;
+static unsigned int _StallWorstLength = 0;
+
+// Where a stall was spent. A wait on the store is the engine waiting on a read the same way
+// a request is, so the record calls both of them what they are to the player.
+enum StallSourceType {
+	STALL_TRANSFER,		// A synchronous request the engine waited on.
+	STALL_AHEAD,		// A look-ahead span that had not landed yet.
+	STALL_STORE			// The browser's database.
+};
+
+// And the location of every image opened, so a stall says which disc it was on rather than
+// which slot the disc happens to occupy.
+static std::vector<std::string> _Images;
+
+
+/*
+**	Hands one stall to the page as it happens, as a line of text on OpenTS_State.
+**
+**	It is put there rather than behind an exported function because a page cannot call one:
+**	the browser configuration links only the runtime methods it needs, so neither the heap
+**	nor the string helpers are reachable from outside the module and a pointer returned to
+**	the page could not be read. What is written here is written from inside the module's own
+**	glue, where both are in scope, and what the page sees is an ordinary array of strings.
+**
+**	Only the leading number is meant to be parsed. A reader that sees it skip knows lines
+**	were dropped, which is what bounding the array costs and what makes bounding it safe.
+*/
+EM_JS(void, ISO_Stall_Record, (char const * line, double seconds), {
+	var state = globalThis.OpenTS_State;
+
+	if (state === undefined || state === null) {
+		state = {};
+		globalThis.OpenTS_State = state;
+	}
+
+	if (!state.stalls) state.stalls = [];
+
+	state.stalls.push(UTF8ToString(line));
+	state.stallSeconds = seconds;
+
+	// A long session stalls more often than a page has any use for, so the oldest go. The
+	// sequence number in each line is what says so.
+	if (state.stalls.length > 4096) state.stalls.splice(0, state.stalls.length - 4096);
+});
+
+
+static void Account_For_Stall(std::size_t meter, std::uint64_t offset, unsigned int length,
+	double milliseconds, StallSourceType source)
+{
+	if (!(milliseconds > 0.0)) return;
+
+	double const began = emscripten_get_now() - milliseconds;
+
+	_Stalls++;
+	_StallMs += milliseconds;
+
+	if (milliseconds > _StallWorst) {
+		_StallWorst = milliseconds;
+		_StallWorstAt = offset;
+		_StallWorstLength = length;
+	}
+
+	/*
+	**	The disc is named by the last part of its location, since that is what a player and a
+	**	log both call it. Whitespace would break a line into the wrong number of fields, so
+	**	what little of it a location may carry is replaced rather than passed on.
+	*/
+	std::string name = (meter < _Images.size()) ? _Images[meter] : std::string();
+	std::size_t const cut = name.find_last_of('/');
+
+	if (cut != std::string::npos) name.erase(0, cut + 1);
+	if (name.size() > 64) name.erase(64);
+	if (name.empty()) name = "disc";
+
+	for (char & letter : name) {
+		if ((unsigned char)letter <= ' ') letter = '_';
+	}
+
+	char line[192];
+
+	std::snprintf(line, sizeof(line), "%u %.3f %s %llu %u %.1f %s", _Stalls, began / 1000.0,
+		name.c_str(), (unsigned long long)offset, length, milliseconds,
+		(source == STALL_AHEAD) ? "ahead" : "demand");
+
+	ISO_Stall_Record(line, _StallMs / 1000.0);
+}
 
 /*
 **	And what the link turned out to cost, taken from whichever image measured last. The
@@ -1544,9 +1865,10 @@ static double _LinkRate = 0.0;
 static unsigned int _LinkWindow = 0;
 
 
-static std::size_t Account_For_Image(void)
+static std::size_t Account_For_Image(char const * url)
 {
 	_Touched.emplace_back();
+	_Images.emplace_back(url != nullptr ? url : "");
 	return(_Touched.size() - 1);
 }
 
@@ -1615,7 +1937,28 @@ EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Ahead_Waste(void)
 #endif
 }
 
+/*
+** What the reading cost in time the player spent waiting: how many reads stopped the engine,
+** how long they stopped it for in total, and how long the worst of them lasted. All three
+** are cumulative for the run and are zero before a disc is read, which is what a build whose
+** data is preloaded reports for the whole of it. What is reported is the time the engine sat
+** in the read, not how long the request took: a request the look-ahead started early and that
+** landed before anything wanted it costs the engine nothing and is counted as nothing.
+*/
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Stalls(void) {return(_Stalls);}
+EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Ms(void) {return(_StallMs);}
+EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Worst(void) {return(_StallWorst);}
+EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Worst_Offset(void) {return((double)_StallWorstAt);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Stall_Worst_Length(void) {return(_StallWorstLength);}
+
+/*
+** The stalls themselves are not exported. They are pushed onto OpenTS_State.stalls as they
+** happen, one line of text each, with OpenTS_State.stallSeconds beside them carrying the
+** running total; see ISO_Stall_Record for why they go there rather than through a function.
+*/
+
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Hint_Runs(void) {return(_HintRuns);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Hint_Done(void) {return(_HintDone);}
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Hint_Soon(void) {return(_HintSoon);}
 
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Soon_Requests(void) {return(_SoonRequests);}
@@ -1686,7 +2029,7 @@ bool ISOHttpSourceClass::Open(char const * url)
 	}
 
 	Length = (std::uint64_t)length;
-	Meter = Account_For_Image();
+	Meter = Account_For_Image(Url.c_str());
 	_Open.push_back(this);
 
 	/*
@@ -1762,7 +2105,7 @@ void ISOHttpSourceClass::Look_Ahead(void)
 	*/
 	if (ISO_Store_Under_Main() == 0) return;
 
-	ISO_Http_Ahead_Ready();
+	ISO_Http_Ahead_Ready((unsigned int)BLOCK_SIZE);
 
 	unsigned int window = Link.Window();
 	unsigned int span = Link.Span();
@@ -1784,30 +2127,6 @@ void ISOHttpSourceClass::Look_Ahead(void)
 		}
 	}
 
-	std::uint64_t const blocks = (Length + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE;
-	std::uint64_t start = 0;
-	std::uint64_t count = 0;
-
-	ISOReadAheadClass & run = Ahead.Current();
-
-	if (!run.Span(blocks, window, span, start, count)) return;
-
-	while (count > 0 && Index.Holds(start)) {
-		start++;
-		count--;
-		run.Issued(start);
-	}
-
-	std::uint64_t missing = 0;
-	while (missing < count && !Index.Holds(start + missing)) missing++;
-
-	if (missing == 0) return;
-
-	std::uint64_t const at = start * (std::uint64_t)BLOCK_SIZE;
-	std::uint64_t bytes = missing * (std::uint64_t)BLOCK_SIZE;
-
-	if (at + bytes > Length) bytes = Length - at;
-
 	/*
 	**	The window is being refilled, so the connection belongs to the reading. Whatever was
 	**	asked for on a guess is let go rather than left to finish in front of this, which is
@@ -1817,22 +2136,57 @@ void ISOHttpSourceClass::Look_Ahead(void)
 
 	if (given > 0.0) _AheadWaste += (std::uint64_t)given;
 
-	double const asked = ISO_Http_Ahead_Start(Url.c_str(), (double)at, (double)bytes,
-		(int)Link.Flights());
+	std::uint64_t const blocks = (Length + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE;
+	unsigned int const flights = Link.Flights();
+
+	ISOReadAheadClass & run = Ahead.Current();
 
 	/*
-	**	A request that was declined -- one image already has as much in flight as it is
-	**	allowed -- leaves the window where it is, so the blocks are asked for at the next
-	**	read rather than skipped and paid for at full price when the reading reaches them.
+	**	The window is filled here rather than one request per read that missed. A run opened
+	**	by a read whose file is declared wants the whole window at once, and asking for it in
+	**	several requests beside each other costs one round trip for all of them where asking
+	**	for one and waiting for the next read costs one apiece.
 	*/
-	if (asked == 0.0) return;
+	for (unsigned int flight = 0; flight < flights; flight++) {
 
-	run.Issued(start + missing);
+		std::uint64_t start = 0;
+		std::uint64_t count = 0;
 
-	if (asked > 0.0) {
-		Account_For_Transfer(Meter, at, (unsigned int)asked);
-		_AheadRequests++;
-		_AheadBytes += (std::uint64_t)asked;
+		if (!run.Span(blocks, window, span, start, count)) return;
+
+		while (count > 0 && Index.Holds(start)) {
+			start++;
+			count--;
+			run.Issued(start);
+		}
+
+		std::uint64_t missing = 0;
+		while (missing < count && !Index.Holds(start + missing)) missing++;
+
+		if (missing == 0) return;
+
+		std::uint64_t const at = start * (std::uint64_t)BLOCK_SIZE;
+		std::uint64_t bytes = missing * (std::uint64_t)BLOCK_SIZE;
+
+		if (at + bytes > Length) bytes = Length - at;
+
+		double const asked = ISO_Http_Ahead_Start(Url.c_str(), (double)at, (double)bytes,
+			(int)flights);
+
+		/*
+		**	A request that was declined -- one image already has as much in flight as it is
+		**	allowed -- leaves the window where it is, so the blocks are asked for at the next
+		**	read rather than skipped and paid for at full price when the reading reaches them.
+		*/
+		if (asked == 0.0) return;
+
+		run.Issued(start + missing);
+
+		if (asked > 0.0) {
+			Account_For_Transfer(Meter, at, (unsigned int)asked);
+			_AheadRequests++;
+			_AheadBytes += (std::uint64_t)asked;
+		}
 	}
 #endif
 }
@@ -1865,8 +2219,11 @@ bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsign
 
 	if (state != 1 || ISO_Store_Under_Main() == 0) return(false);
 
+	double const stalled = emscripten_get_now();
+
 	if (ISO_Http_Ahead_Wait(Url.c_str(), (double)offset, buffer, length) != 1) return(false);
 
+	Account_For_Stall(Meter, offset, length, emscripten_get_now() - stalled, STALL_AHEAD);
 	_AheadServed++;
 	_AheadWaited++;
 	return(true);
@@ -1900,6 +2257,11 @@ void ISOHttpSourceClass::Ahead_Drop(void)
 ///
 /// A hint that something will be wanted later is queued instead, and is fetched only while
 /// the image is not being read at all.
+///
+/// A hint that a run is finished with is the only one that undoes work. What was asked for
+/// in front of that run is bytes nobody is going to read, so the requests are abandoned at
+/// once rather than left to finish; the whole blocks that already arrived are kept, since
+/// they are paid for either way and the store can have them.
 /// </remarks>
 void ISOHttpSourceClass::Hint(ISOHintType kind, std::uint64_t offset, std::uint64_t length)
 {
@@ -1910,6 +2272,13 @@ void ISOHttpSourceClass::Hint(ISOHintType kind, std::uint64_t offset, std::uint6
 	if (kind == ISO_HINT_SOON) {
 		_HintSoon++;
 		Soon(offset, length);
+		return;
+	}
+
+	if (kind == ISO_HINT_DONE) {
+		_HintDone++;
+		Ahead_Drop(offset / (std::uint64_t)BLOCK_SIZE,
+			(offset + length + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE);
 		return;
 	}
 
@@ -1935,6 +2304,15 @@ void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 	if (ISO_Store_Under_Main() == 0) return;
 	if (Queued >= SOON_BUDGET) return;
 
+	/*
+	**	A run too large to guess at whole is taken at its head instead of being refused.
+	**	Every archive the engine registers arrives here, and the ones that are too large to
+	**	fetch are still archives: their directory is at the front of them and is read the
+	**	moment the registration opens them, so that much of it is worth having whatever the
+	**	rest of it costs.
+	*/
+	if (length > SOON_MAX) length = SOON_HEAD;
+
 	std::uint64_t first = offset / (std::uint64_t)BLOCK_SIZE;
 	std::uint64_t const stop = (offset + length + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE;
 
@@ -1949,7 +2327,7 @@ void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 
 	if (Queued + bytes > SOON_BUDGET) bytes = SOON_BUDGET - Queued;
 
-	ISO_Http_Ahead_Ready();
+	ISO_Http_Ahead_Ready((unsigned int)BLOCK_SIZE);
 
 	/*
 	**	One round trip's worth of bytes per request. Asking for less spends more trips than
@@ -1963,6 +2341,35 @@ void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 #else
 	(void)offset;
 	(void)length;
+#endif
+}
+
+
+/// <summary>Banks whatever the guessing has fetched and nothing has read.</summary>
+/// <remarks>
+/// A guess that nobody takes is bandwidth spent for nothing, and holding it in the pool only
+/// postpones that: the span is dropped when the run ends and the bytes go with it. Putting
+/// it in the store instead makes the guess worth having even when it was wrong about this
+/// run -- the archive is on disc for the next launch, which is where most of a second run's
+/// speed comes from -- and it is what lets the pool let go of it.
+///
+/// Only a little is taken per read. Every byte of it is copied and staged, and doing the
+/// whole of a queue at once inside one read would cost the frame the read is on.
+/// </remarks>
+void ISOHttpSourceClass::Soon_Keep(void)
+{
+#if defined(OPENTS_WASM_JSPI)
+	if (!Store_Ready()) return;
+
+	static std::vector<unsigned char> harvest((std::size_t)BLOCK_SIZE * (std::size_t)SOON_KEEP);
+
+	double at = 0.0;
+	double const taken = ISO_Http_Idle_Take(Url.c_str(), harvest.data(),
+		(unsigned int)harvest.size(), (unsigned int)BLOCK_SIZE, &at);
+
+	if (!(taken > 0.0)) return;
+
+	Store_Keep((std::uint64_t)at, harvest.data(), (unsigned int)taken);
 #endif
 }
 
@@ -2054,6 +2461,8 @@ bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsign
 		if (!Index.Holds(index)) return(false);
 	}
 
+	double const stalled = emscripten_get_now();
+
 	if (ISO_Store_Read(Slot.c_str(), (double)offset, buffer, length, (unsigned int)BLOCK_SIZE) != 1) {
 
 		/*
@@ -2067,6 +2476,7 @@ bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsign
 		return(false);
 	}
 
+	Account_For_Stall(Meter, offset, length, emscripten_get_now() - stalled, STALL_STORE);
 	_StoreHits += (unsigned int)(last - first + 1);
 	_StoreBytes += length;
 	return(true);
@@ -2178,6 +2588,8 @@ bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned 
 {
 	unsigned char * cursor = (unsigned char *)buffer;
 	unsigned int remaining = length;
+	double const stalled = emscripten_get_now();
+	std::uint64_t const wanted = offset;
 
 	Account_For_Transfer(Meter, offset, length);
 
@@ -2219,6 +2631,7 @@ bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned 
 		remaining -= (unsigned int)got;
 	}
 
+	Account_For_Stall(Meter, wanted, length, emscripten_get_now() - stalled, STALL_TRANSFER);
 	return(true);
 }
 
@@ -2251,6 +2664,7 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	**	it, which is what a run read faster than the network answers needs: a movie opened in
 	**	one frame reads its first blocks back to back, with no decoding in between for a round
 	**	trip to hide in.
+	**
 	*/
 	Look_Ahead();
 
@@ -2311,6 +2725,8 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 	**	of what the discs cost the connection whether or not any of it is ever read.
 	*/
 #if defined(OPENTS_WASM_JSPI)
+	Soon_Keep();
+
 	unsigned int guesses = 0;
 	double const guessed = ISO_Http_Idle_Spent(Url.c_str(), &guesses);
 
@@ -2322,6 +2738,7 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 		_SoonRequests += guesses;
 		_SoonBytes += (std::uint64_t)guessed;
 	}
+
 #endif
 
 	/*

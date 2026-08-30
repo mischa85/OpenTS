@@ -824,8 +824,8 @@ void Check_Declared_Runs(void)
 		"a declared run starts where the file does");
 	Check(file.Continues(400), "and is believed before anything has been read of it");
 	Check(file.Span(blocks, window, span, start, count)
-		&& start == 400 && count == (std::uint64_t)ISOLinkClass::WINDOW_MIN,
-		"the smallest window is open before the file has been read from at all");
+		&& start == 400 && count == (std::uint64_t)span,
+		"a whole request is open before the file has been read from at all");
 
 	/*
 	**	The first read of the file opens a window, where an undeclared run would have needed
@@ -839,8 +839,7 @@ void Check_Declared_Runs(void)
 	file.Issued(start + count);
 
 	/*
-	**	The reading runs on, and the window grows with what it has covered rather than with
-	**	how many reads it took to cover it.
+	**	The reading runs on, and nothing in front of it leaves the file.
 	*/
 	for (std::uint64_t at = 401; at < 440; at++) {
 		file.Note(at, at);
@@ -853,6 +852,62 @@ void Check_Declared_Runs(void)
 	Check(file.Edge() == 460, "and the window stops there rather than running into the next one");
 	Check(file.Edge() - file.Cursor() < (std::uint64_t)window,
 		"so the end of a file costs less over-reading than the middle of one");
+
+	/*
+	**	A declared run reaches its whole window from the first read of it. An undeclared one
+	**	may reach no further in front of the reading than the reading has covered, since the
+	**	only evidence it will carry on is that it has; a declaration is better evidence than
+	**	that. Earning the window a block at a time is what left a declared file paying a
+	**	round trip per refill, because a file is read far faster than a distant link answers
+	**	and so outran its own window every time.
+	*/
+	ISOReadAheadClass opened;
+
+	opened.Begin(0, 4000);
+	opened.Note(0, 0);
+
+	while (opened.Span(blocks, window, span, start, count)) opened.Issued(start + count);
+
+	Check(opened.Edge() >= 1 + (std::uint64_t)window / 2,
+		"a declared run reaches a whole window from the first read of it");
+
+	ISOReadAheadClass noticed;
+
+	noticed.Note(0, 0);
+	noticed.Note(1, 1);
+
+	while (noticed.Span(blocks, window, span, start, count)) noticed.Issued(start + count);
+
+	Check(noticed.Edge() < opened.Edge() && noticed.Edge() <= 2 + noticed.Cursor(),
+		"and one nobody declared reaches no further than it has already covered");
+
+	/*
+	**	A reader taking large bites, which is what a movie player is: it tops its buffer up a
+	**	few hundred kilobytes at a time. A window smaller than one of those top-ups can never
+	**	be in front of the reading at all, so every top-up costs a round trip and the estimate
+	**	that produced the small window has no way to find that out. A declared run therefore
+	**	reaches past its own reads however little the link was measured to be worth.
+	*/
+	unsigned int const smallest = (unsigned int)ISOLinkClass::WINDOW_MIN;
+	unsigned int const shortest = (unsigned int)ISOLinkClass::SPAN_MIN;
+
+	ISOReadAheadClass movie;
+
+	movie.Begin(0, 8000);
+	movie.Note(0, 4);
+
+	Check(movie.Span(blocks, smallest, shortest, start, count) && start == 5 && count > 5,
+		"a declared run asks for more than one of the reader's own reads");
+
+	std::uint64_t reached = 0;
+
+	while (movie.Span(blocks, smallest, shortest, start, count)) {
+		movie.Issued(start + count);
+		reached = start + count;
+	}
+
+	Check(reached >= 5 + (std::uint64_t)ISOReadAheadClass::BOUND_MIN / 2,
+		"and reaches ahead of it whatever the link was measured to be worth");
 
 	/*
 	**	A read that already covers a span of its own is not fetched ahead of when nobody

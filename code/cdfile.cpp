@@ -107,7 +107,7 @@ int CDFileClass::Open(int rights)
 		**	Biased files must be positioned past the bias start position.
 		*/
 		if (BiasStart != 0 || BiasLength != -1) {
-			Hint_Extent();
+			Hint_Extent(ISO_HINT_SEQUENTIAL);
 			CDFileClass::Seek(0, SEEK_SET);
 		}
 
@@ -177,7 +177,7 @@ int CDFileClass::Read(void *buffer, int size)
 		opened = true;
 
 		if (BiasStart != 0 || BiasLength != -1) {
-			Hint_Extent();
+			Hint_Extent(ISO_HINT_SEQUENTIAL);
 			CDFileClass::Seek(0, SEEK_SET);
 		}
 	}
@@ -310,7 +310,7 @@ void CDFileClass::Bias(int start, int length)
 {
 	if (!Is_Image_File()) {
 		BASECLASS::Bias(start, length);
-		Hint_Extent();
+		Hint_Extent(ISO_HINT_SEQUENTIAL);
 		return;
 	}
 
@@ -327,7 +327,7 @@ void CDFileClass::Bias(int start, int length)
 	}
 	BiasLength = BiasLength > 0 ? BiasLength : 0;
 
-	Hint_Extent();
+	Hint_Extent(ISO_HINT_SEQUENTIAL);
 
 	if (ISOFile.Is_Open()) {
 		CDFileClass::Seek(0, SEEK_SET);
@@ -340,13 +340,13 @@ void CDFileClass::Bias(int start, int length)
 /// mixfile system biases the object to one embedded file. The bias is the narrower truth
 /// and replaces it, so what is read ahead of the reading stops at the end of the embedded
 /// file rather than running on into the next one.</remarks>
-void CDFileClass::Hint_Extent(void)
+void CDFileClass::Hint_Extent(ISOHintType kind)
 {
 	if (Is_Image_File()) {
 		if (BiasLength != -1) {
-			ISOFile.Hint(ISO_HINT_SEQUENTIAL, BiasStart, BiasLength);
+			ISOFile.Hint(kind, BiasStart, BiasLength);
 		} else {
-			ISOFile.Hint(ISO_HINT_SEQUENTIAL, 0, -1);
+			ISOFile.Hint(kind, 0, -1);
 		}
 		return;
 	}
@@ -359,10 +359,19 @@ void CDFileClass::Hint_Extent(void)
 	*/
 	if (!BASECLASS::Is_Open()) return;
 
-	Win32_Hint_Handle(Get_File_Handle(), ISO_HINT_SEQUENTIAL,
+	Win32_Hint_Handle(Get_File_Handle(), kind,
 		(unsigned int)((BiasStart > 0) ? BiasStart : 0),
 		(unsigned int)((BiasLength > 0) ? BiasLength : 0));
+#else
+	(void)kind;
 #endif
+}
+
+
+/// <summary>Says this object has stopped reading, whatever it said it would read.</summary>
+void CDFileClass::Abandon(void)
+{
+	Hint_Extent(ISO_HINT_DONE);
 }
 
 

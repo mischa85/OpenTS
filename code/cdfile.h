@@ -103,6 +103,14 @@ class CDFileClass : public BufferIOFileClass
 		/// to something already in memory, costs the resolution and no more.</remarks>
 		static void Prefetch(char const * filename);
 
+		/// <summary>Says this object has stopped reading, whatever it said it would read.</summary>
+		/// <remarks>A file is normally read to the end it declared when it was opened, and
+		/// what the search entry fetched in front of that reading is taken by it. A player
+		/// who skips a cutscene ends the reading early, and saying so here is what stops the
+		/// rest of the film being fetched. Advisory and free, and harmless on an object that
+		/// declared nothing.</remarks>
+		void Abandon(void);
+
 		static bool Find_First_File(char *buffer);
 		static bool Find_Next_File(char *buffer);
 		static void Find_Close(void);
@@ -111,7 +119,7 @@ class CDFileClass : public BufferIOFileClass
 
 		bool Is_Image_File(void) const {return(ISOFile.Is_Attached());}
 		int Raw_Seek_Image(int pos, int dir=SEEK_CUR);
-		void Hint_Extent(void);
+		void Hint_Extent(ISOHintType kind);
 
 		/*
 		**	Is multi-drive searching disabled for this file object?

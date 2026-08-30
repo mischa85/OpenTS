@@ -600,6 +600,16 @@ int VQAClass::Play_VQA(int last_frame_to_play, bool nobreakout)
 
 		if (!nobreakout && Keyboard->Check() && Keyboard->Get() == (KN_ESC|WWKEY_RLS_BIT)) {
 			brokeout = true;
+
+			/*
+			**	Said here rather than left to the close that follows, because the reading is
+			**	what the fetching runs in front of: a movie is fetched a long way ahead, and
+			**	between this and the teardown the rest of a film nobody is watching would go
+			**	on arriving.
+			*/
+			if (IsFileOpen) {
+				FileHandle.Abandon();
+			}
 		}
 	}
 

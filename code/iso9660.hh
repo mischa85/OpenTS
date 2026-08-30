@@ -55,11 +55,18 @@ enum ISORecordFlag {
 /*
  * What a hint says about a run of an image, in the order of how much it claims.
  *
- * A hint is advisory and free. It exists because the file layer knows two things the block
+ * A hint is advisory and free. It exists because the file layer knows three things the block
  * source cannot work out for itself: that a run of bytes is one file and will be read from
- * front to back, and that a file the engine has not opened yet is likely to be wanted.
+ * front to back, that a file the engine has not opened yet is likely to be wanted, and that
+ * a run it said all of that about has been given up.
+ *
+ * The last matters because the reading is what pays for the guessing. A player who skips a
+ * cutscene has said they do not want the rest of it, and a block source told so at that
+ * moment stops fetching it; one left to find out for itself goes on spending the player's
+ * connection on a film nobody is watching.
  */
 enum ISOHintType {
 	ISO_HINT_SEQUENTIAL,	// Being read now, front to back, and ending where it says.
-	ISO_HINT_SOON			// Probably wanted later, and only worth fetching while nothing else is.
+	ISO_HINT_SOON,			// Probably wanted later, and only worth fetching while nothing else is.
+	ISO_HINT_DONE			// Finished with, whatever was said about it before.
 };

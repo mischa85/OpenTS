@@ -14,7 +14,9 @@
 #include "_pk.h"
 #include "addon.h"
 #include "ccfile.h"
+#include "cdfile.h"
 #include "grphmenu.h"
+#include "ini.h"
 #include "init.h"
 #include "loaddlg.h"
 #include "mixfile.h"
@@ -48,6 +50,42 @@ void Draw_Menu_Background(void)
 
 
 /// <summary>
+/// Says which backdrop animations the menu pages are about to want.
+/// A page's backdrop is named by its own section of the menu database and is streamed as the
+/// page is built, which for the two game menus is after the player has already clicked. The
+/// database names all of them whichever page is chosen, so all of them are named here and
+/// the fetching overlaps the time the player spends on the page in front.
+/// </summary>
+static void Prefetch_Menu_Backgrounds(void)
+{
+	static char const * const _pages[] = {"MainMenu", "TiberianSunMenu", "FirestormMenu"};
+
+	CCFileClass file("NewMenu.INI");
+
+	if (!file.Is_Available()) {
+		return;
+	}
+
+	INIClass ini;
+
+	if (ini.Load(file) <= 0) {
+		return;
+	}
+
+	for (char const * page : _pages) {
+		char name[256];
+
+		if (ini.Get_String(page, "Background", "", name, sizeof(name) - sizeof(".VQA")) <= 0) {
+			continue;
+		}
+
+		strcat(name, ".VQA");
+		CDFileClass::Prefetch(name);
+	}
+}
+
+
+/// <summary>
 /// Constructor for the new menu object.
 /// This routine will attach the graphical menu mix file if it is installed and pick the
 /// title page that the menus draw behind themselves. A missing mix file is how the game
@@ -64,6 +102,8 @@ NewMenuClass::NewMenuClass(void) :
 			Background = new char[16];
 			strcpy(Background, "Loading.PCX");
 		}
+
+		Prefetch_Menu_Backgrounds();
 	}
 
 	if (Background == NULL) {

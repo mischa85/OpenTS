@@ -73,6 +73,12 @@ site_exclusions:
     keys: [Background, ItemMax, Theme]
     classification: excluded
     reason: These fields configure an internal graphic-menu resource format rather than game or mod data.
+  - path: code/newmenu.cpp
+    function: Prefetch_Menu_Backgrounds
+    keys: [Background]
+    classification: duplicate
+    canonical_key: Background
+    reason: The menu system reads the same internal graphic-menu backdrop field ahead of time so it can be fetched before the page is built.
 
   - path: code/mschoice.cpp
     function: MapStage::MapStage

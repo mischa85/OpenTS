@@ -234,6 +234,7 @@ struct ChooseCampaignStruct {
 static void Play_Intro(bool sequenced=false);
 static void Init_Color_Remaps(void);
 static void Init_Heaps(void);
+static MFCD * Register_Mixfile(char const * name);
 static bool Init_Expansion_Files(void);
 static bool Init_One_Time_Systems(void);
 static bool Init_Fonts(void);
@@ -2224,7 +2225,7 @@ static bool Init_Expansion_Files(void)
 	while (handle != INVALID_HANDLE_VALUE) {
 		if ((ff.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_TEMPORARY)) == 0) {
 
-			ptr = new MFCD(ff.cFileName, &FastKey);
+			ptr = Register_Mixfile(ff.cFileName);
 			assert(ptr != NULL);
 
 			if (ptr != NULL) {
@@ -2247,7 +2248,7 @@ static bool Init_Expansion_Files(void)
 	while (handle != INVALID_HANDLE_VALUE) {
 		if ((ff.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_TEMPORARY)) == 0) {
 
-			ptr = new MFCD(ff.cFileName, &FastKey);
+			ptr = Register_Mixfile(ff.cFileName);
 			assert(ptr != NULL);
 
 			if (ptr != NULL) {
@@ -2395,6 +2396,23 @@ static bool Init_Fonts(void)
 
 
 /// <summary>
+/// Registers a mixfile, saying first that its bytes will be wanted.
+/// A registration is where an archive's extent becomes known, and it happens well before the
+/// engine opens the files inside it. Naming it here is what lets a search entry that has to
+/// fetch its bytes do so in the gaps between the reads, rather than a round trip at a time
+/// underneath them.
+/// </summary>
+/// <param name="name">The filename of the mixfile being registered.</param>
+/// <returns>The registered mixfile.</returns>
+static MFCD * Register_Mixfile(char const * name)
+{
+	CDFileClass::Prefetch(name);
+
+	return(new MFCD(name, &FastKey));
+}
+
+
+/// <summary>
 /// Mounts a named expansion mixfile straight off the disk.
 /// The archive must be a loose file. Unlike its cached counterpart, this routine will not
 /// find one that is buried inside another mixfile.
@@ -2404,7 +2422,7 @@ static bool Init_Fonts(void)
 static bool Add_Raw_Expansion_Mix(const char *name)
 {
 	if (RawFileClass(name).Is_Available()) {
-		MFCD * expand = new MFCD(name, &FastKey);
+		MFCD * expand = Register_Mixfile(name);
 		assert(expand != NULL);
 
 		if (expand != NULL) {
@@ -2427,7 +2445,7 @@ static bool Add_Raw_Expansion_Mix(const char *name)
 static bool Add_CC_Expansion_Mix(const char *name)
 {
 	if (CCFileClass(name).Is_Available()) {
-		MFCD * expand = new MFCD(name, &FastKey);
+		MFCD * expand = Register_Mixfile(name);
 		assert(expand != NULL);
 
 		if (expand != NULL) {
@@ -2455,7 +2473,7 @@ static void Init_Expand_Mixfiles(void)
 	for (index = 99; index >= 0; index--) {
 		sprintf(name, "EXPAND%02d.MIX", index);
 		if (RawFileClass(name).Is_Available()) {
-			expand = new MFCD(name, &FastKey);
+			expand = Register_Mixfile(name);
 			assert(expand != NULL);
 
 			if (expand != NULL) {
@@ -2468,7 +2486,7 @@ static void Init_Expand_Mixfiles(void)
 	for (index = 99; index >= 0; index--) {
 		sprintf(name, "ECACHE%02d.MIX", index);
 		if (CCFileClass(name).Is_Available()) {
-			expand = new MFCD(name, &FastKey);
+			expand = Register_Mixfile(name);
 			assert(expand != NULL);
 
 			if (expand != NULL) {
@@ -2491,7 +2509,7 @@ static void Init_Patch_Mixfiles(void)
 	MFCD * expand;
 
 	if (RawFileClass("PATCH.MIX").Is_Available()) {
-		expand = new MFCD("PATCH.MIX", &FastKey);
+		expand = Register_Mixfile("PATCH.MIX");
 		assert(expand != NULL);
 
 		if (expand != NULL) {
@@ -2502,7 +2520,7 @@ static void Init_Patch_Mixfiles(void)
 
 
 	if (CCFileClass("PCACHE.MIX").Is_Available()) {
-		expand = new MFCD("PCACHE.MIX", &FastKey);
+		expand = Register_Mixfile("PCACHE.MIX");
 		assert(expand != NULL);
 
 		if (expand != NULL) {
@@ -2544,7 +2562,7 @@ static bool Init_Bootstrap_Mixfiles(void)
 #ifndef _DEMO
 	Detect_Addons();
 
-	GameMix = new MFCD("TIBSUN.MIX", &FastKey);
+	GameMix = Register_Mixfile("TIBSUN.MIX");
 	assert(GameMix != NULL);
 
 	if (GameMix == NULL) {
@@ -2558,7 +2576,7 @@ static bool Init_Bootstrap_Mixfiles(void)
 	*/
 	DebugStringNoPrefix(" CACHE.MIX");
 
-	CacheMix = new MFCD("CACHE.MIX", &FastKey);
+	CacheMix = Register_Mixfile("CACHE.MIX");
 	assert(CacheMix != NULL);
 
 	if ((CacheMix == NULL) || (MFCD::Cache("CACHE.MIX") == false)) {
@@ -2567,7 +2585,7 @@ static bool Init_Bootstrap_Mixfiles(void)
 
 	DebugStringNoPrefix(" CACHE.MIX");
 
-	LocalMix = new MFCD("LOCAL.MIX", &FastKey);
+	LocalMix = Register_Mixfile("LOCAL.MIX");
 	assert(LocalMix != NULL);
 
 	if (LocalMix == NULL) {
@@ -2603,7 +2621,7 @@ static bool Init_Secondary_Mixfiles(void)
 	**	Inform the file system of the various MIX files.
 	*/
 	if (CCFileClass("CONQUER.MIX").Is_Available()) {
-		ConquerMix = new MFCD("CONQUER.MIX", &FastKey);
+		ConquerMix = Register_Mixfile("CONQUER.MIX");
 		assert(ConquerMix != NULL);
 	}
 
@@ -2620,12 +2638,12 @@ static bool Init_Secondary_Mixfiles(void)
 		if (CDFileClass::Find_First_File(name) == true) {
 
 			DebugStringNoPrefix(" %s", name);
-			MapsMix = new MFCD(name, &FastKey);
+			MapsMix = Register_Mixfile(name);
 			assert(MapsMix != NULL);
 
 			while (CDFileClass::Find_Next_File(name) == true) {
 				DebugStringNoPrefix(" %s", name);
-				mix = new MFCD(name, &FastKey);
+				mix = Register_Mixfile(name);
 				assert(mix != NULL);
 
 				if (mix != NULL) {
@@ -2643,7 +2661,7 @@ static bool Init_Secondary_Mixfiles(void)
 	}
 
 	if (CCFileClass("MULTI.MIX").Is_Available()) {
-		MultiMix = new MFCD("MULTI.MIX", &FastKey);
+		MultiMix = Register_Mixfile("MULTI.MIX");
 		assert(MultiMix != NULL);
 	}
 
@@ -2657,7 +2675,7 @@ static bool Init_Secondary_Mixfiles(void)
 
 	if (Addon_Installed(ADDON_FIRESTORM) == true) {
 		if (CCFileClass("SOUNDS01.MIX").Is_Available()) {
-			Sounds01Mix = new MFCD("SOUNDS01.MIX", &FastKey);
+			Sounds01Mix = Register_Mixfile("SOUNDS01.MIX");
 			assert(Sounds01Mix != NULL);
 		}
 
@@ -2669,7 +2687,7 @@ static bool Init_Secondary_Mixfiles(void)
 	}
 
 	if (CCFileClass("SOUNDS.MIX").Is_Available()) {
-		SoundsMix = new MFCD("SOUNDS.MIX", &FastKey);
+		SoundsMix = Register_Mixfile("SOUNDS.MIX");
 		assert(SoundsMix != NULL);
 	}
 
@@ -2683,7 +2701,7 @@ static bool Init_Secondary_Mixfiles(void)
 	**	Register the score mixfile.
 	*/
 	if (CCFileClass("SCORES.MIX").Is_Available()) {
-		ScoresMix = new MFCD("SCORES.MIX", &FastKey);
+		ScoresMix = Register_Mixfile("SCORES.MIX");
 		assert(ScoresMix != NULL);
 	}
 
@@ -2694,7 +2712,7 @@ static bool Init_Secondary_Mixfiles(void)
 	}
 
 	if (CCFileClass("SCORES01.MIX").Is_Available()) {
-		Scores01Mix = new MFCD("SCORES01.MIX", &FastKey);
+		Scores01Mix = Register_Mixfile("SCORES01.MIX");
 		assert(Scores01Mix != NULL);
 	}
 
@@ -2708,12 +2726,12 @@ static bool Init_Secondary_Mixfiles(void)
 		if (CDFileClass::Find_First_File(name) == true) {
 
 			DebugStringNoPrefix(" %s", name);
-			MoviesMix = new MFCD(name, &FastKey);
+			MoviesMix = Register_Mixfile(name);
 			assert(MoviesMix != NULL);
 
 			while (CDFileClass::Find_Next_File(name) == true) {
 				DebugStringNoPrefix(" %s", name);
-				mix = new MFCD(name, &FastKey);
+				mix = Register_Mixfile(name);
 				assert(mix != NULL);
 
 				if (mix != NULL) {
@@ -5527,13 +5545,13 @@ void Init_Theater(TheaterType theater)
 		if (TheaterData != NULL) {
 			delete TheaterData;
 		}
-		TheaterData = new MFCD(fullname, &FastKey);
+		TheaterData = Register_Mixfile(fullname);
 		assert(TheaterData != NULL);
 
 		if (TheaterDat != NULL) {
 			delete TheaterDat;
 		}
-		TheaterDat = new MFCD(shortname, &FastKey);
+		TheaterDat = Register_Mixfile(shortname);
 		TheaterDat->Cache();
 
 		TheaterData->Cache();
@@ -5542,7 +5560,7 @@ void Init_Theater(TheaterType theater)
 		if (IsometricTheaterData != NULL) {
 			delete IsometricTheaterData;
 		}
-		IsometricTheaterData = new MFCD(isofullname, &FastKey);
+		IsometricTheaterData = Register_Mixfile(isofullname);
 
 		Session.Update_Progress(12);
 
@@ -5671,7 +5689,7 @@ bool Prep_For_Side(SideType side)
 			if (CCFileClass(name).Is_Available()) {
 
 				DebugString("     Initializing %s\n", name);
-				MFCD * mix = new MFCD(name, &FastKey);
+				MFCD * mix = Register_Mixfile(name);
 				if (mix == NULL) {
 					return(false);
 				}
@@ -5685,7 +5703,7 @@ bool Prep_For_Side(SideType side)
 	DebugString("     Initializing %s\n", name);
 
 	if (CCFileClass(name).Is_Available()) {
-		SideCMix = new MFCD(name, &FastKey);
+		SideCMix = Register_Mixfile(name);
 	}
 
 	if (SideCMix == NULL) {
@@ -5702,7 +5720,7 @@ bool Prep_For_Side(SideType side)
 			if (CCFileClass(name).Is_Available()) {
 
 				DebugString("     Initializing %s\n", name);
-				MFCD *mix = new MFCD(name, &FastKey);
+				MFCD *mix = Register_Mixfile(name);
 				if (mix == NULL) {
 					return(false);
 				}
@@ -5715,7 +5733,7 @@ bool Prep_For_Side(SideType side)
 	DebugString("     Initilizing %s\n", name);
 
 	if (CCFileClass(name).Is_Available()) {
-		SideNCMix = new MFCD(name, &FastKey);
+		SideNCMix = Register_Mixfile(name);
 	}
 
 	if (Session.Type == GAME_NORMAL) {
@@ -5728,7 +5746,7 @@ bool Prep_For_Side(SideType side)
 
 		DebugString("     Initilizing %s\n", name);
 		if (CCFileClass(name).Is_Available()) {
-			SideCDMix = new MFCD(name, &FastKey);
+			SideCDMix = Register_Mixfile(name);
 		}
 		if (SideCDMix == NULL) {
 			DebugString("     FAILED!\n");
@@ -5776,7 +5794,7 @@ bool Prep_Speech_For_Side(SideType side)
 			sprintf(name, "E%02dVOX%02d.MIX", addon, id);
 
 			if (CCFileClass(name).Is_Available()) {
-				MFCD *mix = new MFCD(name, &FastKey);
+				MFCD *mix = Register_Mixfile(name);
 				if (mix != NULL) {
 					ExpandSpeechMix.Add(mix);
 					DebugStringNoPrefix(" %s", name);
@@ -5788,7 +5806,7 @@ bool Prep_Speech_For_Side(SideType side)
 	sprintf(name, "SPEECH%02d.MIX", id);
 	DebugString("     Initilizing %s\n", name);
 	if (CCFileClass(name).Is_Available()) {
-		SpeechMix = new MFCD(name, &FastKey);
+		SpeechMix = Register_Mixfile(name);
 	}
 
 	if (SpeechMix == NULL) {

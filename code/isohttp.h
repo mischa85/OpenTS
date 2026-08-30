@@ -297,7 +297,22 @@ class ISOReadAheadClass
 		std::uint64_t Edge(void) const {return(Filled);}
 
 		enum {
-			RUN_MIN = 2			// Reads in a forward run before an undeclared one is believed.
+			RUN_MIN = 2,		// Reads in a forward run before an undeclared one is believed.
+
+			/*
+			** And how far a declared run reaches whatever the link is measured to be worth.
+			** A declared run is not a guess -- the file layer says the reading is forward and
+			** says where it stops -- so the floor a guess is held to does not apply to it,
+			** and on a distant link the floor is the whole problem: two blocks is smaller
+			** than one of a movie player's own top-up reads, so a window sitting on the floor
+			** can never get in front of the reading and every top-up is a round trip. Four
+			** megabytes covers several trips on any link slow enough to need covering.
+			*/
+			BOUND_MIN = 64,
+
+			// And no less than this many times the last read, so a reader taking large
+			// bites is still fetched further ahead than it can consume in one.
+			BOUND_READS = 4
 		};
 
 	private:
@@ -482,15 +497,33 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		static constexpr double STORE_IDLE = 250.0;
 
 		/*
-		** What one image may be told to fetch while nothing is being read of it. The queue
-		** is the names the engine said it would probably want; the budget is what those are
-		** allowed to cost, and holds the guessing to a few files rather than a disc.
+		** What one image may be told to fetch while nothing is being read of it. The queue is
+		** the runs the engine said it would probably want -- every archive it registers, and
+		** the handful of files it knows it is about to open -- and the budget is what those
+		** are allowed to cost.
 		*/
 		enum {
-			SOON_QUEUE = 8
+			SOON_QUEUE = 24
 		};
 
-		static constexpr std::uint64_t SOON_BUDGET = 24ull * 1024ull * 1024ull;
+		static constexpr std::uint64_t SOON_BUDGET = 40ull * 1024ull * 1024ull;
+
+		/*
+		** And how much of one run is worth guessing at. An archive under the ceiling is
+		** queued whole, since the engine reads it as files scattered all over it and there
+		** is no run in that to read ahead of. One over it is not: a disc's worth of video is
+		** registered exactly like an archive of maps, and fetching it would spend the
+		** player's connection on a film they may never watch. What is taken from those is
+		** the head, which is where an archive keeps the directory the registration reads.
+		*/
+		static constexpr std::uint64_t SOON_MAX = 16ull * 1024ull * 1024ull;
+		static constexpr std::uint64_t SOON_HEAD = 2ull * 1024ull * 1024ull;
+
+		// And how many blocks of it are moved into the store per read. The copying is done
+		// inside a read, so it is held to what a read can afford to carry.
+		enum {
+			SOON_KEEP = 4
+		};
 
 	/*
 	** How much of what has been fetched may be bytes nobody read. Reading ahead is a
@@ -515,6 +548,7 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		void Ahead_Drop(void);
 		void Ahead_Drop(std::uint64_t first, std::uint64_t stop);
 		void Soon(std::uint64_t offset, std::uint64_t length);
+		void Soon_Keep(void);
 
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
