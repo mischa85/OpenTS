@@ -39,8 +39,8 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "crtcompat.h"
+#include "language/languageimage.h"
 #include "peresource.h"
-#include "rawfile.h"
 #else
 #include <new.h>
 #endif
@@ -52,10 +52,10 @@ HINSTANCE LanguageResources;
 #if defined(__EMSCRIPTEN__)
 
 /*
- * The language library, read as a data file. There is no module loader on this target, so
- * the resource directory in the file is walked in place instead. The image is held for
- * the life of the process because a fetched resource is a pointer into it, which is the
- * lifetime a locked resource has on Windows.
+ * The language resources, compiled from the same script the Visual Studio build turns into
+ * Language.dll and carried by the executable rather than loaded, because there is no module
+ * loader on this target. The directory is held for the life of the process because a fetched
+ * resource is a pointer into it, which is the lifetime a locked resource has on Windows.
  */
 static PEResourceClass LanguageImage;
 
@@ -453,10 +453,11 @@ void * Hires_Load(FileClass & file)
 
 
 /// <summary>
-/// Loads the language resource library.
-/// This routine brings in the library that every localized string and resource is fetched
-/// from. It may be called as often as convenient -- the library is only loaded the first
-/// time. If asked to, it will tell the player to reinstall when the library is missing.
+/// Makes the language resources available.
+/// This routine brings in the resources that every localized string and dialog template is
+/// fetched from: Language.dll where a module loader can be asked for it, and the directory
+/// compiled into the executable where one cannot. It may be called as often as convenient --
+/// the work is only done the first time. If asked to, it reports a failure to the player.
 /// </summary>
 /// <param name="show_error">Should the player be told when the library cannot be loaded?</param>
 /// <returns>bool; Are the language resources available?</returns>
@@ -467,36 +468,17 @@ bool Init_Language_Resources(bool show_error)
 	if (!LanguageImage.Is_Loaded()) {
 
 		/*
-		 * A raw file rather than a searched one, for two reasons. A global constructor
-		 * can reach Fetch_String, so this runs before the mixfile and search path objects
-		 * are constructed and may not touch them. And the Windows build hands the name to
-		 * the module loader, which reads the installation directory and never the game
-		 * data, so this is also the same file the two targets end up reading. The name is
-		 * the one the game ships under, because the file system here is case sensitive.
+		 * Nothing is read here. A global constructor can reach Fetch_String, so this runs
+		 * before the mixfile and search path objects are constructed and could not touch
+		 * them anyway.
 		 */
-		RawFileClass file("LANGUAGE.DLL");
-
-		if (file.Is_Available()) {
-			int size = file.Size();
-			char * image = new char[size];
-
-			if (file.Read(image, size) == size) {
-				LanguageImage.Load(image, (std::size_t)size);
-			}
-
-			delete [] image;
-		}
-
-		if (!LanguageImage.Is_Loaded()) {
+		if (!LanguageImage.Load_Directory(LanguageResourceImage, LanguageResourceImageSize)) {
 
 			if (show_error == true) {
 				MessageBox(NULL,
-					"Unable to initialize Language.dll, please reinstall Tiberian Sun.\n"
-					"Keine Initialisierung von Language.DLL m\xF6glich. Bitte installieren Sie Tiberian Sun erneut.\n"
-					"Initialisation de Language.DLL impossible. Veuillez r\xE9installer Tiberian Sun.",
+					"The language resources built into this program cannot be read.",
 					"Tiberian Sun",
 					MB_ICONERROR);
-
 			}
 
 			return(false);

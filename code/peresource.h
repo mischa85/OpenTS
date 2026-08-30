@@ -10,8 +10,8 @@
 // A reader for the resource directory of a Portable Executable image. The language
 // library is a resource-only DLL, and every platform that cannot ask an operating system
 // to map it still has to reach the strings and dialog templates inside it. Nothing here
-// touches the operating system: the caller supplies the bytes of the image and the
-// resource tree is walked in place.
+// touches the operating system: the caller supplies the bytes, of a whole image or of a
+// directory on its own, and the resource tree is walked in place.
 
 #pragma once
 
@@ -73,6 +73,15 @@ class PEResourceClass
 		/// <returns>bool; true when the image parsed and carries a resource directory.</returns>
 		bool Load(void const * image, std::size_t size);
 
+		/// <summary>Takes a copy of a resource directory that stands on its own.</summary>
+		/// <remarks>The addresses inside such a directory count from the start of the
+		/// directory rather than from an image base, which is what they hold before a
+		/// linker places the section they belong to.</remarks>
+		/// <param name="directory">The bytes of the directory and the resources in it.</param>
+		/// <param name="size">How many bytes the directory occupies.</param>
+		/// <returns>bool; true when the directory was taken.</returns>
+		bool Load_Directory(void const * directory, std::size_t size);
+
 		void Unload(void);
 		bool Is_Loaded(void) const {return(Image != nullptr);}
 
@@ -117,11 +126,13 @@ class PEResourceClass
 		 * The image, its length, and the pieces of it the resource walk needs: the section
 		 * table that turns a relative virtual address back into a file offset, and the root
 		 * of the resource tree, which is also the base every offset inside the tree counts
-		 * from.
+		 * from. A directory loaded on its own has no section table, and its addresses are
+		 * resolved against the directory instead.
 		 */
 		unsigned char * Image;
 		std::size_t Size;
 		std::size_t SectionOffset;
 		unsigned int SectionCount;
 		std::size_t DirectoryOffset;
+		bool Standalone;
 };

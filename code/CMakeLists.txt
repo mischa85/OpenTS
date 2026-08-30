@@ -89,6 +89,45 @@ endforeach()
 
 #
 # ---------------------------------------------------------
+# Language resources
+# ---------------------------------------------------------
+#
+# The Visual Studio target builds language/language.rc into Language.dll and asks the module
+# loader for the strings and dialog templates in it. The WebAssembly target has no module
+# loader, so the same script is compiled into the resource directory the executable carries
+# with it. The script stays the one source of the resources either way.
+#
+if(EMSCRIPTEN)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+    set(OPENTS_LANGUAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/language")
+    set(OPENTS_LANGUAGE_SOURCE "${OPENTS_GENERATED_DIR}/languageimage.cpp")
+
+    add_custom_command(
+        OUTPUT "${OPENTS_LANGUAGE_SOURCE}"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${OPENTS_LANGUAGE_DIR}/rcimage.py"
+            "${OPENTS_LANGUAGE_DIR}/language.rc"
+            --include "${OPENTS_LANGUAGE_DIR}"
+            --include "${OPENTS_GENERATED_DIR}"
+            --source "${OPENTS_LANGUAGE_SOURCE}"
+        DEPENDS
+            "${OPENTS_LANGUAGE_DIR}/rcimage.py"
+            "${OPENTS_LANGUAGE_DIR}/language.rc"
+            "${OPENTS_LANGUAGE_DIR}/language.h"
+            "${OPENTS_LANGUAGE_DIR}/language.hm"
+            "${OPENTS_LANGUAGE_DIR}/afxres.h"
+            "${OPENTS_VERSION_HEADER}"
+            "${OPENTS_STAMP_HEADER}"
+        COMMENT "Compiling the language resources"
+        VERBATIM
+    )
+
+    list(APPEND OPENTS_SRC "${OPENTS_LANGUAGE_SOURCE}")
+endif()
+
+#
+# ---------------------------------------------------------
 # Create actual OpenTS executable (Win32)
 # ---------------------------------------------------------
 #

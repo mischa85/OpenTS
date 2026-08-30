@@ -66,8 +66,9 @@ add_subdirectory(wasm)
 
 enable_testing()
 
-# The localized strings ship in a Win32 resource DLL, which the WebAssembly target has no
-# way to build or load.
+# The localized strings ship in a Win32 resource DLL, which the WebAssembly target has no way
+# to build or load. It compiles the same resource script into the directory the executable
+# carries instead; code/CMakeLists.txt does that.
 if(NOT EMSCRIPTEN)
     add_subdirectory(code/language)
 endif()

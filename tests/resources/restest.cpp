@@ -476,7 +476,7 @@ std::vector<unsigned char> const DIALOG_DATA = {0x01, 0x00, 0xFF, 0xFE, 0x7F, 0x
 std::vector<unsigned char> const CUSTOM_DATA = {'O', 'p', 'e', 'n', 'T', 'S'};
 
 
-std::vector<unsigned char> Build_Sample_Image(void)
+std::vector<ResourceEntryType> Sample_Resources(void)
 {
 	std::vector<ResourceEntryType> resources;
 
@@ -502,7 +502,24 @@ std::vector<unsigned char> Build_Sample_Image(void)
 	resources.push_back({PE_RESOURCE_VERSION, "", 1, "", Build_Version_Resource()});
 	resources.push_back({0, "OPENTS", 0, "SETTINGS", CUSTOM_DATA});
 
-	return Build_Image(Build_Resources(resources, RESOURCE_ADDRESS));
+	return resources;
+}
+
+
+std::vector<unsigned char> Build_Sample_Image(void)
+{
+	return Build_Image(Build_Resources(Sample_Resources(), RESOURCE_ADDRESS));
+}
+
+
+/*
+ * The same resources as a directory that has not been placed in an image, which is what a
+ * target with no module loader compiles its language script into. Nothing has moved the
+ * addresses in it off the start of the directory, so the section address is zero.
+ */
+std::vector<unsigned char> Build_Sample_Directory(void)
+{
+	return Build_Resources(Sample_Resources(), 0);
 }
 
 
@@ -675,6 +692,26 @@ int main(void)
 		"an unloaded reader fetches no resource");
 
 	Check_Rejection(image);
+
+	/*
+	 * The same resources reached through the other way in, which the WebAssembly target
+	 * uses because it carries a directory rather than loading a library.
+	 */
+	std::vector<unsigned char> directory = Build_Sample_Directory();
+	std::printf("\nBare directory built: %u bytes\n\n", (unsigned int)directory.size());
+
+	PEResourceClass bare;
+	Check(!bare.Load_Directory(nullptr, 0), "no directory loads nothing");
+	Check(!bare.Load_Directory(directory.data(), 8), "a directory shorter than its head loads nothing");
+	Check(bare.Load_Directory(directory.data(), directory.size()), "the bare directory loads");
+
+	if (bare.Is_Loaded()) {
+		Check_Strings(bare);
+		Check_Resources(bare);
+		Check_Version(bare);
+	} else {
+		Failures++;
+	}
 
 	std::printf("\n%s\n", (Failures == 0) ? "All checks passed." : "Checks FAILED.");
 	return((Failures == 0) ? 0 : 1);

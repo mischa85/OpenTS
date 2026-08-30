@@ -10,7 +10,8 @@
 // Walks the resource directory of a Portable Executable image. The layout is the one
 // described by the PE specification: a DOS stub pointing at the COFF header, an optional
 // header naming the resource data directory, and a section table that turns the relative
-// virtual addresses inside the tree back into offsets in the file.
+// virtual addresses inside the tree back into offsets in the file. A directory that has not
+// been placed in an image is walked as well, with its addresses counted from its own start.
 
 #include "peresource.h"
 
@@ -45,6 +46,11 @@ constexpr std::size_t RESOURCE_NAMED_COUNT = 12;
 constexpr std::size_t RESOURCE_ID_COUNT = 14;
 constexpr std::size_t RESOURCE_ENTRY_SIZE = 8;
 constexpr std::size_t RESOURCE_DATA_SIZE = 16;
+
+/*
+ * How far into its copy a directory loaded on its own is placed.
+ */
+constexpr std::size_t DIRECTORY_LEAD = 4;
 
 constexpr std::uint16_t DOS_SIGNATURE = 0x5A4D;
 constexpr std::uint32_t PE_SIGNATURE = 0x00004550;
@@ -250,7 +256,8 @@ PEResourceClass::PEResourceClass(void) :
 	Size(0),
 	SectionOffset(0),
 	SectionCount(0),
-	DirectoryOffset(0)
+	DirectoryOffset(0),
+	Standalone(false)
 {
 }
 
@@ -269,6 +276,7 @@ void PEResourceClass::Unload(void)
 	SectionOffset = 0;
 	SectionCount = 0;
 	DirectoryOffset = 0;
+	Standalone = false;
 }
 
 
@@ -289,6 +297,30 @@ bool PEResourceClass::Load(void const * image, std::size_t size)
 		return(false);
 	}
 
+	return(true);
+}
+
+
+/*
+ * Takes a resource directory that has not been placed in an image. The copy starts past a
+ * lead of zeroes so that the directory does not sit at offset zero, which the walk uses
+ * throughout to mean that there is nothing there.
+ */
+bool PEResourceClass::Load_Directory(void const * directory, std::size_t size)
+{
+	Unload();
+
+	if (directory == nullptr || size < RESOURCE_DIRECTORY_SIZE) {
+		return(false);
+	}
+
+	Image = new unsigned char[DIRECTORY_LEAD + size];
+	std::memset(Image, 0, DIRECTORY_LEAD);
+	std::memcpy(Image + DIRECTORY_LEAD, directory, size);
+
+	Size = DIRECTORY_LEAD + size;
+	DirectoryOffset = DIRECTORY_LEAD;
+	Standalone = true;
 	return(true);
 }
 
@@ -356,6 +388,10 @@ bool PEResourceClass::Locate_Directory(void)
  */
 std::size_t PEResourceClass::Offset_For_RVA(std::uint32_t rva) const
 {
+	if (Standalone) {
+		return(((std::size_t)rva < Size) ? DirectoryOffset + (std::size_t)rva : 0);
+	}
+
 	for (unsigned int index = 0; index < SectionCount; index++) {
 		std::size_t section = SectionOffset + (std::size_t)index * SECTION_HEADER_SIZE;
 
