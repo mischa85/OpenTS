@@ -104,8 +104,16 @@ EM_JS(int, ISO_Http_Transfer, (char const * url, double offset, void * buffer, u
 
 /*
 ** The one request that establishes what is being read. It answers the image's length, and
-** with it the two things that identify the image to a later run: the URL the page resolved
-** the location to, and whatever the server calls this version of it.
+** with it the two things that identify the image to a later run: the location the page was
+** given, made absolute, and whatever the server calls this version of it.
+**
+** The location is what identifies the image, and not the URL the request ended at. A large
+** image is commonly served from a pool that redirects each request to whichever node
+** answers it, so the URL a run ends at is not a property of the image at all and keying on
+** it would give a second run a slot the first one wrote nothing under. What the run has
+** already fetched would then be re-fetched, once per node. The validator carries what the
+** redirect cannot: a node serving a different file answers with a different entity tag or
+** date, and the length differs besides, so the image is still identified by what it is.
 */
 EM_JS(double, ISO_Http_Probe, (char const * url, char * identity, int identitysize, char * validator, int validatorsize), {
 	var write = function (text, buffer, size) {
@@ -135,7 +143,7 @@ EM_JS(double, ISO_Http_Probe, (char const * url, char * identity, int identitysi
 		if (!total || total === "*") return -1;
 
 		try {
-			write(new URL(request.responseURL || UTF8ToString(url), location.href).href, identity, identitysize);
+			write(new URL(UTF8ToString(url), location.href).href, identity, identitysize);
 		} catch (error) {
 			write(UTF8ToString(url), identity, identitysize);
 		}
@@ -716,13 +724,16 @@ ISOBlockIndexClass::ISOBlockIndexClass(void) :
 /// serves one image's sectors as another's corrupts game data in a way that looks like
 /// anything but a cache. So whatever the server will say about the version -- an entity tag,
 /// a modification date -- is part of the key, and a server that says nothing leaves the key
-/// resting on the URL and the length, which is the weakest form this takes.
+/// resting on the location and the length, which is the weakest form this takes: a run then
+/// believes stored blocks whenever the same location still answers with the same number of
+/// bytes. That is the assumption a browser's own cache makes of such a server, and the
+/// location is the same one either way, so nothing here is believed that it would not be.
 /// </remarks>
-std::string ISOBlockIndexClass::Signature(char const * url, std::uint64_t length, char const * validator)
+std::string ISOBlockIndexClass::Signature(char const * location, std::uint64_t length, char const * validator)
 {
-	if (url == nullptr || *url == '\0' || length == 0) return(std::string());
+	if (location == nullptr || *location == '\0' || length == 0) return(std::string());
 
-	std::string key(url);
+	std::string key(location);
 
 	key += '|';
 
@@ -748,15 +759,16 @@ std::string ISOBlockIndexClass::Signature(char const * url, std::uint64_t length
 
 /// <summary>Builds the key the store holds one image's blocks and record under.</summary>
 /// <remarks>
-/// The URL alone, so that a new version of an image is written over the old one rather than
-/// left beside it with nothing left to find it by. What decides whether those blocks may
-/// still be served is the signature inside the record kept under this key.
+/// The location alone, so that a new version of an image is written over the old one rather
+/// than left beside it with nothing left to find it by. What decides whether those blocks
+/// may still be served is the signature inside the record kept under this key. Two images
+/// named separately keep separate slots, since they are separate locations.
 /// </remarks>
-std::string ISOBlockIndexClass::Store_Slot(char const * url)
+std::string ISOBlockIndexClass::Store_Slot(char const * location)
 {
-	if (url == nullptr || *url == '\0') return(std::string());
+	if (location == nullptr || *location == '\0') return(std::string());
 
-	std::string slot(url);
+	std::string slot(location);
 
 	for (char & character : slot) {
 		if (character < 0x20 || character > 0x7E) character = '?';
@@ -1190,10 +1202,16 @@ bool ISOHttpSourceClass::Open(char const * url)
 	**	constructed, and a wait there is not yet legal. What the probe learned is kept until
 	**	a read arrives at a point where one is.
 	*/
-	char const * const resolved = (identity[0] != '\0') ? identity.data() : Url.c_str();
+	/*
+	**	The absolute form of the location that was asked for, which is what the store is
+	**	keyed on. A page that names a relative image still gets one key rather than one per
+	**	directory it is reached from, and a pool that answers from a different node each
+	**	time still gets one key rather than one per node.
+	*/
+	char const * const location = (identity[0] != '\0') ? identity.data() : Url.c_str();
 
-	Signature = ISOBlockIndexClass::Signature(resolved, Length, validator.data());
-	Slot = ISOBlockIndexClass::Store_Slot(resolved);
+	Signature = ISOBlockIndexClass::Signature(location, Length, validator.data());
+	Slot = ISOBlockIndexClass::Store_Slot(location);
 
 	return(true);
 }

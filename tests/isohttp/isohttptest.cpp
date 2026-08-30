@@ -14,7 +14,9 @@
 //
 // The transport the browser reads an image through is not covered. It needs a server and a
 // document, neither of which a test may depend on, so what runs here is the same code path
-// over a local image file.
+// over a local image file. What a request makes of an answer once it has one is covered,
+// against a stub standing in for the transport, since deciding which image was answered for
+// is the harness's own arithmetic and not the network's.
 
 #include "isohttp.h"
 #include "win32compat.h"
@@ -542,6 +544,148 @@ void Check_Block_Index(void)
 
 
 /*
+**	Stands in for the browser's transport for the length of one probe. A ranged request is
+**	answered the way a pool serving a large image does: the range is honoured, and the
+**	request reports having ended at whichever node took it rather than where it was sent.
+**	Nothing leaves the harness, and no server or document is involved.
+*/
+void Serve_From_Node(char const * page, char const * node, double total, char const * tag)
+{
+	EM_ASM({
+		globalThis.location = {href: UTF8ToString($0)};
+
+		var node = UTF8ToString($1);
+		var total = $2;
+		var tag = UTF8ToString($3);
+
+		globalThis.XMLHttpRequest = function () {
+			var answer = this;
+
+			answer.status = 0;
+			answer.responseURL = "";
+			answer.open = function () {};
+			answer.setRequestHeader = function () {};
+			answer.send = function () {
+				answer.status = 206;
+				answer.responseURL = node;
+			};
+			answer.getResponseHeader = function (name) {
+				var wanted = ("" + name).toLowerCase();
+				if (wanted === "content-range") return "bytes 0-0/" + total;
+				if (wanted === "etag") return tag;
+				return null;
+			};
+		};
+	}, page, node, total, tag);
+}
+
+
+void Stop_Serving(void)
+{
+	EM_ASM({
+		delete globalThis.XMLHttpRequest;
+		delete globalThis.location;
+	});
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	Which of a request's two URLs identifies the image: the one it was sent to, or the one
+**	it ended at. A large image is commonly served from a pool that redirects each request
+**	to whichever node answers it, so the URL a request ends at changes between one request
+**	and the next while the image does not. Keying the store on that one gives a second run
+**	a slot the first wrote nothing under, and the image is pulled down again, once per node.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Image_Identity(void)
+{
+	char const * const page = "https://player.example/game/";
+	char const * const image = "https://mirror.example/download/ts1.iso";
+	double const total = 710277120.0;
+
+	ISOHttpSourceClass source;
+
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"58f20419\"");
+
+	Check(source.Open(image), "an image behind a redirecting pool opens");
+
+	std::string const slot = source.Store_Key();
+	std::string const signature = source.Store_Signature();
+
+	Check(!slot.empty() && !signature.empty(), "and is identified well enough to be stored");
+	Check(slot.find("node-one") == std::string::npos && signature.find("node-one") == std::string::npos,
+		"by where it was asked for rather than by whichever node answered");
+
+	source.Close();
+
+	/*
+	**	The same image a second time, from a different node. This is the case the store was
+	**	losing: everything about the image is the same, and only the answering node differs.
+	*/
+	Serve_From_Node(page, "https://node-two.example/items/ts1.iso", total, "\"58f20419\"");
+
+	Check(source.Open(image), "the same image opens again with another node answering");
+	Check(source.Store_Key() == slot, "and lands in the slot the earlier run wrote under");
+	Check(source.Store_Signature() == signature, "so the blocks that run stored are still believed");
+
+	source.Close();
+
+	/*
+	**	What the redirect stopped carrying, the validator and the length still do. A node
+	**	answering with something else is a different image and is caught as one.
+	*/
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"5f000000\"");
+
+	Check(source.Open(image), "an image the server names a new version of opens");
+	Check(source.Store_Key() == slot, "in the slot the old version is held in");
+	Check(source.Store_Signature() != signature, "and is not the image whose blocks are stored there");
+
+	source.Close();
+
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total + 65536.0, "\"58f20419\"");
+
+	Check(source.Open(image) && source.Store_Key() == slot && source.Store_Signature() != signature,
+		"an image that has changed length is caught the same way");
+
+	source.Close();
+
+	/*
+	**	A server naming no version at all leaves the key resting on the location and the
+	**	length. Two images still keep slots of their own, which is what stops one disc's
+	**	sectors being served as another's.
+	*/
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "");
+
+	Check(source.Open(image) && !source.Store_Signature().empty(),
+		"an image no server names a version of is still identified");
+
+	std::string const unnamed = source.Store_Signature();
+
+	Check(unnamed != signature, "differently from the same image with a version named");
+
+	source.Close();
+
+	Check(source.Open("https://mirror.example/download/ts2.iso"), "a second disc opens");
+	Check(source.Store_Key() != slot && source.Store_Signature() != unnamed,
+		"and is held in a slot of its own however alike the two answers are");
+
+	source.Close();
+
+	/*
+	**	A location named relative to the page still becomes one key rather than one per
+	**	directory the page is reached from, which is what the probe resolved it for.
+	*/
+	Check(source.Open("ts1.iso"), "an image named beside the page opens");
+	Check(source.Store_Key() == std::string(page) + "ts1.iso",
+		"and is identified by where the page resolves that name to");
+
+	source.Close();
+	Stop_Serving();
+}
+
+
+/*
 **	------------------------------------------------------------------------------------
 **	How far in front of a read the fetching is allowed to run. Whether a request actually
 **	overlaps the decoding is a question about a browser, but which blocks are worth asking
@@ -919,6 +1063,7 @@ int main(int argc, char ** argv)
 	Check_Image_Locations();
 	Check_Several_Images();
 	Check_Block_Index();
+	Check_Image_Identity();
 	Check_Read_Ahead();
 	Check_Read_Runs();
 

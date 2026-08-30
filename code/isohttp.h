@@ -45,17 +45,18 @@ class ISOBlockIndexClass
 		ISOBlockIndexClass(void);
 
 		/// <summary>Builds the key that says which image a stored block belongs to.</summary>
-		/// <param name="url">The image's absolute URL.</param>
+		/// <param name="location">Where the image was asked for, made absolute. Never the URL
+		/// a redirect ended at, which names a node rather than an image.</param>
 		/// <param name="length">The image's length in bytes.</param>
 		/// <param name="validator">What the server calls this version of it -- an entity tag
 		/// or a modification date -- or an empty string when it names none.</param>
 		/// <returns>The key, or an empty string when the image cannot be identified.</returns>
-		static std::string Signature(char const * url, std::uint64_t length, char const * validator);
+		static std::string Signature(char const * location, std::uint64_t length, char const * validator);
 
 		/// <summary>Builds the key the store holds one image's blocks and record under.</summary>
-		/// <param name="url">The image's absolute URL.</param>
+		/// <param name="location">Where the image was asked for, made absolute.</param>
 		/// <returns>The key, or an empty string when the image cannot be identified.</returns>
-		static std::string Store_Slot(char const * url);
+		static std::string Store_Slot(char const * location);
 
 		void Reset(std::string const & signature);
 
@@ -264,6 +265,12 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		bool Open(char const * url);
 		void Close(void);
 		bool Is_Open(void) const {return(Length != 0);}
+
+		/// <summary>The key the store holds this image's blocks and record under.</summary>
+		std::string const & Store_Key(void) const {return(Slot);}
+
+		/// <summary>The key that says whether stored blocks still belong to this image.</summary>
+		std::string const & Store_Signature(void) const {return(Signature);}
 
 		virtual bool Read_At(std::uint64_t offset, void * buffer, unsigned int length) override;
 		virtual std::uint64_t Total_Size(void) override {return(Length);}
