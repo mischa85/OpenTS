@@ -107,8 +107,12 @@ and the module it looks for beside it:
 | Debug | `GameD.js`, `GameD.wasm` |
 | Release | `Game.js`, `Game.wasm` |
 
-A post-build step stages both halves into `TS_RUN_DIR` (`code/CMakeLists.txt:465`
-and `:474`), which is what a node run needs. The page a browser run is served
+A configuration built with `-DOPENTS_WASM_SUSPEND=ASYNCIFY` writes
+`Game-asyncify.js` and `Game-asyncify.wasm` instead, so the two artifacts can
+sit in one served directory; see [build options](#build-options).
+
+A post-build step stages both halves into `TS_RUN_DIR` (`code/CMakeLists.txt:556`
+and `:566`), which is what a node run needs. The page a browser run is served
 from is generated separately, as `build-wasm/bin/index.html` from
 `wasm/game.html` (`wasm/CMakeLists.txt:85`); it is not staged into the run
 directory, so a browser run is served out of `build-wasm/bin`.
@@ -123,8 +127,21 @@ Both options exist only under Emscripten and do not appear in an MSVC cache.
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `OPENTS_WASM_JSPI` | `ON` | Defines `OPENTS_WASM_JSPI` and links `-sJSPI` (`code/CMakeLists.txt:345`). The engine's not-yet-flattened waits suspend on JavaScript Promise Integration; a build configured without it stops answering the page at the first wait, and says so once. |
-| `OPENTS_WASM_NODERAWFS` | `ON` | Links `-sNODERAWFS=1` (`code/CMakeLists.txt:359`), handing the module the host filesystem. It is node-only: a page built with it throws before `main` runs, so a browser build is configured with `-DOPENTS_WASM_NODERAWFS=OFF`. |
+| `OPENTS_WASM_SUSPEND` | `JSPI` | How the engine's not-yet-flattened waits hand the thread back to the page (`code/CMakeLists.txt:378`). One of `JSPI`, `ASYNCIFY`, or `NONE`; any other value fails the configure. |
+| `OPENTS_WASM_NODERAWFS` | `ON` | Links `-sNODERAWFS=1` (`code/CMakeLists.txt:454`), handing the module the host filesystem. It is node-only: a page built with it throws before `main` runs, so a browser build is configured with `-DOPENTS_WASM_NODERAWFS=OFF`. |
+
+`OPENTS_WASM_SUSPEND` decides both the mechanism and the artifact's name, since
+the two suspending builds are the same engine and a served directory holds both:
+
+| Value | Links | Module written | What it buys |
+| --- | --- | --- | --- |
+| `JSPI` | `-sJSPI` | `Game.js`, `Game.wasm` | The virtual machine suspends a real WebAssembly stack. Nothing is instrumented, so nothing is paid for at run time. Not in a released Safari. |
+| `ASYNCIFY` | `-sASYNCIFY -sASYNCIFY_STACK_SIZE=65536` | `Game-asyncify.js`, `Game-asyncify.wasm` | Binaryen rewrites the module so an instrumented function can unwind and rewind. Plain WebAssembly, so it runs anywhere, and it is [paid for in size and speed](#the-cost-of-the-asyncify-build). |
+| `NONE` | nothing | `Game.js`, `Game.wasm` | Nothing carries a wait. The engine keeps the thread, the page stops answering at the first one, and says so once. This is the destination rather than a way to run the game: what such a build fails at is the work `docs/WASM-PORT.md` A.6 still has left. |
+
+Both suspending values define `OPENTS_WASM_JSPI` for the compiler, which the
+source reads as "a wait can suspend" rather than as a named mechanism; `NONE`
+defines nothing.
 
 ### How the target differs from the Win32 one
 
@@ -190,6 +207,80 @@ that follows an installation, and a page installs nothing, so it covers no
 setup; `PlayIntro=true` under `[Intro]` in `SUN.INI` asks for it anyway
 (`code/startup.cpp:642`). Every other target still plays it once.
 
+### Which module a page loads
+
+How a wait hands the thread back is decided at link time, and no one module runs
+everywhere, so a deployment that means to be reachable from every browser holds
+both artifacts. Build the tree twice into the same served directory:
+
+```bash
+emcmake cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DOPENTS_WASM_NODERAWFS=OFF
+emcmake cmake -S . -B build-wasm-asyncify -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DOPENTS_WASM_NODERAWFS=OFF -DOPENTS_WASM_SUSPEND=ASYNCIFY
+```
+
+Either configuration generates the same `index.html`, which names both modules
+and picks between them before it fetches anything. It asks for
+`WebAssembly.Suspending` and `WebAssembly.promising`, the whole of what a JSPI
+module touches while it is being created, and loads `Game.js` when both are
+there and `Game-asyncify.js` when they are not. A browser therefore never
+fetches a module it could not have run. `?jspi=ignore` takes the answer out of
+the decision and loads `Game.js` regardless, which is how a `NONE` build is
+reached from the same page.
+
+The gate screen remains, and it now reports a deployment rather than a browser:
+it is shown when the module the page chose answers with a `404`, and it names
+which one was missing. Serving only `Game.js` leaves a browser without JSPI
+looking at it.
+
+The side stack an unwind spills its locals to is sized explicitly because
+Binaryen's 4KB default is not enough for this engine: linked with the default it
+reaches the second frame and aborts with `RuntimeError: unreachable` out of
+`maybeStopUnwind`, which is why `-sASYNCIFY_STACK_SIZE=65536` is on the link.
+
+Emscripten warns that `ASYNCIFY=1` is not compatible with `-fwasm-exceptions`
+and that "parts of the program that mix ASYNCIFY and exceptions will not
+compile". The engine links and runs anyway, and a mission plays; take the
+warning as the standing reason to run the Asyncify artifact against the JSPI one
+rather than as a settled question, because a throw across a suspended frame is
+not something the observations below exercised.
+
+#### The cost of the Asyncify build
+
+Measured on the tree and toolchain under [what has been run](#what-has-been-run).
+Size, as the container builds and serves the two — `Release`, `-O1 -DNDEBUG`:
+
+| | JSPI | Asyncify |
+| --- | --- | --- |
+| `.wasm` | 3,859,221 bytes | 11,759,933 bytes (3.05x) |
+| `.wasm`, gzipped | 1,247,022 bytes | 5,182,539 bytes (4.16x) |
+| `.js` | 446,915 bytes | 456,785 bytes |
+
+The same pair built with `-O1 -g2 -DNDEBUG` is 4,371,890 against 12,276,262
+bytes. Nothing is contained: `ASYNCIFY_ONLY` is not used, so the rewrite reaches
+the whole engine, and the size is what that costs.
+
+Speed was measured in one campaign mission, `GDI1A.MAP`, in three interleaved
+pairs of runs against those same served modules — a 60 second window opened 130
+seconds after the page did, so past the briefing movie, with the same disc
+images on the same machine. Every one of the six runs held the display's
+refresh rate exactly: 7,200 to 7,209 yields in 60 seconds on a 120Hz panel. The
+cost therefore shows in what a frame took rather than in how many arrived:
+
+| | JSPI | Asyncify |
+| --- | --- | --- |
+| Main-thread task time per frame | 0.783, 0.814, 0.789 ms | 0.993, 0.915, 0.967 ms |
+| Share of the wall clock | 9.4%, 9.8%, 9.5% | 11.9%, 11.0%, 11.6% |
+
+**About a fifth more CPU for the same frame** — the three pairs give 27%, 12%
+and 23% — against a frame budget that is four fifths idle either way, so
+nothing was dropped. It is a good deal short of the "something like 50% or so"
+Emscripten's own documentation warns of on size and speed together, though the
+size is well past it. This is one mission on one machine with headroom to
+spare; a build already missing frames would show the same tax as lost frames
+instead.
+
 ### In a container
 
 `Dockerfile` builds the page with the pinned Emscripten and serves the result
@@ -200,6 +291,16 @@ own:
 ```bash
 OPENTS_DISCS=~/Downloads docker compose up
 ```
+
+The image is built twice over, once for each of the two modules the page chooses
+between, so it serves a browser with JSPI and one without alike.
+
+It is also configured for a reverse proxy in front of it. nginx builds a
+redirect's `Location` out of the scheme and address it sees itself, which behind
+a TLS terminator is plain HTTP and the container's own address, and it does not
+consult `X-Forwarded-Proto` or `X-Forwarded-Host` to correct that; the image
+therefore turns `absolute_redirect` off, so a redirect carries only the path and
+the browser resolves it against the origin it actually used.
 
 `OPENTS_DISCS` names the directory holding `FIRESTORM.iso`, `TS1.iso` and
 `TS2.iso`; the three are mounted read only under the names the page looks for,
@@ -249,6 +350,25 @@ Observed in a browser, from a disc image over HTTP: the graphical main menu, a
 campaign mission started and played, unit movement and selection, building
 placement, terrain, the radar, the sidebar and its cameos, an audio device
 opening, and movies playing.
+
+The three values of `OPENTS_WASM_SUSPEND` were run separately, on August 30,
+2026, `Release` with `-O1 -g2 -DNDEBUG` and `-DOPENTS_WASM_NODERAWFS=OFF`, in
+Chrome 151 on a macOS host, from the same three disc images over HTTP:
+
+- `JSPI` and `ASYNCIFY` each reached the disc chooser and each played `GDI1A.MAP`
+  from `?scenario=`, and under Asyncify the in-game **Options** dialog opened
+  over a still-advancing game — the `Dialog_Message_Handler` re-entry of
+  `Main_Loop` that `docs/WASM-PORT.md` A.3 names as the nesting an Asyncify
+  unwind has to survive.
+- A browser without JSPI was simulated by deleting `WebAssembly.Suspending` and
+  `WebAssembly.promising` before any document script ran. The page then fetched
+  `Game-asyncify.js` and `Game-asyncify.wasm` and nothing else; with only
+  `Game.js` on the server it fetched neither module and showed the gate screen.
+  **This was not run in a real browser that lacks JSPI**, Safari included.
+- `NONE` loaded through `?jspi=ignore`, started, read the discs, and then wedged
+  the tab, which is what that configuration means.
+- `ctest --test-dir` passed 17 of 17 against the `JSPI` and the `ASYNCIFY` build
+  directories alike.
 
 Not established, and not to be read into the above:
 

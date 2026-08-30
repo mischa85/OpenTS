@@ -359,21 +359,87 @@ if (EMSCRIPTEN)
     # ---------------------------------------------------------
     #
     # A page owns the thread the engine borrows, and the engine has around sixty waits that
-    # do not return. JavaScript Promise Integration suspends the engine's own stack at such a
-    # wait and resumes it later, which is what lets a browser build run before they are
-    # flattened. docs/WASM-PORT.md A.5 records it as deliberately temporary: it costs nothing
-    # at runtime, but it keeps the reentrancy the project means to remove and it pins the
-    # build to a young VM feature. Browser_Blocking_Wait_Count is the number that has to
-    # reach zero before this option can go; turning it off before then leaves a build that
-    # stops answering the moment it reaches a wait.
+    # do not return. A wait therefore has to suspend the engine's own stack and resume it
+    # later, which is what lets a browser build run before those waits are flattened.
+    # docs/WASM-PORT.md A.5 records the scaffold as deliberately temporary: it keeps the
+    # reentrancy the project means to remove, and Browser_Blocking_Wait_Count is the number
+    # that has to reach zero before it can go.
     #
-    option(OPENTS_WASM_JSPI
-        "Carry the engine's not-yet-flattened waits on JavaScript Promise Integration" ON)
+    #   JSPI      JavaScript Promise Integration. The virtual machine suspends a real
+    #             WebAssembly stack, so nothing is instrumented and nothing is paid for at
+    #             run time. It is not in a released Safari.
+    #   ASYNCIFY  Binaryen rewrites the module so an instrumented function can unwind its
+    #             locals to a side stack and rewind later. Plain WebAssembly, so it runs
+    #             anywhere, and it is paid for in size and speed on every instrumented call.
+    #   NONE      Nothing carries a wait. The engine keeps the thread, the page stops
+    #             answering at the first one, and says so once. This is the destination:
+    #             what a build configured here fails at is the work still to do.
+    #
+    set(OPENTS_WASM_SUSPEND "JSPI" CACHE STRING
+        "How the engine's not-yet-flattened waits are carried: JSPI, ASYNCIFY, or NONE")
+    set_property(CACHE OPENTS_WASM_SUSPEND PROPERTY STRINGS JSPI ASYNCIFY NONE)
 
-    if(OPENTS_WASM_JSPI)
+    if(NOT OPENTS_WASM_SUSPEND MATCHES "^(JSPI|ASYNCIFY|NONE)$")
+        message(FATAL_ERROR "OPENTS_WASM_SUSPEND must be JSPI, ASYNCIFY, or NONE")
+    endif()
+
+    #
+    # Both mechanisms give the engine the same thing -- a wait that hands the thread back and
+    # comes back to where it left -- and the source asks for no more than that, so one
+    # definition marks either of them.
+    #
+    if(NOT OPENTS_WASM_SUSPEND STREQUAL "NONE")
         target_compile_definitions(OpenTS PRIVATE OPENTS_WASM_JSPI)
+    endif()
+
+    if(OPENTS_WASM_SUSPEND STREQUAL "JSPI")
         target_link_options(OpenTS PRIVATE -sJSPI)
     endif()
+
+    if(OPENTS_WASM_SUSPEND STREQUAL "ASYNCIFY")
+        target_link_options(OpenTS PRIVATE
+            -sASYNCIFY
+
+            # The rewrite reaches every function that can be on the stack at a wait, and in
+            # this engine a wait is reached from render, logic, queue and dialog code alike,
+            # so the transitive closure is effectively the whole engine. Binaryen's default
+            # side stack is 4KB and the engine's stack at a wait is far deeper than that;
+            # overflowing it aborts rather than degrading.
+            -sASYNCIFY_STACK_SIZE=65536
+        )
+    endif()
+
+    #
+    # The two suspending artifacts differ only in how a wait is carried, so that is what they
+    # are named for, and a page can then serve both out of one directory and load whichever
+    # the browser can run. The plain name belongs to the mechanism a browser needs nothing
+    # extra to run -- JSPI today, and NONE once the waits are gone.
+    #
+    # An Emscripten build is single configuration, so the name is settled here rather than
+    # deferred, which is what lets the page name the artifact this build did not produce.
+    #
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(OPENTS_WASM_MODULE_BASE "GameD")
+    else()
+        set(OPENTS_WASM_MODULE_BASE "Game")
+    endif()
+
+    set(OPENTS_WASM_MODULE_SUFFIX "")
+
+    if(OPENTS_WASM_SUSPEND STREQUAL "ASYNCIFY")
+        set(OPENTS_WASM_MODULE_SUFFIX "-asyncify")
+    endif()
+
+    set_target_properties(OpenTS PROPERTIES
+        OUTPUT_NAME "${OPENTS_WASM_MODULE_BASE}${OPENTS_WASM_MODULE_SUFFIX}"
+        OUTPUT_NAME_DEBUG "${OPENTS_WASM_MODULE_BASE}${OPENTS_WASM_MODULE_SUFFIX}"
+        OUTPUT_NAME_RELEASE "${OPENTS_WASM_MODULE_BASE}${OPENTS_WASM_MODULE_SUFFIX}"
+
+        # What the page looks for, which is both artifacts rather than the one this
+        # configuration builds: either configuration generates the same page, so the two can
+        # be built separately and served together.
+        OPENTS_MODULE_BASE "${OPENTS_WASM_MODULE_BASE}"
+    )
 
     # The engine opens its archives out of the directory it runs in, through the Win32 file
     # API that win32compat.cpp puts on POSIX. Under node the directory that reaches is the

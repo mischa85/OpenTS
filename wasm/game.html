@@ -17,15 +17,18 @@
      that a line of output arriving does not resize the game. It is absent unless "?hud=on"
      asks for it, since it is a diagnostic rather than part of the game.
 
-     The module is fetched from script rather than from a tag, because the engine cannot run
-     without JSPI and the runtime's failure to find it is unreportable: it happens while the
-     module is being created, before anything here is reachable.
+     The module is fetched from script rather than from a tag, because there is more than one
+     of it. The engine's waits are carried by JavaScript Promise Integration where the browser
+     has it and by an Asyncify rewrite of the same engine where it does not, and a JSPI
+     module's failure to find the feature is unreportable: it happens while the module is
+     being created, before anything here is reachable. So the page decides first and fetches
+     second, and never fetches a module this browser could not have run.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenTS</title>
+<title>Command &amp; Conquer: Tiberian Sun</title>
 <style>
 	:root { color-scheme: dark; }
 	html, body { height: 100%; }
@@ -45,6 +48,19 @@
 		width: 100%;
 		height: 100%;
 		background: #000;
+
+		/* A touch on the canvas belongs to the game. Without these the browser claims the
+		   gesture first: touch-action keeps it from becoming a pan or a pinch zoom, and
+		   user-select keeps a band-select drag from becoming a text selection, which is
+		   what inverts the canvas under the finger on iOS. The callout is the menu a long
+		   press raises, and the tap highlight is the grey flash iOS paints over what was
+		   touched. They are on the canvas alone: the diagnostic panel hands selection
+		   back on purpose so its log can be copied. */
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+		-webkit-tap-highlight-color: transparent;
 	}
 	/* Floated over the canvas and transparent to the mouse: the game gets every click, and
 	   the panel growing never changes the size of the game. Being unhittable also makes the
@@ -62,6 +78,26 @@
 		font-size: 11px;
 	}
 	#panel.off { display: none; }
+
+	/* Sits where the panel would be, and only while the panel is not there. Reading how
+	   fast the discs are coming down is the one diagnostic worth having without asking
+	   for the rest, because a first visit spends its opening seconds fetching. */
+	#speed {
+		position: fixed;
+		left: 8px;
+		bottom: 6px;
+		padding: 1px 6px;
+		pointer-events: none;
+		background: rgba(16, 18, 22, .72);
+		border: 1px solid rgba(120, 132, 148, .25);
+		border-radius: 3px;
+		color: #8f98a3;
+		font-size: 11px;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		opacity: 0;
+		transition: opacity .4s;
+	}
+	#speed.on { opacity: 1; }
 
 	/* Collapsed is the default: the log is a diagnostic, not part of the game, so it stays
 	   out of the way until it is asked for. */
@@ -114,7 +150,7 @@
 	}
 
 	/* Stands in for the game rather than floating over it: when this is shown there is no
-	   canvas behind it to see, because the module was never fetched. */
+	   canvas behind it to see, because no module was loaded. */
 	#unsupported {
 		position: fixed;
 		inset: 0;
@@ -149,13 +185,15 @@
 <body>
 
 <canvas id="canvas" tabindex="0"></canvas>
+<div id="speed"></div>
 <div id="unsupported" hidden>
 	<div>
 		<p class="eyebrow">OPENTS</p>
-		<h1>This browser can't run the game.</h1>
-		<p>Chrome, Edge and Firefox will. So will Safari Technology Preview.</p>
-		<p class="quiet">Needs a newer WebAssembly feature: Chrome and Edge 137 and up,
-		Firefox 153 and up.</p>
+		<h1>The game did not load.</h1>
+		<!-- Written by the loader, which is the only thing that knows which of the two
+		     modules was wanted and why it was not there. -->
+		<p id="reason"></p>
+		<p class="quiet" id="note"></p>
 	</div>
 </div>
 <div id="panel">
@@ -370,6 +408,53 @@
 
 	// The engine keeps the thread between yields, so the status is polled from a timer
 	// rather than asked of the module on a frame it may not be holding.
+	// How fast the discs are coming down, from the same counter the status line reports a
+	// total from. The reading is dropped once nothing has arrived for a moment, so a game
+	// that is running out of the cache shows nothing at all rather than a stale rate.
+	var speedElement = document.getElementById("speed");
+	var speedBytes = -1;
+	var speedAt = 0;
+	var speedQuiet = 0;
+
+	function OpenTS_Show_Speed() {
+		// The panel stands in the same corner and already reports a total, so the two are
+		// never shown together. A rate says nothing about a disc being read off local
+		// storage, so a host that reads one says so and the reading is left off.
+		if (!Module._OpenTS_Iso_Fetched || Module.opentsLocalDiscs ||
+			!document.getElementById("panel").classList.contains("off")) {
+			return;
+		}
+
+		var now = performance.now();
+		var bytes = Module._OpenTS_Iso_Fetched();
+
+		if (speedBytes < 0) {
+			speedBytes = bytes;
+			speedAt = now;
+			return;
+		}
+
+		var moved = bytes - speedBytes;
+		var elapsed = now - speedAt;
+
+		speedBytes = bytes;
+		speedAt = now;
+
+		if (elapsed <= 0) return;
+
+		if (moved > 0) {
+			speedQuiet = 0;
+			var rate = moved * 1000 / elapsed;
+			var text = rate >= 1048576
+				? (rate / 1048576).toFixed(1) + " MB/s"
+				: Math.round(rate / 1024) + " KB/s";
+			speedElement.textContent = text;
+			speedElement.classList.add("on");
+		} else if (++speedQuiet > 4) {
+			speedElement.classList.remove("on");
+		}
+	}
+
 	setInterval(function () {
 		if (!window.OpenTS_State.started || !Module._OpenTS_Browser_Frames) {
 			return;
@@ -377,6 +462,7 @@
 		window.OpenTS_State.frames = Module._OpenTS_Browser_Frames();
 		window.OpenTS_State.waits = Module._OpenTS_Browser_Waits();
 		window.OpenTS_State.syncs = Module.OpenTS_Syncs || 0;
+		OpenTS_Show_Speed();
 		document.getElementById("status").textContent =
 			iso() +
 			"frames " + window.OpenTS_State.frames +
@@ -391,9 +477,10 @@
 	// still sends the game its keys.
 	Module.canvas.addEventListener("mousedown", function () { Module.canvas.focus(); });
 
-	// The engine runs inside a suspended JSPI call, so a trap surfaces as a rejected
-	// promise rather than an exception anyone sees. Without this the page simply stops
-	// advancing frames and is indistinguishable from a hang.
+	// The engine runs inside a suspended call, so a trap surfaces as a rejected promise or
+	// as an error thrown at an animation frame rather than as an exception anyone sees.
+	// Without this the page simply stops advancing frames and is indistinguishable from a
+	// hang.
 	function report(what) {
 		var line = document.getElementById("fault");
 		if (line === null) {
@@ -425,21 +512,53 @@
 			typeof WebAssembly.promising === "function";
 	}
 
-	// A build configured with OPENTS_WASM_JSPI=OFF asks the browser for none of this and
-	// starts anywhere; "?jspi=ignore" is how such a build is still reachable from this page.
+	// "?jspi=ignore" takes the answer above out of the decision and loads the plainly named
+	// module whatever the browser said, which is how a build that carries its waits some
+	// other way -- or not at all -- is still reachable from this page.
 	var OpenTS_Ignore_JSPI =
 		new URLSearchParams(window.location.search).get("jspi") === "ignore";
 
-	// Loaded from here rather than from a tag of its own, so that a browser that cannot run
-	// the module never fetches it.
-	if (OpenTS_Has_JSPI() || OpenTS_Ignore_JSPI) {
+	// The same engine, twice, differing only in how a wait hands the thread back. The
+	// Asyncify build is plain WebAssembly and runs anywhere, and pays for that in size and
+	// speed, so it is the fallback rather than the default. Both may sit here at once and
+	// this page is generated identically by either configuration, so it names both.
+	var OpenTS_Module = "$<TARGET_PROPERTY:OpenTS,OPENTS_MODULE_BASE>.js";
+	var OpenTS_Module_Fallback = "$<TARGET_PROPERTY:OpenTS,OPENTS_MODULE_BASE>-asyncify.js";
+
+	function OpenTS_Gate(status, reason, note) {
+		document.getElementById("reason").textContent = reason;
+		document.getElementById("note").textContent = note || "";
+		document.getElementById("unsupported").hidden = false;
+		document.getElementById("status").textContent = "stopped: " + status;
+	}
+
+	// Loaded from here rather than from a tag of its own, so that a browser never fetches a
+	// module it could not have run. A directory holding only one of the two answers the
+	// other's name with a 404, which is a deployment that is missing half of itself rather
+	// than a browser that cannot play, and it is said as one.
+	function OpenTS_Load(module, gate) {
 		var loader = document.createElement("script");
 		loader.async = true;
-		loader.src = "$<TARGET_FILE_BASE_NAME:OpenTS>.js";
+		loader.src = module;
+		loader.onerror = gate;
 		document.body.appendChild(loader);
+	}
+
+	if (OpenTS_Has_JSPI() || OpenTS_Ignore_JSPI) {
+		OpenTS_Load(OpenTS_Module, function () {
+			OpenTS_Gate(OpenTS_Module + " is not on this server",
+				"This browser can run the game, but " + OpenTS_Module +
+				" is not on this server.");
+		});
 	} else {
-		document.getElementById("unsupported").hidden = false;
-		document.getElementById("status").textContent = "stopped: this browser has no JSPI";
+		OpenTS_Load(OpenTS_Module_Fallback, function () {
+			OpenTS_Gate("this browser has no JSPI",
+				"This browser has no JavaScript Promise Integration, and " +
+				OpenTS_Module_Fallback + ", the build that runs without it, is not on " +
+				"this server.",
+				"JSPI ships in Chrome and Edge 137 and up and in Firefox 153 and up. " +
+				"Safari has it in Technology Preview.");
+		});
 	}
 </script>
 

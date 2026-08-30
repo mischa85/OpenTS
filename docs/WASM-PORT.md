@@ -296,6 +296,27 @@ needed for the part of the port that runs in the inner loop.
 temporary scaffold for the not-yet-flattened waits, behind a build flag, and
 plan to remove it. Do not use Asyncify.**
 
+> [!NOTE]
+> **Amended. Asyncify is built, as a second artifact rather than as the
+> scaffold.** "Do not use Asyncify" was written about the one module a page
+> would load, and a released Safari has no JSPI, so
+> `OPENTS_WASM_SUSPEND=ASYNCIFY` links the same engine a second way and the page
+> loads whichever of the two the browser can run. JSPI stays the default and
+> stays the scaffold to remove.
+>
+> The price is measured in
+> [Building OpenTS](BUILDING.md#the-cost-of-the-asyncify-build), and the
+> "something like 50% or so" quoted below is wrong in both directions: the
+> module is three times the size, and one campaign mission cost about a fifth
+> more CPU for the same frame.
+>
+> Two further predictions came out differently. The containment problem is moot
+> rather than solved: `ASYNCIFY_ONLY` is not used, nothing is contained, and the
+> whole engine is instrumented, which is what the size buys. And the nesting of
+> [A.3](#a3-the-nesting-which-is-the-actual-problem) did not defeat the unwind —
+> the in-game dialog that re-enters `Main_Loop` opens and the game keeps
+> advancing behind it.
+
 The reasoning:
 
 - **Asyncify is the wrong price for this codebase.** A ~50% size and speed cost
