@@ -2901,8 +2901,54 @@ BOOL EnableMenuItem(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
 int GetDeviceCaps(HDC, int) { return(WIN32_STUB(0)); }
 BOOL GetScrollInfo(HWND, int, LPSCROLLINFO) { return(WIN32_STUB(FALSE)); }
 int SetScrollInfo(HWND, int, LPCSCROLLINFO, BOOL) { return(WIN32_STUB(0)); }
-int GetTimeFormatA(LCID, DWORD, SYSTEMTIME const *, LPCSTR, LPSTR text, int count) { if (text != nullptr && count > 0) text[0] = '\0'; return(WIN32_STUB(0)); }
-int GetDateFormatA(LCID, DWORD, SYSTEMTIME const *, LPCSTR, LPSTR text, int count) { if (text != nullptr && count > 0) text[0] = '\0'; return(WIN32_STUB(0)); }
+/*
+** The page's own locale stands in for the user locale these two are asked for, so a saved
+** game is stamped the way the rest of the browser writes a date. A picture string is a
+** different request and is not served; the engine passes none.
+*/
+int GetTimeFormatA(LCID, DWORD flags, SYSTEMTIME const * time, LPCSTR format, LPSTR text, int count)
+{
+	if (time == nullptr || text == nullptr || count <= 0) return(0);
+
+	if (format != nullptr) {
+		return(WIN32_UNSUPPORTED("GetTimeFormatA: a picture string of its own", 0));
+	}
+
+	bool const seconds = (flags & (TIME_NOSECONDS | TIME_NOMINUTESORSECONDS)) == 0;
+	bool const minutes = (flags & TIME_NOMINUTESORSECONDS) == 0;
+
+	return(EM_ASM_INT({
+		var options = {hour: "numeric"};
+		if ($4) options.minute = "2-digit";
+		if ($3) options.second = "2-digit";
+
+		var text = new Date(2000, 0, 1, $0, $1, $2).toLocaleTimeString(undefined, options);
+		var size = lengthBytesUTF8(text) + 1;
+
+		if (size > $6) return 0;
+		stringToUTF8(text, $5, $6);
+		return size;
+	}, time->wHour, time->wMinute, time->wSecond, seconds, minutes, text, count));
+}
+
+
+int GetDateFormatA(LCID, DWORD, SYSTEMTIME const * date, LPCSTR format, LPSTR text, int count)
+{
+	if (date == nullptr || text == nullptr || count <= 0) return(0);
+
+	if (format != nullptr) {
+		return(WIN32_UNSUPPORTED("GetDateFormatA: a picture string of its own", 0));
+	}
+
+	return(EM_ASM_INT({
+		var text = new Date($0, $1 - 1, $2).toLocaleDateString();
+		var size = lengthBytesUTF8(text) + 1;
+
+		if (size > $4) return 0;
+		stringToUTF8(text, $3, $4);
+		return size;
+	}, date->wYear, date->wMonth, date->wDay, text, count));
+}
 BOOL SetStdHandle(DWORD, HANDLE) { return(WIN32_STUB(FALSE)); }
 BOOL GetConsoleScreenBufferInfo(HANDLE, PCONSOLE_SCREEN_BUFFER_INFO) { return(WIN32_STUB(FALSE)); }
 HWND GetConsoleWindow(void) { return(WIN32_STUB((HWND)nullptr)); }
