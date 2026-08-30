@@ -154,19 +154,24 @@ cd Run && node GameD.js
 with the game data staged in `Run` exactly as the Win32 build expects it.
 
 **In a browser** there is no host filesystem, so the data is left on a web server
-as a disc image and read with HTTP range requests. Configure with
-`-DOPENTS_WASM_NODERAWFS=OFF`, serve `build-wasm/bin` and the image from a server
-that answers ranges, and open `index.html`. The image is named by
-`Module.opentsImage`, set on the page before the module loads, and otherwise
-defaults to `opents-data.iso` beside the page (`code/isohttp.cpp:104`, `:112`);
-the shipped `wasm/game.html` names none, so it takes the default. The volume is
-mounted lazily, on the first name the host cannot answer for
-(`code/win32compat.cpp:535`), and reads shorter than a block are served from a
-small block cache rather than one request apiece (`code/isohttp.h:56`).
+as disc images and read with HTTP range requests. Configure with
+`-DOPENTS_WASM_NODERAWFS=OFF`, serve `build-wasm/bin` and the images from a
+server that answers ranges, and open `index.html`. The images are named by
+`Module.opentsImage`, set on the page before the module loads, which takes a
+list or a single name (`code/isohttp.h:214`); the shipped `wasm/game.html`
+names the three original discs beside the page and lets `?image=` override them.
+
+Several images mount at once and are searched in the order they are named, each
+contributing its `INSTALL` directory and then its root, with the first answer
+winning (`code/win32compat.cpp:647`). Naming Firestorm ahead of the base discs
+is therefore what an installation that upgraded over the base game looks like.
+A volume is mounted lazily, on the first name the host cannot answer for, and
+reads shorter than a block are served from a per-image block cache rather than
+one request apiece (`code/isohttp.h:144`).
 
 A server that ignores the range and answers with the whole image is rejected
 rather than accommodated: the transport requires a `206` and a `Content-Range`
-it can read (`code/isohttp.cpp:58`, `:85`). Under node the same image can be
+it can read (`code/isohttp.cpp:70`, `:117`). Under node the same list can be
 named through the `OPENTS_IMAGE` environment variable.
 
 The build offers no `--preload-file` bundling. [README](../README.md) is
