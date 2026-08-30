@@ -167,8 +167,10 @@
 	function iso() {
 		if (typeof Module === "undefined" || !Module._OpenTS_Iso_Requests) return("");
 
+		// Said rather than left out: a build whose data is preloaded never reads an image,
+		// and an empty clause reads the same as a broken one.
 		var requests = Module._OpenTS_Iso_Requests();
-		if (requests === 0) return("");
+		if (requests === 0) return("no image reads  |  ");
 
 		var blocks = Module._OpenTS_Iso_Unique_Blocks();
 		var size = Module._OpenTS_Iso_Block_Size();
