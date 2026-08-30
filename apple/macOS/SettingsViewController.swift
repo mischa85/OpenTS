@@ -31,7 +31,7 @@ final class SettingsViewController: NSViewController {
 	private let discSummary = NSTextField(labelWithString: "")
 	private let addressField = NSTextField()
 	private let addressNote = NSTextField(labelWithString: "")
-	private let storageSummary = NSTextField(labelWithString: "")
+	private let storageSummary = NSTextField(wrappingLabelWithString: "")
 	private let clearButton = NSButton()
 	private let confirm = NSButton()
 
@@ -96,7 +96,7 @@ final class SettingsViewController: NSViewController {
 		storageSummary.maximumNumberOfLines = 5
 		storageSummary.preferredMaxLayoutWidth = 520
 
-		clearButton.title = "Clear Cached Blocks…"
+		clearButton.title = "Clear Cached Discs…"
 		clearButton.bezelStyle = .rounded
 		clearButton.target = self
 		clearButton.action = #selector(clearAction)
@@ -189,10 +189,10 @@ final class SettingsViewController: NSViewController {
 
 	@objc private func clearAction() {
 		let alert = NSAlert()
-		alert.messageText = "Clear the cached disc blocks?"
+		alert.messageText = "Clear what has been fetched from the discs?"
 		alert.informativeText =
-			"The next run will fetch what it needs again, which over a network takes a few "
-			+ "minutes before the menu appears.\n\nSaved games are kept: they are stored "
+			"The next run fetches what it needs again, which over a network takes about a "
+			+ "minute before the menu appears.\n\nSaved games are kept: they are stored "
 			+ "separately and are not touched.\n\nThe current run ends."
 		alert.addButton(withTitle: "Clear")
 		alert.addButton(withTitle: "Cancel")
@@ -202,7 +202,7 @@ final class SettingsViewController: NSViewController {
 		clearButton.isEnabled = false
 		storageSummary.stringValue = "Clearing…"
 
-		GameSession.shared.clearBlockStore { [weak self] failure in
+		GameSession.shared.clearDiscCache { [weak self] failure in
 			guard let self else { return }
 			self.clearButton.isEnabled = true
 
@@ -248,21 +248,23 @@ final class SettingsViewController: NSViewController {
 		GameSession.shared.storage { [weak self] storage in
 			guard let self else { return }
 
-			guard let storage else {
-				self.storageSummary.stringValue = "Storage use is not readable right now."
-				return
+			let bytes = { (count: UInt64) in
+				ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
 			}
 
-			let used = ByteCountFormatter.string(fromByteCount: Int64(storage.usage),
-			                                     countStyle: .file)
-			var lines = ["Browser storage is holding \(used) for this app."]
-			lines.append(storage.blocks
-				? "That includes the cached disc blocks, which make a second launch quick."
-				: "No disc blocks are cached yet.")
-			if storage.saves { lines.append("Saved games are stored separately and are kept.") }
+			var lines: [String] = []
+			lines.append(storage.discs > 0
+				? "What has been fetched from the discs is kept on this Mac: "
+				+ "\(bytes(storage.discs)) of at most \(bytes(DiscCache.limit)), which is no "
+				+ "more than the discs themselves. The system may reclaim it if the disk fills."
+				: "Nothing has been fetched from the discs yet.")
+			if storage.browser {
+				lines.append("Browser storage holds a further \(bytes(storage.usage)) for this app.")
+				if storage.saves { lines.append("Saved games are stored separately and are kept.") }
+			}
 
 			self.storageSummary.stringValue = lines.joined(separator: " ")
-			self.clearButton.isEnabled = storage.blocks
+			self.clearButton.isEnabled = storage.anything
 		}
 	}
 

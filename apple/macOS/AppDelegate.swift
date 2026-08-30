@@ -64,6 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+	/// What has arrived from a server but is not yet written down. Blocks are recorded only
+	/// after their bytes are durably on disk, so without this a quit costs the last couple of
+	/// seconds of fetching.
+	func applicationWillTerminate(_ notification: Notification) {
+		DiscCache.shared.flush()
+	}
+
 	// MARK: - What the window holds
 
 	private func showGame() {

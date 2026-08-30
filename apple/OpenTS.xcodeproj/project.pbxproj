@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		020D9F3BD43BBA81A9B467EA /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEFB56A2D8E35563E5A0260 /* GameSession.swift */; };
 		084529486C9DC01E451096E6 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2ACB780FA4F541DCF77F23 /* main.swift */; };
+		0E474222EAE29A222E295DA4 /* DiscCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6058F84B4B3F31FB4ECB64 /* DiscCache.swift */; };
+		1CF697A65483DD1CD109ECF7 /* DiscCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6058F84B4B3F31FB4ECB64 /* DiscCache.swift */; };
 		1E2D89FD764F267CA473BDF9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5C53A38A59E0DD3CC680F757 /* Assets.xcassets */; };
 		29B3AFDC6A7D204CCA03A607 /* DiscLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806AD60738496302E18B788B /* DiscLibrary.swift */; };
 		3F4E73D374F085EE04870690 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918139F224EBD907FECF0625 /* AppDelegate.swift */; };
@@ -28,6 +30,7 @@
 		30DF89461D9ADE3CB5BA2F0E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		5105C52E05E53046F53DC685 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		52A35942529197F28D10D991 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5B6058F84B4B3F31FB4ECB64 /* DiscCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscCache.swift; sourceTree = "<group>"; };
 		5C53A38A59E0DD3CC680F757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6C7EFCD0F9A92F0DBF00F613 /* OpenTS-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenTS-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		74A70B321D336696C10DEF23 /* RootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewController.swift; sourceTree = "<group>"; };
@@ -68,6 +71,7 @@
 		67C531A6C230DFE1573E2218 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				5B6058F84B4B3F31FB4ECB64 /* DiscCache.swift */,
 				806AD60738496302E18B788B /* DiscLibrary.swift */,
 				C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */,
 				CFEFB56A2D8E35563E5A0260 /* GameSession.swift */,
@@ -242,6 +246,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				629A867AEA8EDC038DDAF309 /* AppDelegate.swift in Sources */,
+				0E474222EAE29A222E295DA4 /* DiscCache.swift in Sources */,
 				528962DDE1EC24A14E79041C /* DiscLibrary.swift in Sources */,
 				79C2C74ABD6D18718BCB59C0 /* DiscScheme.swift in Sources */,
 				B2738AA214E8278FF91BA820 /* GameSession.swift in Sources */,
@@ -255,6 +260,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3F4E73D374F085EE04870690 /* AppDelegate.swift in Sources */,
+				1CF697A65483DD1CD109ECF7 /* DiscCache.swift in Sources */,
 				29B3AFDC6A7D204CCA03A607 /* DiscLibrary.swift in Sources */,
 				8CE2C7F1A3523D9EF6872BA6 /* DiscScheme.swift in Sources */,
 				020D9F3BD43BBA81A9B467EA /* GameSession.swift in Sources */,

@@ -93,7 +93,7 @@ final class RootViewController: UIViewController {
 		storage.numberOfLines = 0
 
 		var clear = UIButton.Configuration.bordered()
-		clear.title = "Clear Cached Blocks…"
+		clear.title = "Clear Cached Discs…"
 		clearButton = UIButton(configuration: clear, primaryAction: UIAction { [weak self] _ in
 			self?.confirmClear()
 		})
@@ -171,29 +171,32 @@ final class RootViewController: UIViewController {
 		storage.text = "Reading storage…"
 
 		GameSession.shared.storage { [weak self] found in
-			guard let self, let found else {
-				self?.storage.text = "Storage use is not readable right now."
-				return
+			guard let self else { return }
+
+			let bytes = { (count: UInt64) in
+				ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
 			}
 
-			let used = ByteCountFormatter.string(fromByteCount: Int64(found.usage), countStyle: .file)
-			self.storage.text = "Browser storage is holding \(used)."
-				+ (found.blocks ? " That includes the cached disc blocks." : " No blocks are cached yet.")
-			self.clearButton.isEnabled = found.blocks
+			self.storage.text = (found.discs > 0
+				? "What has been fetched from the discs is kept on this device and is "
+				+ "holding \(bytes(found.discs)), out of a limit of \(bytes(DiscCache.limit))."
+				: "Nothing has been fetched from the discs yet.")
+				+ (found.browser ? " Browser storage holds a further \(bytes(found.usage))." : "")
+			self.clearButton.isEnabled = found.anything
 		}
 	}
 
 	/// Clearing ends the run and refetches on the next one, so it is confirmed first.
 	private func confirmClear() {
 		let alert = UIAlertController(
-			title: "Clear the cached disc blocks?",
+			title: "Clear what has been fetched from the discs?",
 			message: "The next run fetches what it needs again. Saved games are kept.",
 			preferredStyle: .alert)
 
 		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 		alert.addAction(UIAlertAction(title: "Clear", style: .destructive) { [weak self] _ in
 			self?.storage.text = "Clearing…"
-			GameSession.shared.clearBlockStore { failure in
+			GameSession.shared.clearDiscCache { failure in
 				if let failure {
 					self?.storage.text = "The cache could not be cleared: \(failure)"
 				} else {

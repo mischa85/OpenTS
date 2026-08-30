@@ -26,4 +26,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 		application.isIdleTimerDisabled = true
 		return true
 	}
+
+	/// What has arrived from a server but is not yet written down. Blocks are recorded only
+	/// after their bytes are durably on this device, so without this an app the system takes
+	/// away loses the last couple of seconds of fetching.
+	func applicationDidEnterBackground(_ application: UIApplication) {
+		DiscCache.shared.flush()
+	}
 }

@@ -109,10 +109,24 @@ final class GameSession: NSObject {
 	private var lastSample = Date()
 	private var sinceLog = 0
 
+	/// When this run was started, and whether it has drawn yet. What a cold start costs is
+	/// the wall clock from the load to the first frame, and nothing else the shell records
+	/// measures it.
+	private var runBegan = Date()
+	private var drawn = false
+
 	func start() {
 		lastFrames = 0
 		lastSample = Date()
+		runBegan = Date()
+		drawn = false
 		handler.reset()
+
+		// Opened before the page is even asked for. The engine opens each image with a
+		// probe it cannot overlap with anything, so on a network run those probes are the
+		// first thing to cost minutes; done here they are one round trip taken while the
+		// module is still compiling. A local set has nothing to open.
+		DiscCache.shared.prime(DiscLibrary.shared.searchOrder)
 
 		// Rebuilt per run rather than installed once: what they tell the page depends on
 		// the discs, and those can be changed without quitting.
@@ -158,6 +172,14 @@ final class GameSession: NSObject {
 			if elapsed > 0.25 && status.frames >= self.lastFrames {
 				status.rate = Double(status.frames - self.lastFrames) / elapsed
 			}
+			if !self.drawn && status.frames > 0 {
+				self.drawn = true
+				self.log.info("""
+					first frame after \(now.timeIntervalSince(self.runBegan), format: .fixed(precision: 2))s, \
+					\(status.delivered) bytes read
+					""")
+			}
+
 			self.lastFrames = status.frames
 			self.lastSample = now
 
@@ -234,6 +256,18 @@ final class GameSession: NSObject {
 		/// the engine is told not to cache, because a read off this disk is already cheap.
 		var blocks = false
 		var saves = false
+
+		/// Whether the page answered at all. It cannot before a run has loaded one, which is
+		/// exactly when the first run panel is on screen, and what the shell keeps is known
+		/// either way.
+		var browser = false
+
+		/// What the shell's own copy of the images is taking on this device. This is the
+		/// larger of the two by far and the one a player would want back: the browser store
+		/// is bounded to 64 MB by the engine, and this is bounded by the discs themselves.
+		var discs: UInt64 = 0
+
+		var anything: Bool { blocks || discs > 0 }
 	}
 
 	/// A page on this origin with nothing running on it, so storage can be read or emptied
@@ -253,10 +287,17 @@ final class GameSession: NSObject {
 
 	fileprivate var idleDone: ((Bool) -> Void)?
 
-	/// Read rather than measured natively, because WKWebsiteDataStore reports which origins
-	/// hold data but not how much, and the page's own quota estimate does. Asking costs the
-	/// run nothing, so it is asked of whatever page is loaded rather than stopping the game.
-	func storage(_ done: @escaping (Storage?) -> Void) {
+	/// What the two stores are holding.
+	///
+	/// The shell's own is measured here; the browser's is read out of the page, because
+	/// WKWebsiteDataStore reports which origins hold data but not how much and the page's
+	/// quota estimate does. Asking costs the run nothing, so it is asked of whatever page is
+	/// loaded rather than stopping the game -- and when there is no page to ask, which is the
+	/// first run panel's case, what the shell keeps is still reported.
+	func storage(_ done: @escaping (Storage) -> Void) {
+		var found = Storage()
+		found.discs = DiscCache.shared.occupied()
+
 		let script = """
 		var estimate = { usage: 0, quota: 0 };
 		if (navigator.storage && navigator.storage.estimate) {
@@ -278,22 +319,29 @@ final class GameSession: NSObject {
 
 		webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
 			guard case .success(let value) = result, let object = value as? [String: Any] else {
-				return done(nil)
+				return done(found)
 			}
-			done(Storage(usage: UInt64((object["usage"] as? Double) ?? 0),
-			             quota: UInt64((object["quota"] as? Double) ?? 0),
-			             blocks: object["blocks"] as? Bool ?? false,
-			             saves: object["saves"] as? Bool ?? false))
+
+			found.usage = UInt64((object["usage"] as? Double) ?? 0)
+			found.quota = UInt64((object["quota"] as? Double) ?? 0)
+			found.blocks = object["blocks"] as? Bool ?? false
+			found.saves = object["saves"] as? Bool ?? false
+			found.browser = true
+			done(found)
 		}
 	}
 
-	/// Empties the block store and nothing else.
+	/// Empties both copies of the fetched blocks and nothing else: the images this shell
+	/// keeps on disk, and the engine's own store in the browser.
 	///
 	/// The saved games are in browser storage too, on the same origin, so removing the
 	/// origin's data -- which is the only thing the native website data store can do --
-	/// would take them with it. The block store is one named database, and deleting it by
-	/// name leaves the saves where they are.
-	func clearBlockStore(_ done: @escaping (String?) -> Void) {
+	/// would take them with it. The engine's block store is one named database, and deleting
+	/// it by name leaves the saves where they are; the shell's images are its own files and
+	/// are simply removed.
+	func clearDiscCache(_ done: @escaping (String?) -> Void) {
+		DiscCache.shared.empty()
+
 		idle { ok in
 			guard ok else { return done("the storage page could not be opened") }
 
@@ -372,8 +420,27 @@ extension GameSession: WKScriptMessageHandler {
 }
 
 extension GameSession: WKNavigationDelegate {
+	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		settle(webView, true)
+	}
+
 	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
 		log.error("the page could not be loaded: \(error.localizedDescription, privacy: .public)")
+		settle(webView, false)
+	}
+
+	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		log.error("the page could not be loaded: \(error.localizedDescription, privacy: .public)")
+		settle(webView, false)
+	}
+
+	/// Releases whoever is waiting for the empty page, and only for that page: the game's own
+	/// load finishes through here too, and answering it with the engine still on the page
+	/// would empty a store that is being written.
+	private func settle(_ webView: WKWebView, _ ok: Bool) {
+		guard webView.url?.path == "/idle", let done = idleDone else { return }
+		idleDone = nil
+		done(ok)
 	}
 }
 

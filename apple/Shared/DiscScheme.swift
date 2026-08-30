@@ -13,7 +13,9 @@
 // the document is same origin with everything else here and no cross-origin rule applies
 // to any of it. `disc://app/disc/<identity>` is a disc image, answered off a file on this
 // device -- which is what a browser cannot do, because a page is given a local file only
-// asynchronously and the engine's transport is synchronous (code/isohttp.cpp).
+// asynchronously and the engine's transport is synchronous (code/isohttp.cpp). An image on a
+// server is answered too, through the cache in DiscCache.swift, which is where that
+// transport's cost against a distant server is dealt with.
 //
 // What that transport requires is exact: a ranged GET must come back 206 with a
 // Content-Range it can parse, and the probe that opens an image reads the total length out
@@ -41,14 +43,17 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 	/// belongs to the log, because nothing was lost and there is nothing to decide.
 	private(set) var failure: String?
 
-	/// How many times one ranged read is tried before it is called a failure.
-	///
-	/// A cold start makes hundreds of these, and a public mirror answering one of them
-	/// badly is ordinary rather than evidence about the mirror. A retry costs one block's
-	/// latency; leaving it out costs the run.
-	private static let attempts = 3
-
 	private let log = Logger(subsystem: "org.opents.shell", category: "disc")
+
+	/// Reads asked for, and when the run began. A run's cost is the number of round trips it
+	/// makes one after another, and neither a byte count nor a wall clock separates a slow
+	/// link from a link used one request at a time. The order and the times do.
+	///
+	/// A mission makes thousands of these, so they are written at debug level and are read
+	/// back with `log show --debug`; what reached the network is at info level in the cache's
+	/// own category, because that is bounded by the network rather than by the game loop.
+	private var asked = 0
+	private var began = Date()
 
 	/// Where the engine's page, loader and modules are copied to at build time.
 	private let web: URL
@@ -63,17 +68,6 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 	/// but a remote read lands on a session queue long afterwards.
 	private var live = Set<ObjectIdentifier>()
 	private let lock = NSLock()
-
-	/// Addresses a redirecting host settled on, kept so a run does not take a fresh
-	/// redirect on every block.
-	private var pinned: [String: URL] = [:]
-
-	private lazy var session: URLSession = {
-		let configuration = URLSessionConfiguration.ephemeral
-		configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-		configuration.httpMaximumConnectionsPerHost = 8
-		return URLSession(configuration: configuration)
-	}()
 
 	override init() {
 		web = Bundle.main.resourceURL!.appendingPathComponent("web", isDirectory: true)
@@ -143,8 +137,11 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 		lock.lock()
 		delivered = 0
 		failure = nil
-		pinned = [:]
+		asked = 0
+		began = Date()
 		lock.unlock()
+
+		DiscCache.shared.reset()
 	}
 
 	// MARK: - The bundled engine
@@ -197,6 +194,13 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 		}
 
 		let range = task.request.value(forHTTPHeaderField: "Range")
+
+		lock.lock(); asked += 1; let index = asked; let since = Date().timeIntervalSince(began)
+		lock.unlock()
+		log.debug("""
+			ask #\(index) \(identity, privacy: .public) \(range ?? "whole", privacy: .public) \
+			at \(since, format: .fixed(precision: 3))s
+			""")
 
 		switch disc.backing {
 		case .file(let file):
@@ -258,87 +262,40 @@ final class DiscSchemeHandler: NSObject, WKURLSchemeHandler {
 		return open
 	}
 
-	/// Passes the range on to a server and hands back what it answered. This is the case a
-	/// page could do for itself only if the server had said it could; here no same-origin
-	/// rule and no preflight applies, because the request is not the page's.
+	/// Passes the range to the cache in front of the servers, and hands back what it
+	/// answered. This is the case a page could do for itself only if the server had said it
+	/// could; here no same origin rule and no preflight applies, because the request is not
+	/// the page's.
 	///
-	/// A read that does not come back usable is tried again before it is called a failure.
-	/// One bad answer says nothing about the host: a mirror serving a run's hundreds of
-	/// ranged reads will occasionally answer one of them with an error and the next with
-	/// the bytes.
+	/// The reason it goes through DiscCache rather than straight to the server is that a
+	/// synchronous read cannot overlap another one, so an answer that costs a round trip
+	/// costs the whole run a round trip. See DiscCache.swift.
 	private func serveRemote(_ address: URL, identity: String, range: String?,
-	                         _ task: WKURLSchemeTask, _ url: URL, attempt: Int = 1) {
-		lock.lock(); let target = pinned[identity] ?? address; lock.unlock()
-
-		var request = URLRequest(url: target)
-		request.cachePolicy = .reloadIgnoringLocalCacheData
-		if let range { request.setValue(range, forHTTPHeaderField: "Range") }
-
-		session.dataTask(with: request) { [weak self] data, response, error in
+	                         _ task: WKURLSchemeTask, _ url: URL) {
+		DiscCache.shared.read(identity: identity, address: address, range: range) {
+			[weak self] outcome in
 			guard let self, self.holds(task) else { return }
 
-			let http = response as? HTTPURLResponse
-			let name = address.lastPathComponent
+			switch outcome {
+			case .failure(let trouble):
+				self.note(failure: trouble.text)
+				self.fail(task, url, 502)
 
-			// What the transport requires of a ranged read is exact: a partial answer it
-			// can take a Content-Range out of. Anything else is a read that did not
-			// happen. What it says about the host is not knowable from one answer, so
-			// what is recorded is what arrived and nothing beyond it.
-			var wrong: String?
-			if let http {
-				if range != nil && http.statusCode != 206 {
-					wrong = "the server answered \(http.statusCode) where a partial "
-					      + "response (206) was required"
-				}
-			} else {
-				wrong = error?.localizedDescription ?? "the request did not complete"
+			case .success(let got):
+				guard !got.data.isEmpty else { return self.fail(task, url, 416) }
+
+				self.note(read: got.data.count)
+				let last = got.first + UInt64(got.data.count) - 1
+				self.answer(task, url, 206, [
+					"Content-Type": "application/octet-stream",
+					"Accept-Ranges": "bytes",
+					"Content-Range": "bytes \(got.first)-\(last)/\(got.total)",
+					"Content-Length": "\(got.data.count)",
+					"ETag": got.validator,
+					"Cache-Control": "no-store",
+				], got.data)
 			}
-
-			if let wrong {
-				// A pin is a guess at which host of a mirror to keep asking. A read that
-				// failed is reason enough to stop guessing and resolve the address afresh.
-				self.lock.lock(); self.pinned[identity] = nil; self.lock.unlock()
-
-				if attempt < Self.attempts {
-					self.log.notice("""
-						\(name, privacy: .public) \(range ?? "whole file", privacy: .public): \
-						\(wrong, privacy: .public); attempt \(attempt) of \(Self.attempts)
-						""")
-
-					let when = DispatchTime.now() + .milliseconds(250 * attempt)
-					DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: when) {
-						self.serveRemote(address, identity: identity, range: range,
-						                 task, url, attempt: attempt + 1)
-					}
-					return
-				}
-
-				self.note(failure: "\(name) could not be read from "
-				                 + "\(address.host ?? address.absoluteString). It was asked "
-				                 + "\(Self.attempts) times, and \(wrong).")
-			} else {
-				if attempt > 1 {
-					self.log.notice("\(name, privacy: .public): read on attempt \(attempt)")
-				}
-
-				if let settled = http?.url, settled != target {
-					self.lock.lock()
-					if self.pinned[identity] == nil { self.pinned[identity] = settled }
-					self.lock.unlock()
-				}
-
-				self.note(read: data?.count ?? 0)
-			}
-
-			guard let http else { return self.fail(task, url, 502) }
-
-			var headers: [String: String] = [:]
-			for (key, value) in http.allHeaderFields {
-				headers["\(key)"] = "\(value)"
-			}
-
-			self.answer(task, url, http.statusCode, headers, data ?? Data())
-		}.resume()
+		}
 	}
 
 	// MARK: - Ranges
