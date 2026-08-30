@@ -115,10 +115,11 @@ class ISOBlockIndexClass
  * front of it be asked for early instead, so the round trip is spent while the frames
  * behind it are still being decoded.
  *
- * Only a run that has already moved forward is followed. A read that goes somewhere else
- * is a seek, which ends the run and makes whatever was asked for ahead of it worthless, so
- * the window earns its size rather than starting at it: a burst that stops after two blocks
- * has over-read by a quarter of a megabyte and no more.
+ * Only a run that has already moved forward is followed, and the window earns its size
+ * rather than starting at it: a burst that stops after two blocks has over-read by an
+ * eighth of a megabyte and no more. Two blocks is where the following starts, because a
+ * short movie is read in a burst of that size and would otherwise be over before a longer
+ * threshold believed it.
  *
  * Nothing here fetches. It decides which blocks are worth asking for and how far the asking
  * may run, which is arithmetic over block numbers and is tested as such.
@@ -130,9 +131,19 @@ class ISOReadAheadClass
 
 		void Reset(void);
 
+		/// <summary>Would a read carry on where this run has reached?</summary>
+		/// <param name="first">The first block the read touches.</param>
+		/// <returns>bool; A run nobody has read continues nothing.</returns>
+		/// <remarks>A read that starts in the block the run has just been in, or in the one
+		/// after it, continues it: a movie's frames are far shorter than a block, so most
+		/// reads do not leave the block at all and only the ones that do count as progress.</remarks>
+		bool Continues(std::uint64_t first) const;
+
 		/// <summary>Follows a read to the blocks it covered.</summary>
 		/// <param name="first">The first block the read touched.</param>
 		/// <param name="last">The last block it touched.</param>
+		/// <remarks>A read the run does not continue begins it again where that read landed,
+		/// since what was asked for in front of the old cursor is bytes nobody wants.</remarks>
 		void Note(std::uint64_t first, std::uint64_t last);
 
 		/// <summary>Reports the span in front of the cursor worth asking for now.</summary>
@@ -145,16 +156,13 @@ class ISOReadAheadClass
 		/// <summary>Records that every block below one has been asked for or found.</summary>
 		void Issued(std::uint64_t upto);
 
-		/// <summary>Did the last read leave the run, making what is ahead worthless?</summary>
-		bool Broke(void) const {return(Break);}
-
 		unsigned int Run(void) const {return(Length);}
 		std::uint64_t Cursor(void) const {return(Next);}
 		std::uint64_t Edge(void) const {return(Filled);}
 
 		enum {
-			RUN_MIN = 3,		// Reads in a forward run before the pattern is believed.
-			WINDOW_MIN = 4,		// Blocks kept in front of the cursor once it is.
+			RUN_MIN = 2,		// Reads in a forward run before the pattern is believed.
+			WINDOW_MIN = 2,		// Blocks kept in front of the cursor once it is.
 			WINDOW_MAX = 16,	// And the most, which bounds the run ahead at a megabyte.
 			SPAN_MAX = 8		// Blocks per request, so the first of them lands early.
 		};
@@ -165,7 +173,56 @@ class ISOReadAheadClass
 		std::uint64_t Filled;
 		std::uint64_t Wide;
 		unsigned int Length;
-		bool Break;
+};
+
+
+/*
+ * The runs an image is being read along at once.
+ *
+ * One cursor is enough for a movie the engine plays with nothing else going on, and that is
+ * how a briefing is read. A clip that plays in the sidebar is not: a mission reads its map,
+ * its artwork, its speech and its music off the same image while the clip streams, and every
+ * one of those reads lands somewhere else. With a single cursor each of them is a seek that
+ * ends the movie's run and abandons what was asked for in front of it, so the run never
+ * lasts long enough to earn a window and the clip pays a round trip for every block.
+ *
+ * Following a few runs at once is what keeps them out of each other's way. A read joins the
+ * run it carries on; a read that carries on none takes over the run that has gone longest
+ * without one, and only that run's outstanding span is given up. The set is small and fixed,
+ * so what is being followed is bounded and so is what may be in flight for it.
+ */
+class ISOReadRunsClass
+{
+	public:
+		ISOReadRunsClass(void);
+
+		void Reset(void);
+
+		/// <summary>Follows a read to the run it belongs to, which becomes the current one.</summary>
+		/// <param name="first">The first block the read touched.</param>
+		/// <param name="last">The last block it touched.</param>
+		/// <param name="lost">Receives the first block of a displaced run's outstanding span.</param>
+		/// <param name="stop">Receives the block that span ends before.</param>
+		/// <returns>bool; Did the read displace a run that had a span outstanding? What was
+		/// asked for in front of that run is bytes nobody will read now.</returns>
+		bool Note(std::uint64_t first, std::uint64_t last, std::uint64_t & lost, std::uint64_t & stop);
+
+		ISOReadAheadClass & Current(void) {return(Runs[Order[0]]);}
+		ISOReadAheadClass const & Current(void) const {return(Runs[Order[0]]);}
+
+		/*
+		** How many runs are followed. A clip streaming while a mission reads its map, its
+		** artwork and its music is four, which is what this is sized for; a fifth stream
+		** takes the oldest of them over rather than growing the set.
+		*/
+		enum {
+			RUNS = 4
+		};
+
+	private:
+
+		ISOReadAheadClass Runs[RUNS];
+		std::size_t Order[RUNS];
 };
 
 
@@ -184,10 +241,13 @@ class ISOReadAheadClass
  * blocks back instead of the network. The memory-resident set stays the small window set
  * above; the stored set is bounded separately and read a block at a time.
  *
- * A read that continues a run is answered differently. ISOReadAheadClass says which blocks
+ * A read that continues a run is answered differently. ISOReadRunsClass says which blocks
  * the run is about to want, and those are asked for without waiting: the request is left in
  * flight and the engine goes back to decoding, which is where the page hands the thread
  * back and the answer arrives. What lands before it is wanted costs the read nothing at all.
+ * The asking happens before the read the window was opened by is paid for, so a run that is
+ * being read faster than the network answers spends one round trip on two requests rather
+ * than one apiece.
  *
  * A server that ignores the range and answers with the entire image is rejected rather
  * than accommodated: every read would then cost the whole file.
@@ -244,6 +304,7 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		void Look_Ahead(void);
 		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length);
 		void Ahead_Drop(void);
+		void Ahead_Drop(std::uint64_t first, std::uint64_t stop);
 
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
@@ -264,7 +325,7 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		// a block number means nothing without the image it belongs to.
 		std::size_t Meter;
 
-		ISOReadAheadClass Ahead;
+		ISOReadRunsClass Ahead;
 
 		std::string Signature;
 		std::string Slot;

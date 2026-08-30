@@ -33,8 +33,12 @@
 // request is left in flight rather than waited on -- an ordinary fetch, which suspends
 // nothing and is legal anywhere. It lands while the engine is decoding and handing the page
 // the thread, and the read that wanted it copies it off the heap. Only a run that has proved
-// itself is followed, and only a bounded distance in front of it, so a seek costs a window
-// and never a file.
+// itself is followed, and only a bounded distance in front of it, so a run given up costs a
+// window and never a file.
+//
+// The asking happens before the read that opened the window is paid for, so a clip opened
+// inside one frame -- which reads its blocks back to back, with no decoding in between --
+// spends one round trip on two requests rather than one apiece.
 //
 // The third thing this file has to solve is that a reload should not pay for the image
 // again. What is fetched is therefore kept in the browser's database -- the same store the
@@ -563,7 +567,16 @@ EM_JS(double, ISO_Http_Ahead_Start, (char const * url, double offset, double len
 		control: new AbortController()
 	};
 
+	/*
+	** The document cache is asked to stay out of this. Every read of an image names the same
+	** URL, and a cache entry takes one writer at a time: a span left in flight then holds the
+	** entry and the synchronous transport queues behind it, which turns the read the window
+	** was supposed to get in front of into two round trips instead of one. Nothing is lost by
+	** refusing the cache -- an image is far larger than one, and what is worth keeping is
+	** kept in the store this file writes itself.
+	*/
 	span.promise = fetch(key, {
+			cache: "no-store",
 			headers: { "Range": "bytes=" + start + "-" + (stop - 1) },
 			signal: span.control.signal
 		})
@@ -658,6 +671,30 @@ EM_JS(double, ISO_Http_Ahead_Drop, (char const * url), {
 
 	var waste = 0;
 	while (list.length > 0) waste += pool.drop(key, list[0]);
+	return waste;
+});
+
+
+/*
+** Lets go of what was asked for in front of one run that has been displaced, leaving the
+** spans belonging to the runs still being read along where they are.
+*/
+EM_JS(double, ISO_Http_Ahead_Drop_Range, (char const * url, double start, double stop), {
+	var pool = globalThis.__opentsIsoAhead;
+	if (pool === undefined) return 0;
+
+	var key = UTF8ToString(url);
+	var list = pool.spans.get(key);
+
+	if (!list) return 0;
+
+	var waste = 0;
+
+	for (var index = list.length - 1; index >= 0; index--) {
+		var span = list[index];
+		if (span.start < stop && span.stop > start) waste += pool.drop(key, span);
+	}
+
 	return waste;
 });
 
@@ -859,23 +896,21 @@ void ISOReadAheadClass::Reset(void)
 	Filled = 0;
 	Wide = 0;
 	Length = 0;
-	Break = false;
+}
+
+
+/// <summary>Would a read carry on where this run has reached?</summary>
+bool ISOReadAheadClass::Continues(std::uint64_t first) const
+{
+	return((Length != 0) && (first + 1 >= Next) && (first <= Next));
 }
 
 
 /// <summary>Follows a read to the blocks it covered.</summary>
-/// <remarks>
-/// A read that starts in the block the run has just been in, or in the one after it,
-/// continues the run: a movie's frames are far shorter than a block, so most reads do not
-/// leave the block at all and only the ones that do count as progress. Anything else is a
-/// seek. The run starts again from where the seek landed, and Broke says so, because what
-/// was asked for in front of the old cursor is now bytes nobody wants.
-/// </remarks>
 void ISOReadAheadClass::Note(std::uint64_t first, std::uint64_t last)
 {
-	bool const continues = (Length != 0) && (first + 1 >= Next) && (first <= Next);
+	bool const continues = Continues(first);
 
-	Break = (Length != 0) && !continues;
 	Wide = last - first + 1;
 
 	if (continues) {
@@ -897,7 +932,7 @@ void ISOReadAheadClass::Note(std::uint64_t first, std::uint64_t last)
 /// <remarks>
 /// The window doubles as the run proves itself rather than starting at its full reach, so a
 /// short forward burst -- a mixfile header read in two passes, a directory walked in order --
-/// costs a quarter of a megabyte of over-reading at most, while a movie reaches the full
+/// costs an eighth of a megabyte of over-reading at most, while a movie reaches the full
 /// megabyte within a second of playing.
 /// </remarks>
 bool ISOReadAheadClass::Span(std::uint64_t blocks, std::uint64_t & start, std::uint64_t & count) const
@@ -941,6 +976,61 @@ bool ISOReadAheadClass::Span(std::uint64_t blocks, std::uint64_t & start, std::u
 void ISOReadAheadClass::Issued(std::uint64_t upto)
 {
 	if (upto > Filled) Filled = upto;
+}
+
+
+ISOReadRunsClass::ISOReadRunsClass(void)
+{
+	Reset();
+}
+
+
+void ISOReadRunsClass::Reset(void)
+{
+	for (std::size_t place = 0; place < (std::size_t)RUNS; place++) {
+		Runs[place].Reset();
+		Order[place] = place;
+	}
+}
+
+
+/// <summary>Follows a read to the run it belongs to, which becomes the current one.</summary>
+/// <remarks>
+/// Displacing the run that has gone longest without a read is what bounds the set. Only that
+/// run's outstanding span is reported: the others are still being read along and what was
+/// asked for in front of them is still wanted.
+/// </remarks>
+bool ISOReadRunsClass::Note(std::uint64_t first, std::uint64_t last, std::uint64_t & lost, std::uint64_t & stop)
+{
+	std::size_t place = 0;
+
+	while (place < (std::size_t)RUNS && !Runs[Order[place]].Continues(first)) place++;
+
+	bool displaced = false;
+
+	if (place == (std::size_t)RUNS) {
+		place = (std::size_t)RUNS - 1;
+
+		ISOReadAheadClass & oldest = Runs[Order[place]];
+
+		if (oldest.Edge() > oldest.Cursor()) {
+			lost = oldest.Cursor();
+			stop = oldest.Edge();
+			displaced = true;
+		}
+
+		oldest.Reset();
+	}
+
+	if (place != 0) {
+		std::size_t const chosen = Order[place];
+
+		for (std::size_t step = place; step > 0; step--) Order[step] = Order[step - 1];
+		Order[0] = chosen;
+	}
+
+	Runs[Order[0]].Note(first, last);
+	return(displaced);
 }
 
 
@@ -1163,12 +1253,14 @@ void ISOHttpSourceClass::Look_Ahead(void)
 	std::uint64_t start = 0;
 	std::uint64_t count = 0;
 
-	if (!Ahead.Span(blocks, start, count)) return;
+	ISOReadAheadClass & run = Ahead.Current();
+
+	if (!run.Span(blocks, start, count)) return;
 
 	while (count > 0 && Index.Holds(start)) {
 		start++;
 		count--;
-		Ahead.Issued(start);
+		run.Issued(start);
 	}
 
 	std::uint64_t span = 0;
@@ -1190,7 +1282,7 @@ void ISOHttpSourceClass::Look_Ahead(void)
 	*/
 	if (asked == 0.0) return;
 
-	Ahead.Issued(start + span);
+	run.Issued(start + span);
 
 	if (asked > 0.0) {
 		Account_For_Transfer(Meter, at, (unsigned int)asked);
@@ -1232,7 +1324,7 @@ bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsign
 }
 
 
-/// <summary>Abandons what was asked for in front of a run that has gone elsewhere.</summary>
+/// <summary>Abandons everything asked for ahead of this image.</summary>
 void ISOHttpSourceClass::Ahead_Drop(void)
 {
 #if defined(OPENTS_WASM_JSPI)
@@ -1241,6 +1333,25 @@ void ISOHttpSourceClass::Ahead_Drop(void)
 	double const wasted = ISO_Http_Ahead_Drop(Url.c_str());
 
 	if (wasted > 0.0) _AheadWaste += (std::uint64_t)wasted;
+#endif
+}
+
+
+/// <summary>Abandons what was asked for in front of one run that has been displaced.</summary>
+/// <param name="first">The first block of the displaced run's outstanding span.</param>
+/// <param name="stop">The block that span ends before.</param>
+void ISOHttpSourceClass::Ahead_Drop(std::uint64_t first, std::uint64_t stop)
+{
+#if defined(OPENTS_WASM_JSPI)
+	if (Url.empty() || stop <= first) return;
+
+	double const wasted = ISO_Http_Ahead_Drop_Range(Url.c_str(),
+		(double)(first * (std::uint64_t)BLOCK_SIZE), (double)(stop * (std::uint64_t)BLOCK_SIZE));
+
+	if (wasted > 0.0) _AheadWaste += (std::uint64_t)wasted;
+#else
+	(void)first;
+	(void)stop;
 #endif
 }
 
@@ -1479,10 +1590,19 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	**	browser is already holding. Only a span the network had to carry opens the window.
 	*/
 	if (Store_Serve(offset, buffer, length)) return(true);
+
+	/*
+	**	The window is opened before this read is paid for rather than after it. The request
+	**	it starts then runs alongside the one this read is about to wait on instead of behind
+	**	it, which is what a run read faster than the network answers needs: a movie opened in
+	**	one frame reads its first blocks back to back, with no decoding in between for a round
+	**	trip to hide in.
+	*/
+	Look_Ahead();
+
 	if (!Transfer(offset, buffer, length)) return(false);
 
 	Store_Keep(offset, buffer, length);
-	Look_Ahead();
 	return(true);
 }
 
@@ -1532,12 +1652,18 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 	Store_Settle();
 
 	/*
-	**	Where the reads are going is followed before any of this one is served, so that a
-	**	seek is seen as it happens: what was asked for in front of the run it left is bytes
-	**	nobody will read and is abandoned rather than paid for.
+	**	Where the reads are going is followed before any of this one is served, so that a run
+	**	being taken over is seen as it happens: what was asked for in front of the run that
+	**	was displaced is bytes nobody will read and is abandoned rather than paid for. The
+	**	runs still being read along keep what was asked for in front of them.
 	*/
-	Ahead.Note(offset / (std::uint64_t)BLOCK_SIZE, (offset + length - 1) / (std::uint64_t)BLOCK_SIZE);
-	if (Ahead.Broke()) Ahead_Drop();
+	std::uint64_t lost = 0;
+	std::uint64_t stop = 0;
+
+	bool const displaced = Ahead.Note(offset / (std::uint64_t)BLOCK_SIZE,
+		(offset + length - 1) / (std::uint64_t)BLOCK_SIZE, lost, stop);
+
+	if (displaced) Ahead_Drop(lost, stop);
 
 	unsigned char * cursor = (unsigned char *)buffer;
 	unsigned int remaining = length;

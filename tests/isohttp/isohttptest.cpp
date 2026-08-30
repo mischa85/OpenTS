@@ -558,6 +558,7 @@ void Check_Read_Ahead(void)
 	ISOReadAheadClass ahead;
 
 	Check(!ahead.Span(blocks, start, count), "nothing is fetched ahead of a source nobody has read");
+	Check(!ahead.Continues(500), "and a run nobody has read carries nothing on");
 
 	/*
 	**	A read on its own says nothing about where the next one is going, and neither does a
@@ -567,26 +568,21 @@ void Check_Read_Ahead(void)
 	ahead.Note(500, 500);
 	Check(!ahead.Span(blocks, start, count), "one read establishes no run");
 
+	Check(!ahead.Continues(20), "a read somewhere else is a seek, not a run");
 	ahead.Note(20, 20);
-	Check(ahead.Broke() && !ahead.Span(blocks, start, count), "a read somewhere else is a seek, not a run");
-
-	ahead.Note(700, 700);
-	ahead.Note(701, 701);
-	Check(!ahead.Broke(), "a read in the block after the last one continues the run");
-	Check(!ahead.Span(blocks, start, count), "which is not yet enough of a run to fetch on");
+	Check(!ahead.Span(blocks, start, count), "and the reading starts again from where it landed");
 
 	/*
-	**	Most of a movie's reads are shorter than a block and never leave the one before them.
-	**	Those hold the run rather than building it, so what the window follows is the reads
-	**	that actually move forward.
+	**	Two reads moving forward are the whole of what a run has to prove. A clip playing in
+	**	the sidebar is read in a burst of three blocks and is over before a longer threshold
+	**	would have believed it, so the third block has to be on its way before it is read.
 	*/
+	ahead.Note(700, 700);
+	Check(ahead.Continues(701), "a read in the block after the last one continues the run");
 	ahead.Note(701, 701);
-	ahead.Note(701, 701);
-	Check(!ahead.Span(blocks, start, count), "a read that does not leave its block does not advance the run");
 
-	ahead.Note(702, 702);
-	Check(ahead.Span(blocks, start, count), "a run that keeps moving forward is fetched ahead of");
-	Check(start == 703, "the span begins where the reading has not reached");
+	Check(ahead.Span(blocks, start, count), "a second read moving forward is fetched ahead of");
+	Check(start == 702, "the span begins where the reading has not reached");
 	Check(count == (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
 		"and opens no wider than the window a young run has earned");
 
@@ -599,11 +595,20 @@ void Check_Read_Ahead(void)
 	Check(!ahead.Span(blocks, start, count), "what has been asked for is not asked for again");
 
 	/*
+	**	Most of a movie's reads are shorter than a block and never leave the one before them.
+	**	Those hold the run rather than building it, so what the window follows is the reads
+	**	that actually move forward.
+	*/
+	ahead.Note(701, 701);
+	ahead.Note(701, 701);
+	Check(ahead.Run() == 2, "a read that does not leave its block does not advance the run");
+
+	/*
 	**	The window widens as the run proves itself, which is what keeps a short burst cheap
 	**	and lets a movie reach far enough ahead to cover a round trip.
 	*/
 	for (unsigned int step = 0; step < 8; step++) {
-		std::uint64_t const at = 703 + step;
+		std::uint64_t const at = 702 + step;
 		ahead.Note(at, at);
 		if (ahead.Span(blocks, start, count)) ahead.Issued(start + count);
 	}
@@ -617,8 +622,8 @@ void Check_Read_Ahead(void)
 	**	A seek makes everything in front of the run it left worthless. The run starts again
 	**	from where the seek landed and asks for nothing until it is believed once more.
 	*/
+	Check(!ahead.Continues(10), "a read out of the run is reported so what is in flight can be let go");
 	ahead.Note(10, 10);
-	Check(ahead.Broke(), "a seek out of the run is reported so what is in flight can be let go");
 	Check(!ahead.Span(blocks, start, count), "and the window closes until a new run is established");
 	Check(ahead.Cursor() == 11, "the run starts again from where the seek landed");
 
@@ -665,13 +670,83 @@ void Check_Read_Ahead(void)
 		"a read that is already a span of its own is not fetched ahead of");
 
 	loading.Note(120, 120);
-	loading.Note(121, 121);
-	Check(loading.Span(blocks, start, count) && start == 122,
+	Check(loading.Span(blocks, start, count) && start == 121,
 		"and the window opens again as soon as the reads are short enough to need it");
 
 	extent.Reset();
 	Check(extent.Cursor() == 0 && extent.Run() == 0 && !extent.Span(blocks, start, count),
 		"a source that is closed forgets where its reading had reached");
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	Several runs at once. A clip playing in the sidebar streams while the mission around it
+**	reads its map, its artwork and its music off the same image, and every one of those
+**	reads lands somewhere else. What is checked here is that they stay out of each other's
+**	way: a run is only given up when a fifth stream takes it over, and only its own span
+**	goes with it.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Read_Runs(void)
+{
+	std::uint64_t const blocks = 20000;
+	std::uint64_t start = 0;
+	std::uint64_t count = 0;
+	std::uint64_t lost = 0;
+	std::uint64_t stop = 0;
+
+	ISOReadRunsClass runs;
+
+	Check(!runs.Note(1014, 1014, lost, stop), "the first read of a set displaces no run");
+	Check(!runs.Current().Span(blocks, start, count), "and one read establishes no run");
+
+	/*
+	**	The clip's whole footprint is three blocks read back to back inside one frame. The
+	**	third has to be asked for while the second is still being waited on, because there is
+	**	no decoding in between for a round trip to hide in.
+	*/
+	runs.Note(1014, 1015, lost, stop);
+	Check(runs.Current().Span(blocks, start, count) && start == 1016,
+		"a clip's second block is enough of a run to ask for the third");
+	runs.Current().Issued(start + count);
+
+	/*
+	**	The mission reads its artwork from the far side of the same image between the clip's
+	**	reads. That is a run of its own rather than the end of the clip's.
+	*/
+	Check(!runs.Note(10457, 10457, lost, stop), "a read somewhere else takes a run of its own");
+	runs.Note(10458, 10458, lost, stop);
+	Check(runs.Current().Span(blocks, start, count) && start == 10459,
+		"which earns a window of its own");
+	runs.Current().Issued(start + count);
+
+	runs.Note(1016, 1016, lost, stop);
+	Check(runs.Current().Run() == 3 && runs.Current().Cursor() == 1017,
+		"and the clip carries on where it had reached rather than starting again");
+	Check(runs.Current().Edge() == 1018,
+		"with what was asked for in front of it still on its way");
+
+	/*
+	**	A fifth stream is one more than the set holds. The run that has gone longest without
+	**	a read is the one taken over, and only the span in front of that run is given up.
+	*/
+	runs.Note(3000, 3000, lost, stop);
+	runs.Note(4000, 4000, lost, stop);
+
+	lost = 0;
+	stop = 0;
+	Check(runs.Note(5000, 5000, lost, stop), "a fifth run takes over the one longest unread");
+	Check(lost == 10459 && stop == 10459 + (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+		"and reports that run's outstanding span, so only those bytes are let go");
+
+	runs.Note(1017, 1017, lost, stop);
+	Check(runs.Current().Run() == 4 && runs.Current().Edge() == 1018,
+		"the clip's run outlives four other streams reading the same image");
+
+	runs.Reset();
+	Check(runs.Current().Run() == 0 && !runs.Current().Span(blocks, start, count),
+		"and a source that is closed forgets every run it was following");
 }
 
 } // namespace
@@ -845,6 +920,7 @@ int main(int argc, char ** argv)
 	Check_Several_Images();
 	Check_Block_Index();
 	Check_Read_Ahead();
+	Check_Read_Runs();
 
 	std::printf("\n%s\n", Failures == 0 ? "all checks passed" : "checks failed");
 	return (Failures == 0) ? 0 : 1;
