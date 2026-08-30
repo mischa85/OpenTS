@@ -178,6 +178,11 @@ The build offers no `--preload-file` bundling. [README](../README.md) is
 explicit that OpenTS supplies the engine and not the game data, so a deployment
 that serves an image is one serving data it has the right to serve.
 
+The first-run `EVA.VQA` sequence does not play here. It belongs to a first run
+that follows an installation, and a page installs nothing, so it covers no
+setup; `PlayIntro=true` under `[Intro]` in `SUN.INI` asks for it anyway
+(`code/startup.cpp:642`). Every other target still plays it once.
+
 ### Tests
 
 `tests/` builds under Emscripten, and the Emscripten toolchain file points
@@ -188,10 +193,12 @@ harnesses without further configuration:
 ctest --test-dir build-wasm
 ```
 
-Eleven tests are registered there: `iso9660`, `lcw`, `lcwstream`, `lcwuncomp`,
-`soscodec`, `vqacodec`, `voxel`, `lighting`, `win32file`, `resources`, and
-`audiobackend`. An MSVC configuration registers the same set with `logstress` in
-place of `audiobackend`. None of them reads game data.
+Seventeen tests are registered there: `iso9660`, `lcw`, `lcwstream`,
+`lcwuncomp`, `soscodec`, `vqacodec`, `voxel`, `lighting`, `win32file`,
+`resources`, `win32process`, `win32user`, `win32window`, `com`, `audiobackend`,
+`timer`, and `isohttp`. The last three exercise the WebAssembly target's own
+layers and build only there; an MSVC configuration registers the rest with
+`logstress` alongside. None of them reads game data.
 
 ### What has been run
 

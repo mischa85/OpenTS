@@ -641,7 +641,17 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		**	configuration file says "no", then don't run the intro.
 		*/
 		if (!Special.IsFromInstall) {
-			Special.IsFromInstall = ConfigINI.Get_Bool("Intro", "PlayIntro", true);
+			/*
+			**	The sequence belongs to a first run that follows an installation. A page
+			**	installs nothing and copies nothing, so there is no setup for it to cover;
+			**	it plays there only for someone who asks for it by name.
+			*/
+#if defined(__EMSCRIPTEN__)
+			bool const wanted = false;
+#else
+			bool const wanted = true;
+#endif
+			Special.IsFromInstall = ConfigINI.Get_Bool("Intro", "PlayIntro", wanted);
 		}
 
 		/*
