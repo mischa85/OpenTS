@@ -16,6 +16,10 @@
      the engine's debug output -- floats over the canvas rather than sitting beside it, so
      that a line of output arriving does not resize the game. It is absent unless "?hud=on"
      asks for it, since it is a diagnostic rather than part of the game.
+
+     The module is fetched from script rather than from a tag, because the engine cannot run
+     without JSPI and the runtime's failure to find it is unreportable: it happens while the
+     module is being created, before anything here is reachable.
 -->
 <html lang="en">
 <head>
@@ -108,11 +112,52 @@
 		color: #6f7883;
 		white-space: pre-wrap;
 	}
+
+	/* Stands in for the game rather than floating over it: when this is shown there is no
+	   canvas behind it to see, because the module was never fetched. */
+	#unsupported {
+		position: fixed;
+		inset: 0;
+		box-sizing: border-box;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		background: #101216;
+	}
+	/* The attribute's own rule is display:none, which the flex above would otherwise beat. */
+	#unsupported[hidden] { display: none; }
+	#unsupported > div {
+		max-width: 34em;
+		padding: 18px 22px;
+		border: 1px solid rgba(120, 132, 148, .25);
+		background: rgba(22, 25, 30, .9);
+		color: #8f98a3;
+	}
+	#unsupported h1 {
+		margin: 0 0 10px;
+		font-size: 15px;
+		font-weight: 600;
+		letter-spacing: 0;
+		color: #d8dbe0;
+	}
+	#unsupported p { margin: 0; }
+	#unsupported .eyebrow { margin: 0 0 8px; font-size: 11px; letter-spacing: .05em; color: #7d8794; }
+	#unsupported .quiet { margin: 16px 0 0; font-size: 11px; color: #6f7883; }
 </style>
 </head>
 <body>
 
 <canvas id="canvas" tabindex="0"></canvas>
+<div id="unsupported" hidden>
+	<div>
+		<p class="eyebrow">OPENTS</p>
+		<h1>This browser can't run the game.</h1>
+		<p>Chrome, Edge and Firefox will. So will Safari Technology Preview.</p>
+		<p class="quiet">Needs a newer WebAssembly feature: Chrome and Edge 137 and up,
+		Firefox 153 and up.</p>
+	</div>
+</div>
 <div id="panel">
 	<div id="toggle" title="Show or hide the diagnostic log">log</div>
 	<div id="grab" title="Take the mouse so the log can be selected and copied">select</div>
@@ -369,9 +414,34 @@
 	window.addEventListener("error", function (event) {
 		report("the engine stopped: " + (event.message || event.error));
 	});
-</script>
 
-<script async src="$<TARGET_FILE_BASE_NAME:OpenTS>.js"></script>
+	// A JSPI module wraps its suspending imports in WebAssembly.Suspending and its promising
+	// exports in WebAssembly.promising, both of them while the module is being created and
+	// so before any of the reporting above is reachable. Those two are the whole of what the
+	// runtime touches, which is why they and not a version are what is asked for.
+	function OpenTS_Has_JSPI() {
+		return typeof WebAssembly !== "undefined" &&
+			typeof WebAssembly.Suspending === "function" &&
+			typeof WebAssembly.promising === "function";
+	}
+
+	// A build configured with OPENTS_WASM_JSPI=OFF asks the browser for none of this and
+	// starts anywhere; "?jspi=ignore" is how such a build is still reachable from this page.
+	var OpenTS_Ignore_JSPI =
+		new URLSearchParams(window.location.search).get("jspi") === "ignore";
+
+	// Loaded from here rather than from a tag of its own, so that a browser that cannot run
+	// the module never fetches it.
+	if (OpenTS_Has_JSPI() || OpenTS_Ignore_JSPI) {
+		var loader = document.createElement("script");
+		loader.async = true;
+		loader.src = "$<TARGET_FILE_BASE_NAME:OpenTS>.js";
+		document.body.appendChild(loader);
+	} else {
+		document.getElementById("unsupported").hidden = false;
+		document.getElementById("status").textContent = "stopped: this browser has no JSPI";
+	}
+</script>
 
 </body>
 </html>
