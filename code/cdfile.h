@@ -38,6 +38,26 @@
 #include <memory>
 
 /*
+ * How the engine is going to read a name it says it will want, which is what decides how
+ * much of that name is worth having before it asks for any of it.
+ *
+ * An archive the engine reads across is worth having whole. It opens files scattered all
+ * over such an archive and, over a session, reads very nearly the whole of it, so there is
+ * no run in the reading to get in front of and nothing to be gained by waiting to find out
+ * which part is wanted. An archive the engine streams a single entry out of is not: a disc
+ * of video is registered exactly like an archive of maps, its entries are films, and only
+ * the player knows which one they are about to watch. What is worth having from one of
+ * those is the directory at its front, which the registration reads at once.
+ *
+ * Size is not the distinction and is not consulted. What decides is what the engine will do
+ * with the archive, which the code registering it is the only thing that knows.
+ */
+enum PrefetchType {
+	PREFETCH_WHOLE,		// Read across, so every part of it is wanted before long.
+	PREFETCH_STREAMED	// Streamed an entry at a time, so only its directory is.
+};
+
+/*
  * This class is derived from the BufferIOFileClass, and adds the ability to search across
  * several directories for a file. The current directory is examined first, and if the file
  * is not there then every directory in the search list is tried in turn. A file being
@@ -97,11 +117,12 @@ class CDFileClass : public BufferIOFileClass
 		/// <summary>Says a file will probably be wanted before long.</summary>
 		/// <param name="filename">The name the engine would open, whether it names a file
 		/// of its own or one embedded in a mixfile.</param>
+		/// <param name="how">How the engine is going to read it.</param>
 		/// <remarks>Advisory and free. The name is resolved to the run of bytes it occupies
 		/// on whichever search entry supplies it, and that entry is told; an entry with the
 		/// bytes already at hand does nothing with it. A name that resolves to nothing, or
 		/// to something already in memory, costs the resolution and no more.</remarks>
-		static void Prefetch(char const * filename);
+		static void Prefetch(char const * filename, PrefetchType how = PREFETCH_WHOLE);
 
 		/// <summary>Says this object has stopped reading, whatever it said it would read.</summary>
 		/// <remarks>A file is normally read to the end it declared when it was opened, and

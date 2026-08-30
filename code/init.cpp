@@ -234,7 +234,7 @@ struct ChooseCampaignStruct {
 static void Play_Intro(bool sequenced=false);
 static void Init_Color_Remaps(void);
 static void Init_Heaps(void);
-static MFCD * Register_Mixfile(char const * name);
+static MFCD * Register_Mixfile(char const * name, PrefetchType how = PREFETCH_WHOLE);
 static bool Init_Expansion_Files(void);
 static bool Init_One_Time_Systems(void);
 static bool Init_Fonts(void);
@@ -2403,10 +2403,12 @@ static bool Init_Fonts(void)
 /// underneath them.
 /// </summary>
 /// <param name="name">The filename of the mixfile being registered.</param>
+/// <param name="how">How the engine is going to read this archive, which is what decides
+/// how much of it is fetched before it is asked for.</param>
 /// <returns>The registered mixfile.</returns>
-static MFCD * Register_Mixfile(char const * name)
+static MFCD * Register_Mixfile(char const * name, PrefetchType how)
 {
-	CDFileClass::Prefetch(name);
+	CDFileClass::Prefetch(name, how);
 
 	return(new MFCD(name, &FastKey));
 }
@@ -2723,15 +2725,20 @@ static bool Init_Secondary_Mixfiles(void)
 
 		strcpy(name, "MOVIES*.MIX");
 
+		/*
+		**	The only archives the engine streams rather than reads across. A film is played
+		**	from its own entry and the rest of the disc's video may never be opened, so these
+		**	are the registrations that say so and take no more than their directories.
+		*/
 		if (CDFileClass::Find_First_File(name) == true) {
 
 			DebugStringNoPrefix(" %s", name);
-			MoviesMix = Register_Mixfile(name);
+			MoviesMix = Register_Mixfile(name, PREFETCH_STREAMED);
 			assert(MoviesMix != NULL);
 
 			while (CDFileClass::Find_Next_File(name) == true) {
 				DebugStringNoPrefix(" %s", name);
-				mix = Register_Mixfile(name);
+				mix = Register_Mixfile(name, PREFETCH_STREAMED);
 				assert(mix != NULL);
 
 				if (mix != NULL) {

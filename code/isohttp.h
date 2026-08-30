@@ -52,6 +52,19 @@ enum {
 class ISOBlockIndexClass
 {
 	public:
+
+		/*
+		** What a block being offered to the store is worth, which is what decides whether it
+		** may push one already held out. A block the engine read is the working set: the
+		** next run reads it again, so it displaces the oldest of what is there. A block
+		** nobody has read is a guess that has not come good yet, and a guess is not worth
+		** anything already proved, so a full store declines it instead.
+		*/
+		enum AdmitType {
+			ADMIT_READ,
+			ADMIT_GUESS
+		};
+
 		ISOBlockIndexClass(void);
 
 		/// <summary>Builds the key that says which image a stored block belongs to.</summary>
@@ -85,23 +98,55 @@ class ISOBlockIndexClass
 		/// <param name="index">The block's number.</param>
 		/// <param name="size">The bytes it holds.</param>
 		/// <param name="evicted">Filled in with the blocks that must be deleted to make room.</param>
-		void Note(std::uint64_t index, std::uint64_t size, std::vector<std::uint64_t> & evicted);
+		/// <param name="how">Whether the block may displace one already held.</param>
+		void Note(std::uint64_t index, std::uint64_t size, std::vector<std::uint64_t> & evicted,
+			AdmitType how = ADMIT_READ);
+
+		/// <summary>Stops serving blocks a write turned out not to have stored.</summary>
+		/// <param name="indices">The blocks the refused batch was carrying.</param>
+		void Forget(std::vector<std::uint64_t> const & indices);
+
+		/// <summary>Sets how much of this image may be kept.</summary>
+		/// <param name="bytes">The ceiling, or zero to leave the one already set.</param>
+		/// <remarks>Whatever no longer fits is dropped from the index at once, so lowering
+		/// the ceiling is answered by the same eviction a full store is.</remarks>
+		void Cap(std::uint64_t bytes, std::vector<std::uint64_t> & evicted);
+
+		std::uint64_t Cap(void) const {return(Ceiling);}
 
 		std::uint64_t Bytes(void) const {return(Total);}
 		std::size_t Count(void) const {return(Order.size());}
 		std::string const & Key(void) const {return(Sig);}
 
 		/*
-		** How much of an image may be kept. The working set of a mission is a few tens of
-		** megabytes, so this holds one comfortably while staying far enough under an origin's
-		** quota that the store is not the reason a saved game will not fit.
+		** How much of an image may be kept when the browser will not say how much the origin
+		** is allowed. The working set of a mission is a few tens of megabytes, so this holds
+		** one comfortably while staying far enough under any plausible quota that the store
+		** is not the reason a saved game will not fit.
 		*/
 		static constexpr std::uint64_t STORE_LIMIT = 64ull * 1024ull * 1024ull;
 
+		/*
+		** And the most one may be given when it does say. A disc's data archives come to
+		** something over a hundred and fifty megabytes at the largest, so this holds a whole
+		** disc's worth with room to spare; past that the discs would be taking a share of a
+		** large quota that nothing about them earns.
+		*/
+		static constexpr std::uint64_t STORE_MAX = 256ull * 1024ull * 1024ull;
+
+		/*
+		** And what share of the origin's allowance one image may take. A set is a handful of
+		** discs, so an eighth apiece leaves the origin most of what it is allowed for saved
+		** games and for whatever else the page keeps -- which matters only where the quota
+		** is small, since the ceiling above is what binds on a machine with room.
+		*/
+		static constexpr double STORE_SHARE = 0.125;
+
 		// A key long enough for any URL a page will resolve, and a record long enough for the
-		// key and for the block list a full store holds.
+		// key and for the block list a full store holds: four thousand blocks fill the
+		// ceiling above and no entry describing one runs past twenty characters.
 		static constexpr std::size_t SIGNATURE_MAX = 512;
-		static constexpr std::size_t RECORD_MAX = 65536;
+		static constexpr std::size_t RECORD_MAX = 262144;
 
 	private:
 
@@ -112,6 +157,7 @@ class ISOBlockIndexClass
 
 		std::string Sig;
 		std::uint64_t Total;
+		std::uint64_t Ceiling;
 		std::vector<EntryType> Order;
 		std::unordered_set<std::uint64_t> Held;
 };
@@ -483,13 +529,23 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		enum StoreStateType {
 			STORE_UNTRIED,
 			STORE_READY,
+
+			/*
+			** Holding what it holds. The origin has refused a write, so nothing more is put
+			** there, but what is already there is still read back: a store that has run out
+			** of room is worth every block it managed to keep, and giving those up as well
+			** would make a full store slower than an empty one.
+			*/
+			STORE_FULL,
 			STORE_OFF
 		};
 
 		// Blocks staged before the batch is written. It bounds what an unwritten batch costs
-		// in memory, and bounds what a run that stops loses to a batch it never wrote.
+		// in memory, and bounds what a run that stops loses to a batch it never wrote. Each
+		// batch is one database transaction, and the guessing hands over far more than the
+		// reading does, so it is sized for that rather than for the reading alone.
 		enum {
-			STORE_BATCH = 16
+			STORE_BATCH = 32
 		};
 
 		// How long a partly filled batch waits for the loading to resume before it is
@@ -501,28 +557,32 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		** the runs the engine said it would probably want -- every archive it registers, and
 		** the handful of files it knows it is about to open -- and the budget is what those
 		** are allowed to cost.
+		**
+		** Nothing here decides how much of a run is worth taking. The engine says that when
+		** it names the run, because what an archive is for is the only thing that separates
+		** one read across a session from one seeked into once; see PrefetchType. The budget
+		** is the outer bound on being told wrong, and is the figure an image may keep, since
+		** guessing at more than can be kept spends a connection on bytes the next run would
+		** have to fetch again anyway.
 		*/
 		enum {
-			SOON_QUEUE = 24
+			SOON_QUEUE = 64
 		};
 
-		static constexpr std::uint64_t SOON_BUDGET = 40ull * 1024ull * 1024ull;
+		static constexpr std::uint64_t SOON_BUDGET = ISOBlockIndexClass::STORE_MAX;
 
-		/*
-		** And how much of one run is worth guessing at. An archive under the ceiling is
-		** queued whole, since the engine reads it as files scattered all over it and there
-		** is no run in that to read ahead of. One over it is not: a disc's worth of video is
-		** registered exactly like an archive of maps, and fetching it would spend the
-		** player's connection on a film they may never watch. What is taken from those is
-		** the head, which is where an archive keeps the directory the registration reads.
-		*/
-		static constexpr std::uint64_t SOON_MAX = 16ull * 1024ull * 1024ull;
-		static constexpr std::uint64_t SOON_HEAD = 2ull * 1024ull * 1024ull;
+		// How many runs of blocks the store does not hold one queued file may be cut into.
+		// A run interrupted part way through leaves holes, and asking for the holes rather
+		// than for the file around them is what keeps a second attempt from paying twice.
+		enum {
+			SOON_RUNS = 8
+		};
 
 		// And how many blocks of it are moved into the store per read. The copying is done
-		// inside a read, so it is held to what a read can afford to carry.
+		// inside a read, so it is held to what a read can afford to carry; a whole disc
+		// passing through this is what sets it rather than the handful a menu asks for.
 		enum {
-			SOON_KEEP = 4
+			SOON_KEEP = 16
 		};
 
 	/*
@@ -552,8 +612,10 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
-		void Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length);
+		void Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length,
+			ISOBlockIndexClass::AdmitType how);
 		void Store_Write(void);
+		void Store_Drop(std::vector<std::uint64_t> const & evicted);
 		void Store_Discard(void);
 
 		/// <summary>Writes any open image's batch that has been left sitting.</summary>
@@ -580,6 +642,11 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		StoreStateType StoreState;
 		unsigned int Staged;
 		double StagedAt;
+
+		// The blocks of the batch that has not been written yet. A write the origin refuses
+		// leaves none of them stored, so they are the ones the index has to let go of; what
+		// an earlier batch wrote is still there and is still served.
+		std::vector<std::uint64_t> Staging;
 
 };
 

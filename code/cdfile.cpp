@@ -386,9 +386,20 @@ void CDFileClass::Abandon(void)
 /// Nothing here fetches. The resolution is the whole of it: a name becomes the run of bytes
 /// it occupies on an image, and the image decides what that is worth. A file the engine
 /// already holds in memory, or that no search entry supplies, resolves to nothing.
+///
+/// A name the caller says will be streamed is cut back to its front. An archive keeps its
+/// directory there and the registration reads it the moment it opens the archive, so that
+/// much of one is worth having whatever the entries behind it come to.
 /// </remarks>
-void CDFileClass::Prefetch(char const * filename)
+void CDFileClass::Prefetch(char const * filename, PrefetchType how)
 {
+	/*
+	**	How much of a name counts as its front. A mixfile directory is twelve bytes an entry
+	**	behind a short header, so this covers one holding many thousands of them and the
+	**	first of the files it describes besides.
+	*/
+	static int const _head = 2 * 1024 * 1024;
+
 	if (filename == NULL || *filename == '\0') return;
 
 	/*
@@ -421,6 +432,10 @@ void CDFileClass::Prefetch(char const * filename)
 	} else {
 		start = 0;
 		length = -1;
+	}
+
+	if (how == PREFETCH_STREAMED && (length < 0 || length > _head)) {
+		length = _head;
 	}
 
 	CDFileClass locator;

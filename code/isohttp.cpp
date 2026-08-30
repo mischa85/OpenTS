@@ -230,6 +230,13 @@ EM_JS(int, ISO_Store_Under_Main, (void), {
 		state.usable = false;
 		state.given = false;
 
+		// Whether the origin has refused a write. Reads carry on: what is already there is
+		// worth serving whether or not another block will fit beside it.
+		state.full = false;
+
+		// What the origin says it may hold, once something has asked. Negative until then.
+		state.room = -1;
+
 		// One batch of staged blocks per image, since several are read at once and each
 		// writes its own batch.
 		state.staged = new Map();
@@ -332,6 +339,39 @@ EM_ASYNC_JS(int, ISO_Store_Open, (char const * slot, char * record, int size), {
 
 
 /*
+** What the origin says it is allowed to store, in bytes, or zero when it will not say.
+**
+** It is the allowance rather than what is left of it. The allowance is a property of the
+** machine and holds still; what is left of it moves as the store fills, and sizing the store
+** from a figure the store itself moves is how a cache ends up chasing its own tail. What
+** each image may take is a share of this, so several discs and whatever else the page keeps
+** all fit inside it -- see ISOBlockIndexClass::STORE_SHARE.
+**
+** A browser that has no estimate to give answers nothing at all, and the image falls back to
+** the fixed ceiling it used before any of this was asked.
+*/
+EM_ASYNC_JS(double, ISO_Store_Room, (void), {
+	var state = globalThis.__opentsIsoStore;
+	if (state === undefined || state === null) return 0;
+	if (state.room >= 0) return state.room;
+
+	state.room = 0;
+
+	try {
+		if (navigator.storage && typeof navigator.storage.estimate === "function") {
+			var estimate = await navigator.storage.estimate();
+
+			if (estimate && typeof estimate.quota === "number" && estimate.quota > 0) {
+				state.room = estimate.quota;
+			}
+		}
+	} catch (error) {}
+
+	return state.room;
+});
+
+
+/*
 ** Reads a span out of the store. The whole span is done in one transaction, so an extent
 ** the game reads in a single call costs one wait rather than one per block, and a block the
 ** current batch has staged but not yet written is served from the batch.
@@ -421,12 +461,20 @@ EM_JS(int, ISO_Store_Stage, (char const * slot, double index, void const * buffe
 
 /*
 ** Writes the batch, the evictions it forced and the record that describes the result, all in
-** the one transaction that makes them agree. Running out of quota is an ordinary outcome
-** here: the store is given up for the rest of the run and the run carries on off the network.
+** the one transaction that makes them agree.
+**
+** Running out of quota is an ordinary outcome here and is answered by writing no more. The
+** quota belongs to the origin rather than to any one image, so the refusal is remembered for
+** all of them; what none of them gives up is reading, because the blocks an earlier batch
+** managed to write are still there and are still worth every round trip they save.
 */
 EM_ASYNC_JS(int, ISO_Store_Write, (char const * slot, char const * record, char const * removals), {
 	var state = globalThis.__opentsIsoStore;
 	if (state === undefined || state === null || !state.usable || state.db === null) return 0;
+	if (state.full) {
+		state.staged.delete(UTF8ToString(slot));
+		return -1;
+	}
 
 	var key = UTF8ToString(slot);
 	var text = UTF8ToString(record);
@@ -464,13 +512,18 @@ EM_ASYNC_JS(int, ISO_Store_Write, (char const * slot, char const * record, char 
 	} catch (error) {
 		state.staged.delete(key);
 
+		if ((error && error.name) === "QuotaExceededError") {
+			state.full = true;
+			return -1;
+		}
+
 		/*
-		** The quota belongs to the origin rather than to any one image, so a store that has
-		** run out of it is given up for every image and for the rest of the run.
+		** Anything else is a database that has stopped answering, and there is no reading it
+		** either. That one is given up for every image and for the rest of the run.
 		*/
 		state.usable = false;
 		state.given = true;
-		return ((error && error.name) === "QuotaExceededError") ? -1 : 0;
+		return 0;
 	}
 });
 
@@ -525,9 +578,13 @@ EM_JS(void, ISO_Http_Ahead_Ready, (unsigned int blocksize), {
 		// for, and how much of it may be held unread, in milliseconds and bytes.
 		HOLD: 12 * 1024 * 1024,
 
-		// How many guesses may be outstanding for one image, so the guessing takes a share
-		// of the connections a page is allowed rather than all of them.
-		GUESSES: 3,
+		// How many guesses may be outstanding at once, over every image. A browser gives a
+		// page about six connections to one origin, and the reading has to be able to take
+		// one the moment it wants it: the transport a read blocks on is synchronous, so a
+		// read that finds them all busy is the engine stopped. Two leaves four for the
+		// reading -- the read itself and the window being refilled in front of it -- and is
+		// still two round trips of guessing overlapped, which is where its value is.
+		GUESSES: 2,
 
 		// The unit everything here is fetched, believed and stored in. Only a whole one of
 		// these may be stored or served, so it is what a part-delivered span is cut back to.
@@ -668,23 +725,37 @@ EM_JS(void, ISO_Http_Ahead_Ready, (unsigned int blocksize), {
 		** anything reads them or not.
 		**
 		** What is held down instead is how much of it there can be at once, so the guessing
-		** takes a share of the link rather than the whole of it.
+		** takes a share of the link rather than the whole of it. The share is counted over
+		** every image rather than image by image: a set is several discs, all of them are
+		** told what they will want, and a per-image count lets them come to more requests
+		** than the six a page is allowed -- at which point a read does queue behind a guess,
+		** which is the one thing the guessing is not permitted to cost.
 		*/
+		flying: function () {
+			var count = 0;
+
+			this.spans.forEach(function (list) {
+				for (var index = 0; index < list.length; index++) {
+					if (list[index].idle && !list[index].done) count++;
+				}
+			});
+
+			return count;
+		},
+
 		drain: function () {
 			var pool = this;
+			var flying = pool.flying();
 
 			this.plans.forEach(function (plan, key) {
 				if (plan.ranges.length === 0) return;
 
 				var list = pool.spans.get(key) || [];
-				var flying = 0;
 				var held = 0;
 
 				for (var index = 0; index < list.length; index++) {
-					if (!list[index].idle) continue;
-
-					if (!list[index].done) flying++;
-					else held += list[index].filled - list[index].used;
+					if (!list[index].idle || !list[index].done) continue;
+					held += list[index].filled - list[index].used;
 				}
 
 				if (held >= pool.HOLD) return;
@@ -941,6 +1012,35 @@ EM_JS(double, ISO_Http_Idle_Take, (char const * url, void * buffer, unsigned int
 
 
 /*
+** Gives up everything one image was told it would want. The queue goes and so do the spans
+** that arrived on it and nothing read, which are bytes that have no home left: this is
+** called when the store stops taking them, and a guess that cannot be banked is one the run
+** has no way of ever being paid back for. Holding them would keep the pool at its limit for
+** the rest of the run, which is what stops it fetching anything a run does want.
+*/
+EM_JS(double, ISO_Http_Idle_Cancel, (char const * url), {
+	var pool = globalThis.__opentsIsoAhead;
+	if (pool === undefined) return 0;
+
+	var key = UTF8ToString(url);
+
+	pool.plans.delete(key);
+
+	var list = pool.spans.get(key);
+	if (!list) return 0;
+
+	var wasted = 0;
+
+	for (var index = list.length - 1; index >= 0; index--) {
+		if (!list[index].idle) continue;
+		wasted += pool.drop(key, list[index]);
+	}
+
+	return wasted;
+});
+
+
+/*
 ** How many bytes the drainer has asked for since the last time it was asked, so what a
 ** guess costs is counted where every other request to an image is counted. The drainer runs
 ** on a timer of its own and cannot reach the counting itself.
@@ -1118,7 +1218,8 @@ static char const ISO_STORE_MAGIC[] = "opents-iso-1";
 
 
 ISOBlockIndexClass::ISOBlockIndexClass(void) :
-	Total(0)
+	Total(0),
+	Ceiling(STORE_LIMIT)
 {
 }
 
@@ -1276,21 +1377,32 @@ std::string ISOBlockIndexClass::Encode(void) const
 /// stored is the set wanted and the order barely matters; what does matter is that the
 /// eviction is decided here rather than by the database, so the record and the blocks it
 /// describes are written together and cannot disagree.
+///
+/// A block nobody has read displaces nothing. The guessing offers far more than the reading
+/// does and offers it in one long pass, so letting it evict would leave a full store holding
+/// whichever part of a disc the pass finished on rather than the part the game turned out to
+/// read. Declining costs the block and nothing else: it was fetched either way.
 /// </remarks>
-void ISOBlockIndexClass::Note(std::uint64_t index, std::uint64_t size, std::vector<std::uint64_t> & evicted)
+void ISOBlockIndexClass::Note(std::uint64_t index, std::uint64_t size,
+	std::vector<std::uint64_t> & evicted, AdmitType how)
 {
 	if (size == 0 || Held.count(index) != 0) return;
+	if (size > Ceiling) return;
 
-	while (!Order.empty() && Total + size > STORE_LIMIT) {
-		EntryType const oldest = Order.front();
+	if (how == ADMIT_GUESS) {
+		if (Total + size > Ceiling) return;
+	} else {
+		while (!Order.empty() && Total + size > Ceiling) {
+			EntryType const oldest = Order.front();
 
-		Order.erase(Order.begin());
-		Held.erase(oldest.Index);
-		Total -= oldest.Size;
-		evicted.push_back(oldest.Index);
+			Order.erase(Order.begin());
+			Held.erase(oldest.Index);
+			Total -= oldest.Size;
+			evicted.push_back(oldest.Index);
+		}
+
+		if (Total + size > Ceiling) return;
 	}
-
-	if (Total + size > STORE_LIMIT) return;
 
 	EntryType entry;
 	entry.Index = index;
@@ -1298,6 +1410,41 @@ void ISOBlockIndexClass::Note(std::uint64_t index, std::uint64_t size, std::vect
 	Order.push_back(entry);
 	Held.insert(index);
 	Total += size;
+}
+
+
+/// <summary>Stops serving blocks a write turned out not to have stored.</summary>
+void ISOBlockIndexClass::Forget(std::vector<std::uint64_t> const & indices)
+{
+	for (std::uint64_t index : indices) {
+		if (Held.erase(index) == 0) continue;
+
+		for (std::size_t position = 0; position < Order.size(); position++) {
+			if (Order[position].Index != index) continue;
+
+			Total -= Order[position].Size;
+			Order.erase(Order.begin() + (std::ptrdiff_t)position);
+			break;
+		}
+	}
+}
+
+
+/// <summary>Sets how much of this image may be kept.</summary>
+void ISOBlockIndexClass::Cap(std::uint64_t bytes, std::vector<std::uint64_t> & evicted)
+{
+	if (bytes == 0) return;
+
+	Ceiling = bytes;
+
+	while (!Order.empty() && Total > Ceiling) {
+		EntryType const oldest = Order.front();
+
+		Order.erase(Order.begin());
+		Held.erase(oldest.Index);
+		Total -= oldest.Size;
+		evicted.push_back(oldest.Index);
+	}
 }
 
 
@@ -1915,8 +2062,9 @@ EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Unique_Blocks(void)
 }
 
 /*
-** 0 the store was never reached, 1 it is serving, 2 it was given up. A run that reports 0
-** with the scaffold built in never got as far as a read underneath main.
+** 0 the store was never reached, 1 it is serving, 2 it was given up, 3 it is serving what it
+** has and taking nothing more, because the origin refused a write. A run that reports 0 with
+** the scaffold built in never got as far as a read underneath main.
 */
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_State(void) {return(_StoreState);}
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Store_Hits(void) {return(_StoreHits);}
@@ -2293,10 +2441,17 @@ void ISOHttpSourceClass::Hint(ISOHintType kind, std::uint64_t offset, std::uint6
 
 /// <summary>Queues a run the engine says it will probably want before long.</summary>
 /// <remarks>
-/// Blocks the store already holds are stepped over, since fetching them again would cost
-/// the connection and save nothing. What is left is queued whole rather than in pieces: it
-/// is one file, the drainer cuts it into requests itself, and cutting it here would put the
-/// holes back in the wrong place.
+/// How much of the run is worth having is settled before it gets here: the engine says what
+/// it is going to do with the name and the file layer turns that into the bytes, so nothing
+/// here weighs one run against another by size. What this decides is only which of those
+/// bytes still have to be fetched.
+///
+/// Blocks the store already holds are stepped over, since fetching them again would cost the
+/// connection and save nothing. A run the store holds in patches is queued as the patches
+/// that are missing rather than as the whole of it, which is what makes an interrupted first
+/// launch cost the second one only the part it never got. The number of patches is bounded,
+/// so a badly holed run is asked for as a few spans covering some blocks already held rather
+/// than as a hundred requests.
 /// </remarks>
 void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 {
@@ -2305,39 +2460,59 @@ void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 	if (Queued >= SOON_BUDGET) return;
 
 	/*
-	**	A run too large to guess at whole is taken at its head instead of being refused.
-	**	Every archive the engine registers arrives here, and the ones that are too large to
-	**	fetch are still archives: their directory is at the front of them and is read the
-	**	moment the registration opens them, so that much of it is worth having whatever the
-	**	rest of it costs.
+	**	Nothing is guessed at that cannot be kept. A guess pays for itself in the store and
+	**	nowhere else -- the pool holds only a few of them and lets go of the rest -- so with
+	**	no store to bank it in the guessing is bandwidth taken off the reading for nothing.
 	*/
-	if (length > SOON_MAX) length = SOON_HEAD;
+	if (!Store_Ready() || StoreState != STORE_READY) return;
 
-	std::uint64_t first = offset / (std::uint64_t)BLOCK_SIZE;
+	std::uint64_t const first = offset / (std::uint64_t)BLOCK_SIZE;
 	std::uint64_t const stop = (offset + length + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE;
-
-	while (first < stop && Index.Holds(first)) first++;
-	if (first >= stop) return;
-
-	std::uint64_t at = first * (std::uint64_t)BLOCK_SIZE;
-	std::uint64_t bytes = (stop - first) * (std::uint64_t)BLOCK_SIZE;
-
-	if (at + bytes > Length) bytes = Length - at;
-	if (bytes == 0) return;
-
-	if (Queued + bytes > SOON_BUDGET) bytes = SOON_BUDGET - Queued;
 
 	ISO_Http_Ahead_Ready((unsigned int)BLOCK_SIZE);
 
-	/*
-	**	One round trip's worth of bytes per request. Asking for less spends more trips than
-	**	the bytes are worth; asking for more leaves a larger request to abandon when the
-	**	reading resumes, and abandoning it is what keeps a guess out of a run's way.
-	*/
-	double const queued = ISO_Http_Idle_Add(Url.c_str(), (double)at, (double)bytes,
-		(double)Link.Reach(), (int)SOON_QUEUE);
+	std::uint64_t cursor = first;
+	unsigned int runs = 0;
 
-	if (queued > 0.0) Queued += (std::uint64_t)queued;
+	while (cursor < stop && runs < (unsigned int)SOON_RUNS && Queued < SOON_BUDGET) {
+
+		while (cursor < stop && Index.Holds(cursor)) cursor++;
+		if (cursor >= stop) break;
+
+		std::uint64_t edge = cursor;
+
+		while (edge < stop && !Index.Holds(edge)) edge++;
+
+		/*
+		**	The last patch runs to the end of the file rather than stopping where the store
+		**	next holds a block. Cutting the tail into every one of its holes would spend more
+		**	round trips than the blocks between them are worth, and the ones already held are
+		**	stepped over again when the batch is staged.
+		*/
+		if (runs + 1 == (unsigned int)SOON_RUNS) edge = stop;
+
+		std::uint64_t const at = cursor * (std::uint64_t)BLOCK_SIZE;
+		std::uint64_t bytes = (edge - cursor) * (std::uint64_t)BLOCK_SIZE;
+
+		if (at + bytes > Length) bytes = Length - at;
+		if (bytes == 0) break;
+
+		if (Queued + bytes > SOON_BUDGET) bytes = SOON_BUDGET - Queued;
+
+		/*
+		**	One round trip's worth of bytes per request. Asking for less spends more trips
+		**	than the bytes are worth; asking for more leaves a larger request to abandon when
+		**	the reading resumes, and abandoning it is what keeps a guess out of a run's way.
+		*/
+		double const queued = ISO_Http_Idle_Add(Url.c_str(), (double)at, (double)bytes,
+			(double)Link.Reach(), (int)SOON_QUEUE);
+
+		if (queued == 0.0) break;
+
+		Queued += (std::uint64_t)queued;
+		cursor = edge;
+		runs++;
+	}
 #else
 	(void)offset;
 	(void)length;
@@ -2359,7 +2534,20 @@ void ISOHttpSourceClass::Soon(std::uint64_t offset, std::uint64_t length)
 void ISOHttpSourceClass::Soon_Keep(void)
 {
 #if defined(OPENTS_WASM_JSPI)
-	if (!Store_Ready()) return;
+	if (!Store_Ready() || StoreState != STORE_READY) {
+
+		/*
+		**	A store that has stopped taking blocks leaves the guessing nowhere to put them,
+		**	so what was queued is given up rather than left holding the pool shut.
+		*/
+		if (StoreState == STORE_FULL || StoreState == STORE_OFF) {
+			double const wasted = ISO_Http_Idle_Cancel(Url.c_str());
+
+			if (wasted > 0.0) _AheadWaste += (std::uint64_t)wasted;
+		}
+
+		return;
+	}
 
 	static std::vector<unsigned char> harvest((std::size_t)BLOCK_SIZE * (std::size_t)SOON_KEEP);
 
@@ -2369,7 +2557,8 @@ void ISOHttpSourceClass::Soon_Keep(void)
 
 	if (!(taken > 0.0)) return;
 
-	Store_Keep((std::uint64_t)at, harvest.data(), (unsigned int)taken);
+	Store_Keep((std::uint64_t)at, harvest.data(), (unsigned int)taken,
+		ISOBlockIndexClass::ADMIT_GUESS);
 #endif
 }
 
@@ -2401,14 +2590,24 @@ void ISOHttpSourceClass::Ahead_Drop(std::uint64_t first, std::uint64_t stop)
 */
 
 /// <summary>Is the store open and serving this image?</summary>
-/// <remarks>The first call that finds a wait legal opens the database and reads the record
-/// describing what it holds. A record written for another image is not evidence about this
-/// one, so the blocks it describes are cleared rather than trusted; nothing else in the
-/// engine can tell the difference between a stale sector and a real one.</remarks>
+/// <remarks>
+/// The first call that finds a wait legal opens the database and reads the record describing
+/// what it holds. A record written for another image is not evidence about this one, so the
+/// blocks it describes are cleared rather than trusted; nothing else in the engine can tell
+/// the difference between a stale sector and a real one.
+///
+/// It is also where the image learns how much it may keep. The figure comes from what the
+/// origin says it is allowed rather than from a constant, because the constant has to be
+/// small enough for the smallest quota a browser might offer and that is far smaller than
+/// what a machine with room will hold. A browser that will not say leaves the constant in
+/// place. A record describing more than the ceiling now allows is cut down to it here, so a
+/// run that starts with a smaller allowance than the one before it lets go of the difference
+/// rather than carrying a store it is no longer allowed.
+/// </remarks>
 bool ISOHttpSourceClass::Store_Ready(void)
 {
 #if defined(OPENTS_WASM_JSPI)
-	if (StoreState == STORE_READY) return(true);
+	if (StoreState == STORE_READY || StoreState == STORE_FULL) return(true);
 	if (StoreState == STORE_OFF) return(false);
 
 	if (Signature.empty() || Slot.empty() || ISO_Store_Wanted() == 0) {
@@ -2428,22 +2627,60 @@ bool ISOHttpSourceClass::Store_Ready(void)
 		return(false);
 	}
 
+	double const room = ISO_Store_Room();
+	std::uint64_t ceiling = ISOBlockIndexClass::STORE_LIMIT;
+
+	if (room > 0.0) {
+		double const share = room * ISOBlockIndexClass::STORE_SHARE;
+
+		ceiling = (share >= (double)ISOBlockIndexClass::STORE_MAX)
+			? ISOBlockIndexClass::STORE_MAX : (std::uint64_t)share;
+	}
+
+	std::vector<std::uint64_t> evicted;
+
 	if (!Index.Adopt(record.data(), Signature)) {
 		_StoreDiscarded++;
+		Index.Cap(ceiling, evicted);
 
 		if (ISO_Store_Write(Slot.c_str(), Index.Encode().c_str(), "*") != 1) {
 			StoreState = STORE_OFF;
 			_StoreState = 2;
 			return(false);
 		}
+
+		StoreState = STORE_READY;
+		_StoreState = 1;
+		return(true);
 	}
+
+	Index.Cap(ceiling, evicted);
 
 	StoreState = STORE_READY;
 	_StoreState = 1;
-	return(true);
+
+	if (!evicted.empty()) {
+		Store_Drop(evicted);
+		Store_Write();
+	}
+
+	return(StoreState != STORE_OFF);
 #else
 	return(false);
 #endif
+}
+
+
+/// <summary>Notes blocks the index has let go of, so the batch deletes them.</summary>
+void ISOHttpSourceClass::Store_Drop(std::vector<std::uint64_t> const & evicted)
+{
+	char key[32];
+
+	for (std::uint64_t gone : evicted) {
+		std::snprintf(key, sizeof(key), "%s%llu", Removals.empty() ? "" : ",",
+			(unsigned long long)gone);
+		Removals += key;
+	}
 }
 
 
@@ -2490,10 +2727,11 @@ bool ISOHttpSourceClass::Store_Serve(std::uint64_t offset, void * buffer, unsign
 /// <remarks>Only a block the span covers entirely is stored, so what the store holds is
 /// always a whole block; the partial blocks at the ends of a span are covered by the window
 /// the read path puts them through.</remarks>
-void ISOHttpSourceClass::Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length)
+void ISOHttpSourceClass::Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length,
+	ISOBlockIndexClass::AdmitType how)
 {
 #if defined(OPENTS_WASM_JSPI)
-	if (!Store_Ready()) return;
+	if (!Store_Ready() || StoreState != STORE_READY) return;
 
 	std::uint64_t const stop = offset + length;
 	std::uint64_t index = (offset + (std::uint64_t)BLOCK_SIZE - 1) / (std::uint64_t)BLOCK_SIZE;
@@ -2506,19 +2744,23 @@ void ISOHttpSourceClass::Store_Keep(std::uint64_t offset, void const * buffer, u
 		if (size > (std::uint64_t)BLOCK_SIZE) size = (std::uint64_t)BLOCK_SIZE;
 		if (at + size > stop) break;
 
-		if (!Index.Holds(index)) {
+		/*
+		**	A block the index will not take is not staged. The record is what says a block
+		**	may be served, so one written without an entry describing it is bytes the origin
+		**	is charged for and nothing ever reads back.
+		*/
+		bool const room = (how != ISOBlockIndexClass::ADMIT_GUESS) ||
+			(Index.Bytes() + size <= Index.Cap());
+
+		if (!Index.Holds(index) && room) {
 			if (ISO_Store_Stage(Slot.c_str(), (double)index, (unsigned char const *)buffer + (at - offset),
 					(unsigned int)size) == 1) {
 
 				std::vector<std::uint64_t> evicted;
-				Index.Note(index, size, evicted);
 
-				char key[32];
-				for (std::uint64_t gone : evicted) {
-					std::snprintf(key, sizeof(key), "%s%llu", Removals.empty() ? "" : ",",
-						(unsigned long long)gone);
-					Removals += key;
-				}
+				Index.Note(index, size, evicted, how);
+				Store_Drop(evicted);
+				Staging.push_back(index);
 
 				Staged++;
 				StagedAt = emscripten_get_now();
@@ -2535,6 +2777,13 @@ void ISOHttpSourceClass::Store_Keep(std::uint64_t offset, void const * buffer, u
 
 
 /// <summary>Writes the staged batch, its evictions and the record, in one transaction.</summary>
+/// <remarks>
+/// A refused write is told apart from a broken one. The origin refusing another block leaves
+/// everything an earlier batch wrote exactly where it was, so only the blocks of this batch
+/// are given up and the image goes on serving the rest; nothing more is offered to the store
+/// for the rest of the run. A database that has stopped answering says nothing about what it
+/// still holds, so that one is given up whole and the image is read off the server.
+/// </remarks>
 void ISOHttpSourceClass::Store_Write(void)
 {
 #if defined(OPENTS_WASM_JSPI)
@@ -2546,17 +2795,23 @@ void ISOHttpSourceClass::Store_Write(void)
 	Staged = 0;
 	Removals.clear();
 
-	if (written != 1) {
-
-		/*
-		**	Out of quota, or a database that has stopped answering. Neither is the run's
-		**	problem: the store is given up, the index with it, and the image goes on being
-		**	read off the server.
-		*/
-		Index.Reset(Signature);
-		StoreState = STORE_OFF;
-		_StoreState = 2;
+	if (written == 1) {
+		Staging.clear();
+		return;
 	}
+
+	if (written < 0) {
+		Index.Forget(Staging);
+		Staging.clear();
+		StoreState = STORE_FULL;
+		_StoreState = 3;
+		return;
+	}
+
+	Index.Reset(Signature);
+	Staging.clear();
+	StoreState = STORE_OFF;
+	_StoreState = 2;
 #endif
 }
 
@@ -2580,6 +2835,7 @@ void ISOHttpSourceClass::Store_Discard(void)
 	ISO_Store_Forget(Slot.c_str());
 	Staged = 0;
 	Removals.clear();
+	Staging.clear();
 #endif
 }
 
@@ -2646,7 +2902,7 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	**	only add a wait to bytes that are on the heap.
 	*/
 	if (Ahead_Serve(offset, buffer, length)) {
-		Store_Keep(offset, buffer, length);
+		Store_Keep(offset, buffer, length, ISOBlockIndexClass::ADMIT_READ);
 		Look_Ahead();
 		return(true);
 	}
@@ -2670,7 +2926,7 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 
 	if (!Transfer(offset, buffer, length)) return(false);
 
-	Store_Keep(offset, buffer, length);
+	Store_Keep(offset, buffer, length, ISOBlockIndexClass::ADMIT_READ);
 	return(true);
 }
 

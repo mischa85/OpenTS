@@ -540,6 +540,80 @@ void Check_Block_Index(void)
 	Check(evicted.size() == 1 && evicted[0] == 0, "and the next block evicts the oldest one");
 	Check(!bounded.Holds(0) && bounded.Holds(blocks), "which stops being served and is replaced");
 	Check(bounded.Bytes() == ISOBlockIndexClass::STORE_LIMIT, "leaving the store no larger than the cap");
+
+	/*
+	**	A block nobody has read displaces nothing. The guessing offers a whole disc in one
+	**	pass, so letting it evict would leave a full store holding wherever the pass finished
+	**	rather than what the game read.
+	*/
+	evicted.clear();
+	bounded.Note(blocks + 1, 65536, evicted, ISOBlockIndexClass::ADMIT_GUESS);
+
+	Check(evicted.empty() && !bounded.Holds(blocks + 1), "a full store declines a block nobody read");
+	Check(bounded.Holds(1), "rather than dropping one it is already holding");
+
+	evicted.clear();
+	bounded.Note(blocks + 2, 65536, evicted, ISOBlockIndexClass::ADMIT_READ);
+
+	Check(evicted.size() == 1 && evicted[0] == 1 && bounded.Holds(blocks + 2),
+		"while a block the engine read still displaces the oldest");
+
+	/*
+	**	The cap is a runtime figure, since what a browser will hold is not a constant. Set
+	**	lower than what is held, it evicts down to itself; a store that fits underneath the
+	**	new figure loses nothing.
+	*/
+	evicted.clear();
+	bounded.Cap(16 * 65536, evicted);
+
+	Check(bounded.Cap() == 16 * 65536 && bounded.Count() == 16,
+		"lowering the cap evicts down to it");
+	Check(evicted.size() == (std::size_t)blocks - 16, "and names every block that has to go");
+	Check(bounded.Holds(blocks + 2), "keeping the newest of them");
+
+	evicted.clear();
+	bounded.Cap(0, evicted);
+	Check(bounded.Cap() == 16 * 65536 && evicted.empty(), "a cap of nothing leaves the one that is set");
+
+	/*
+	**	And a write the origin refuses. The blocks of that batch were never stored, so the
+	**	index has to stop offering them; everything an earlier batch wrote stays.
+	*/
+	std::vector<std::uint64_t> const refused = {blocks + 2, blocks - 1, 999999};
+
+	bounded.Forget(refused);
+
+	Check(!bounded.Holds(blocks + 2) && !bounded.Holds(blocks - 1),
+		"a refused batch stops being served");
+	Check(bounded.Count() == 14 && bounded.Bytes() == 14 * 65536,
+		"and is taken off what the store is holding");
+
+	/*
+	**	The record has to survive the largest store the ceiling allows, because a record that
+	**	does not fit the buffer it is read back through is a store thrown away whole.
+	*/
+	ISOBlockIndexClass full;
+	std::uint64_t const most = ISOBlockIndexClass::STORE_MAX / 65536;
+
+	full.Reset(key);
+	full.Cap(ISOBlockIndexClass::STORE_MAX, evicted);
+
+	for (std::uint64_t index_number = 0; index_number < most; index_number++) {
+		evicted.clear();
+		full.Note(index_number, 65536, evicted);
+	}
+
+	std::string const large = full.Encode();
+
+	Check(full.Count() == (std::size_t)most && evicted.empty(),
+		"an image may fill the largest store the ceiling allows");
+	Check(large.size() < ISOBlockIndexClass::RECORD_MAX,
+		"and the record describing it fits what reads it back");
+
+	ISOBlockIndexClass reread;
+
+	Check(reread.Adopt(large.c_str(), key) && reread.Count() == (std::size_t)most
+		&& reread.Bytes() == full.Bytes(), "so the next run takes the whole of it on");
 }
 
 
