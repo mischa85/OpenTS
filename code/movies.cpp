@@ -28,6 +28,15 @@ DynamicVectorClass<char const *> Movies;
 VQHandle *CurrentVQ = NULL;
 int MovieInt1 = 0;
 
+/*
+** How many movies are holding one of the engine's drawing surfaces. A handle keeps the
+** surface it was created on from Movie_Create until Movie_Destroy -- across a whole full
+** screen movie, and between the frames the radar and the mission screen step their movies
+** along -- so anything that would replace those surfaces has to wait for this to fall to
+** zero. Movie_Is_Playing answers a narrower question: whether a movie has the screen now.
+*/
+static int _LiveMovies = 0;
+
 
 /// <summary>
 /// Locks the drawing surface for the movie player.
@@ -174,6 +183,7 @@ VQHandle * Movie_Create(char const * name, Surface * surface, Rect rect1, Rect r
 		handle->DrawSurface = surface;
 		handle->VQA->Set_Draw_Buffer(NULL, surface->Stride() / surface->Bytes_Per_Pixel(), surface->Get_Height());
 		handle->IsInitialized = true;
+		_LiveMovies++;
 		return(handle);
 	}
 	return(NULL);
@@ -192,9 +202,20 @@ void Movie_Destroy(VQHandle * handle)
 			handle->VQA->Close_And_Free_VQA();
 			delete handle->VQA;
 			handle->VQA = NULL;
+			_LiveMovies--;
 		}
 		handle->IsInitialized = false;
 	}
+}
+
+
+/// <summary>
+/// Is any movie holding one of the engine's drawing surfaces?
+/// </summary>
+/// <returns>bool; Would replacing the drawing surfaces pull one out from under a movie?</returns>
+bool Movie_Holds_A_Surface(void)
+{
+	return(_LiveMovies > 0);
 }
 
 

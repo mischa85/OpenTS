@@ -15,6 +15,7 @@
 
 #include "video.h"
 
+#include "_rect.h"
 #include "_surface.h"
 #include "bgfxbackend.h"
 #include "browser.h"
@@ -22,9 +23,12 @@
 #include "dsurface.h"
 #include "globals.h"
 #include "goptions.h"
+#include "mainopt.h"
 #include "misc.h"
+#include "movies.h"
 #include "surface.h"
 #include "wincursor.h"
+#include "windlg.h"
 
 #include <cstdlib>
 
@@ -64,6 +68,33 @@ static bool _Presenting = false;
 // whatever the engine does, and the engine reaches its present hook many times between
 // two of them, so this is what a refresh rate stands in for here.
 static unsigned int _LastPresentSerial = ~0u;
+
+/*
+ * The frame the canvas has asked for but the engine has not taken yet, and when it was
+ * asked for. Dragging a window edge asks once per animation frame; taking each of those
+ * would throw away and rebuild every drawing surface sixty times a second, so the request
+ * has to stop moving first.
+ */
+static int _RequestedWidth = 0;
+static int _RequestedHeight = 0;
+static unsigned int _RequestedAt = 0;
+static bool _ChangingMode = false;
+
+/*
+ * Is the frame the window's own size, or a resolution the player chose that the presenter
+ * scales into the window? The page decides which the game starts on, and picking a
+ * resolution out of the display options moves it: choosing the size the window already is
+ * asks for the frame to keep following it, and choosing any other size pins it.
+ */
+static bool _FollowWindow = false;
+
+// How long the canvas has to hold still before the frame is resized to match it.
+static const unsigned int RESIZE_SETTLE_TIME = 250;
+
+// The bounds the frame is kept within. Below the lower pair the sidebar and the tab bar no
+// longer fit; above VIDEO_FOLLOW_MAX the window is filled by scaling instead.
+static const int FRAME_MIN_WIDTH = 640;
+static const int FRAME_MIN_HEIGHT = 400;
 #endif
 
 
@@ -165,6 +196,154 @@ static void Update_Scale_Info(void)
 }
 
 
+#if defined(__EMSCRIPTEN__)
+
+/// <summary>
+/// Brings a size the page asked for into a frame the engine can render.
+/// </summary>
+/// <remarks>
+/// The dimensions are taken down to a multiple of four so that no surface in the engine is
+/// handed an awkward stride. What that trims is at most three pixels, which the presenter
+/// then fills with the same black it puts beside a frame of a different shape.
+/// </remarks>
+void Video_Clamp_Frame_Size(int & width, int & height)
+{
+	if (width > VIDEO_FOLLOW_MAX_WIDTH) width = VIDEO_FOLLOW_MAX_WIDTH;
+	if (height > VIDEO_FOLLOW_MAX_HEIGHT) height = VIDEO_FOLLOW_MAX_HEIGHT;
+
+	width &= ~3;
+	height &= ~3;
+
+	if (width < FRAME_MIN_WIDTH) width = FRAME_MIN_WIDTH;
+	if (height < FRAME_MIN_HEIGHT) height = FRAME_MIN_HEIGHT;
+}
+
+
+/// <summary>
+/// Can every drawing surface in the engine be destroyed and rebuilt at this moment?
+/// </summary>
+/// <remarks>
+/// A dialog was drawn against the size it came up at and nothing repaints it from
+/// underneath, a scenario part way through loading is filling surfaces that are about to be
+/// replaced, and a movie holds the surface it draws into until it is torn down.
+/// </remarks>
+static bool Mode_Change_Is_Safe(void)
+{
+	if (!_Initialized || _Presenting || _ChangingMode) {
+		return(false);
+	}
+
+	if (VisibleSurface == NULL || HiddenSurface == NULL) {
+		return(false);
+	}
+
+	if (ScenarioInit != 0) {
+		return(false);
+	}
+
+	// A movie keeps the surface it was created on for as long as it lives, and pulling that
+	// surface out from under it traps in the player's own lock callback.
+	if (Movie_Holds_A_Surface()) {
+		return(false);
+	}
+
+	// The main menu, the options dialogs and the message boxes are all dialogs, and each
+	// keeps a background it drew at the old size. Nothing redraws them from underneath, so
+	// the frame stays as it is until the last of them has gone.
+	if (WS_Top_Window() != NULL) {
+		return(false);
+	}
+
+	return(true);
+}
+
+
+/// <summary>
+/// Records the frame size the canvas is asking the engine to render at.
+/// </summary>
+/// <param name="width">The canvas width, in CSS pixels.</param>
+/// <param name="height">The canvas height, in CSS pixels.</param>
+void Video_Request_Frame_Size(int width, int height)
+{
+	if (!_FollowWindow || width <= 0 || height <= 0) {
+		return;
+	}
+
+	Video_Clamp_Frame_Size(width, height);
+
+	if (width == VideoModeWidth && height == VideoModeHeight) {
+		_RequestedWidth = 0;
+		_RequestedHeight = 0;
+		return;
+	}
+
+	_RequestedWidth = width;
+	_RequestedHeight = height;
+
+	// Restarted on every report, so a drag is one mode change at the end rather than one
+	// per animation frame along the way.
+	_RequestedAt = timeGetTime();
+}
+
+
+/// <summary>
+/// Resizes the frame to the canvas if one has been asked for and the engine can take it.
+/// </summary>
+void Video_Service_Display(void)
+{
+	/*
+	 * A scenario sizes its own surfaces from the options rather than from the presenter, and
+	 * the settings are read again well after the frame was first matched to the canvas. So
+	 * while the window is the resolution, it is also what the options say the resolution is.
+	 */
+	if (_FollowWindow && VideoModeWidth > 0 && VideoModeHeight > 0) {
+		Options.ScreenWidth = VideoModeWidth;
+		Options.ScreenHeight = VideoModeHeight;
+	}
+
+	if (_RequestedWidth <= 0 || _RequestedHeight <= 0) {
+		return;
+	}
+
+	if (_RequestedWidth == VideoModeWidth && _RequestedHeight == VideoModeHeight) {
+		_RequestedWidth = 0;
+		_RequestedHeight = 0;
+		return;
+	}
+
+	if ((timeGetTime() - _RequestedAt) < RESIZE_SETTLE_TIME) {
+		return;
+	}
+
+	if (!Mode_Change_Is_Safe()) {
+		return;
+	}
+
+	int width = _RequestedWidth;
+	int height = _RequestedHeight;
+
+	_RequestedWidth = 0;
+	_RequestedHeight = 0;
+
+	int oldwidth = Options.ScreenWidth;
+	int oldheight = Options.ScreenHeight;
+
+	Options.ScreenWidth = width;
+	Options.ScreenHeight = height;
+
+	_ChangingMode = true;
+	bool changed = Change_Display_Mode(width, height);
+	_ChangingMode = false;
+
+	if (!changed) {
+		Options.ScreenWidth = oldwidth;
+		Options.ScreenHeight = oldheight;
+	}
+}
+
+#endif	// __EMSCRIPTEN__
+
+
 /// <summary>
 /// Converts the configured filter into the one the renderer names.
 /// </summary>
@@ -210,6 +389,33 @@ bool Video_Init(HWND window)
 
 	if (client.right <= 0 || client.bottom <= 0) {
 		return(false);
+	}
+
+	/*
+	 * The game starts at the size the page laid the canvas out at rather than at whatever
+	 * resolution the settings last held, because on a page the window is the one thing the
+	 * player did choose. "?display=WIDTHxHEIGHT" overrides that with a fixed frame, and
+	 * "?display=scaled" leaves the configured resolution alone.
+	 */
+	int startwidth = 0;
+	int startheight = 0;
+
+	if (Browser_Display_Width() > 0 && Browser_Display_Height() > 0) {
+		startwidth = Browser_Display_Width();
+		startheight = Browser_Display_Height();
+	} else if (Browser_Display_Policy() == BROWSER_DISPLAY_NATIVE) {
+		startwidth = Browser_Canvas_CSS_Width();
+		startheight = Browser_Canvas_CSS_Height();
+		_FollowWindow = true;
+	}
+
+	if (startwidth > 0 && startheight > 0) {
+		Video_Clamp_Frame_Size(startwidth, startheight);
+		VideoModeWidth = startwidth;
+		VideoModeHeight = startheight;
+		Options.ScreenWidth = startwidth;
+		Options.ScreenHeight = startheight;
+		VisibleRect = Rect(0, 0, startwidth, startheight);
 	}
 #else
 	if (window == NULL || !GetClientRect(window, &client)) {
@@ -284,6 +490,25 @@ bool Video_Set_Mode(int width, int height)
 		return(false);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A resolution the player chose out of the display options settles whether the frame
+	 * goes on following the window. The size the window already is means yes, since that
+	 * entry in the list is the window; any other size is a resolution the player wants kept
+	 * whatever the window then does.
+	 */
+	if (!_ChangingMode) {
+		int canvaswidth = Browser_Canvas_CSS_Width();
+		int canvasheight = Browser_Canvas_CSS_Height();
+
+		Video_Clamp_Frame_Size(canvaswidth, canvasheight);
+		_FollowWindow = (width == canvaswidth && height == canvasheight);
+
+		_RequestedWidth = 0;
+		_RequestedHeight = 0;
+	}
+#endif
+
 	VideoModeWidth = width;
 	VideoModeHeight = height;
 
@@ -303,6 +528,19 @@ void Video_On_Resize(int width, int height)
 	if (!_Initialized || width <= 0 || height <= 0) {
 		return;
 	}
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The frame is presented onto the canvas, never onto the window the engine believes it
+	 * has, so a size reported by that window means nothing here.
+	 */
+	width = Browser_Canvas_Width();
+	height = Browser_Canvas_Height();
+
+	if (width <= 0 || height <= 0) {
+		return;
+	}
+#endif
 
 	Backend_On_Resize(width, height);
 	Update_Scale_Info();

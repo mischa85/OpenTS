@@ -33,6 +33,7 @@
 #include "_keyboar.h"
 #include "dbgprint.h"
 #include "keyboard.h"
+#include "misc.h"
 #include "video.h"
 #include "vidscale.h"
 #include "win.h"
@@ -82,11 +83,29 @@ static bool _EngineEntered = false;
 
 static int _CanvasWidth = 0;
 static int _CanvasHeight = 0;
+static int _CanvasCSSWidth = 0;
+static int _CanvasCSSHeight = 0;
+
+static int _ScreenWidth = 0;
+static int _ScreenHeight = 0;
+
+static BrowserDisplayPolicy _DisplayPolicy = BROWSER_DISPLAY_NATIVE;
+static int _DisplayWidth = 0;
+static int _DisplayHeight = 0;
 
 static bool _Hidden = false;
 
 static int _MouseX = 0;
 static int _MouseY = 0;
+
+/*
+ * Has the pointer left the canvas? A full screen game's cursor cannot, so the engine reads
+ * a pointer held against an edge as a standing request to keep scrolling the map. In a page
+ * the pointer walks off the canvas and the events simply stop, which killed the scroll part
+ * way through a pan. The position is therefore left pinned to the edge it left through until
+ * it comes back or the page loses the keyboard, which is what the engine's own model expects.
+ */
+static bool _MouseOutside = false;
 
 static unsigned short _Modifiers = 0;
 static unsigned char _KeyDown[256];
@@ -125,6 +144,77 @@ EM_ASYNC_JS(void, Browser_Await_Frame, (int hidden), {
 char const * Browser_Canvas_Selector(void)
 {
 	return(CANVAS_SELECTOR);
+}
+
+
+/// <summary>
+/// Reads back how the page was asked to size the game's frame, and how big the display it
+/// is on is.
+/// </summary>
+static void Read_Page_Configuration(void)
+{
+	int scaled = EM_ASM_INT({
+		var value = (new URLSearchParams(location.search).get("display") || "").toLowerCase();
+		return (value === "" || value === "native" || value === "window") ? 0 : 1;
+	});
+
+	_DisplayPolicy = (scaled != 0) ? BROWSER_DISPLAY_SCALED : BROWSER_DISPLAY_NATIVE;
+
+	_DisplayWidth = EM_ASM_INT({
+		var parts = /^(\d+)x(\d+)$/.exec((new URLSearchParams(location.search).get("display") || "").toLowerCase());
+		return parts ? parseInt(parts[1], 10) : 0;
+	});
+
+	_DisplayHeight = EM_ASM_INT({
+		var parts = /^(\d+)x(\d+)$/.exec((new URLSearchParams(location.search).get("display") || "").toLowerCase());
+		return parts ? parseInt(parts[2], 10) : 0;
+	});
+
+	_ScreenWidth = EM_ASM_INT({ return (window.screen && window.screen.width) ? (window.screen.width | 0) : 0; });
+	_ScreenHeight = EM_ASM_INT({ return (window.screen && window.screen.height) ? (window.screen.height | 0) : 0; });
+}
+
+
+/// <summary>
+/// Measures the canvas as the page has laid it out.
+/// </summary>
+/// <remarks>
+/// The page resizes for reasons the engine never sees, so the size is read back rather than
+/// tracked. The drawing buffer is matched to the laid out box in device pixels, which is
+/// what keeps a browser frame from being composited through a second, softening rescale.
+/// </remarks>
+/// <returns>bool; Did either measurement change?</returns>
+static bool Measure_Canvas(void)
+{
+	double csswidth = 0.0;
+	double cssheight = 0.0;
+
+	if (emscripten_get_element_css_size(CANVAS_SELECTOR, &csswidth, &cssheight) != EMSCRIPTEN_RESULT_SUCCESS) {
+		return(false);
+	}
+
+	double ratio = emscripten_get_device_pixel_ratio();
+
+	int cssw = (int)(csswidth + 0.5);
+	int cssh = (int)(cssheight + 0.5);
+	int width = (int)(csswidth * ratio + 0.5);
+	int height = (int)(cssheight * ratio + 0.5);
+
+	if (cssw <= 0 || cssh <= 0 || width <= 0 || height <= 0) {
+		return(false);
+	}
+
+	if (width == _CanvasWidth && height == _CanvasHeight && cssw == _CanvasCSSWidth && cssh == _CanvasCSSHeight) {
+		return(false);
+	}
+
+	_CanvasWidth = width;
+	_CanvasHeight = height;
+	_CanvasCSSWidth = cssw;
+	_CanvasCSSHeight = cssh;
+
+	emscripten_set_canvas_element_size(CANVAS_SELECTOR, width, height);
+	return(true);
 }
 
 
@@ -360,9 +450,60 @@ static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void
 }
 
 
+/// <summary>
+/// Brings the reported position one pixel off whichever edge it was pinned against.
+/// </summary>
+static void Release_Mouse_Edge(void)
+{
+	if (!_MouseOutside) {
+		return;
+	}
+
+	_MouseOutside = false;
+
+	if (_MouseX <= 0) _MouseX = 1;
+	if (_MouseY <= 0) _MouseY = 1;
+	if (VideoModeWidth > 2 && _MouseX >= VideoModeWidth - 1) _MouseX = VideoModeWidth - 2;
+	if (VideoModeHeight > 2 && _MouseY >= VideoModeHeight - 1) _MouseY = VideoModeHeight - 2;
+}
+
+
+static EM_BOOL Mouse_Boundary_Callback(int type, EmscriptenMouseEvent const * event, void *)
+{
+	if (type == EMSCRIPTEN_EVENT_MOUSEENTER) {
+		_MouseOutside = false;
+		return(EM_FALSE);
+	}
+
+	/*
+	 * The event fires as the pointer crosses the boundary, so the position it carries is
+	 * the one the pointer left through. Pulling that onto the frame puts it exactly on the
+	 * edge, which is the position the engine reads as "keep scrolling this way".
+	 */
+	Canvas_Point_To_Game(event->targetX, event->targetY, _MouseX, _MouseY);
+	_MouseOutside = true;
+	return(EM_FALSE);
+}
+
+
+/*
+** The page losing the keyboard is as close as a tab comes to the game losing the screen.
+** Whatever the pointer was doing over the canvas stops there: it is somewhere else now.
+*/
+static EM_BOOL Blur_Callback(int, EmscriptenFocusEvent const *, void *)
+{
+	Release_Mouse_Edge();
+	return(EM_FALSE);
+}
+
+
 static EM_BOOL Visibility_Callback(int, EmscriptenVisibilityChangeEvent const * event, void *)
 {
 	_Hidden = (event->hidden != 0);
+
+	if (_Hidden) {
+		Release_Mouse_Edge();
+	}
 	return(EM_FALSE);
 }
 
@@ -377,25 +518,17 @@ void Browser_Service(void)
 		return;
 	}
 
-	/*
-	 * A page resizes for reasons the engine never sees, so the drawable size is read back
-	 * rather than tracked. The layout size is in CSS pixels and the drawing buffer is in
-	 * device pixels; conflating them is what makes a browser frame look soft.
-	 */
-	double csswidth = 0.0;
-	double cssheight = 0.0;
+	if (Measure_Canvas()) {
 
-	if (emscripten_get_element_css_size(CANVAS_SELECTOR, &csswidth, &cssheight) == EMSCRIPTEN_RESULT_SUCCESS) {
-		double ratio = emscripten_get_device_pixel_ratio();
-		int width = (int)(csswidth * ratio + 0.5);
-		int height = (int)(cssheight * ratio + 0.5);
+		// The presenter follows the canvas at once: the frame it already holds is simply
+		// scaled into the new window, so the picture is never absent while the window is
+		// being dragged.
+		Video_On_Resize(_CanvasWidth, _CanvasHeight);
 
-		if (width > 0 && height > 0 && (width != _CanvasWidth || height != _CanvasHeight)) {
-			_CanvasWidth = width;
-			_CanvasHeight = height;
-			emscripten_set_canvas_element_size(CANVAS_SELECTOR, width, height);
-			Video_On_Resize(width, height);
-		}
+		// The frame is sized in CSS pixels. The drawing buffer above is not: a sidebar of
+		// a fixed number of pixels would come out half as wide on a display carrying two
+		// device pixels for each CSS one.
+		Video_Request_Frame_Size(_CanvasCSSWidth, _CanvasCSSHeight);
 	}
 
 	/*
@@ -520,6 +653,48 @@ int Browser_Canvas_Height(void)
 }
 
 
+int Browser_Canvas_CSS_Width(void)
+{
+	return(_CanvasCSSWidth);
+}
+
+
+int Browser_Canvas_CSS_Height(void)
+{
+	return(_CanvasCSSHeight);
+}
+
+
+int Browser_Screen_Width(void)
+{
+	return(_ScreenWidth);
+}
+
+
+int Browser_Screen_Height(void)
+{
+	return(_ScreenHeight);
+}
+
+
+BrowserDisplayPolicy Browser_Display_Policy(void)
+{
+	return(_DisplayPolicy);
+}
+
+
+int Browser_Display_Width(void)
+{
+	return(_DisplayWidth);
+}
+
+
+int Browser_Display_Height(void)
+{
+	return(_DisplayHeight);
+}
+
+
 bool Browser_Is_Hidden(void)
 {
 	return(_Hidden);
@@ -631,24 +806,12 @@ bool Browser_Init(void)
 	memset(_Ascii, 0, sizeof(_Ascii));
 	memset(_ShiftedAscii, 0, sizeof(_ShiftedAscii));
 
-	double csswidth = 0.0;
-	double cssheight = 0.0;
+	Read_Page_Configuration();
 
-	if (emscripten_get_element_css_size(CANVAS_SELECTOR, &csswidth, &cssheight) != EMSCRIPTEN_RESULT_SUCCESS) {
-		DebugString("Browser: the page has no canvas at %s.\n", CANVAS_SELECTOR);
+	if (!Measure_Canvas()) {
+		DebugString("Browser: the canvas at %s has not been laid out.\n", CANVAS_SELECTOR);
 		return(false);
 	}
-
-	double ratio = emscripten_get_device_pixel_ratio();
-	_CanvasWidth = (int)(csswidth * ratio + 0.5);
-	_CanvasHeight = (int)(cssheight * ratio + 0.5);
-
-	if (_CanvasWidth <= 0 || _CanvasHeight <= 0) {
-		DebugString("Browser: the canvas has not been laid out.\n");
-		return(false);
-	}
-
-	emscripten_set_canvas_element_size(CANVAS_SELECTOR, _CanvasWidth, _CanvasHeight);
 
 	EmscriptenVisibilityChangeEvent visibility;
 	_Hidden = (emscripten_get_visibility_status(&visibility) == EMSCRIPTEN_RESULT_SUCCESS) && (visibility.hidden != 0);
@@ -668,6 +831,10 @@ bool Browser_Init(void)
 	emscripten_set_mouseup_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 	emscripten_set_dblclick_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 
+	emscripten_set_mouseleave_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Boundary_Callback);
+	emscripten_set_mouseenter_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Boundary_Callback);
+
+	emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_TRUE, Blur_Callback);
 	emscripten_set_visibilitychange_callback(nullptr, EM_TRUE, Visibility_Callback);
 
 	// The page draws its own context menu over the game otherwise, and the right button is
@@ -682,8 +849,10 @@ bool Browser_Init(void)
 	_LastYield = emscripten_get_now();
 	_Initialized = true;
 
-	DebugString("Browser: canvas %s is %dx%d device pixels; yield scaffold is %s.\n",
-		CANVAS_SELECTOR, _CanvasWidth, _CanvasHeight, Browser_Yield_Is_Available() ? "built in" : "absent");
+	DebugString("Browser: canvas %s is %dx%d CSS pixels and %dx%d device pixels on a %dx%d screen; the frame %s the window; yield scaffold is %s.\n",
+		CANVAS_SELECTOR, _CanvasCSSWidth, _CanvasCSSHeight, _CanvasWidth, _CanvasHeight, _ScreenWidth, _ScreenHeight,
+		(_DisplayPolicy == BROWSER_DISPLAY_NATIVE) ? "follows" : "is scaled into",
+		Browser_Yield_Is_Available() ? "built in" : "absent");
 
 	return(true);
 }

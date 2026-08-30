@@ -24,6 +24,23 @@
 class Mouse;
 
 
+// How the page was asked to size the game's frame. A browser build has no settings file
+// that survives the tab, so the query string is where it is configured: "?display=native"
+// -- the default -- makes the window's own size the resolution, "?display=scaled" keeps
+// the configured resolution and lets the presenter scale it into the window, and
+// "?display=1024x768" pins that resolution and scales it.
+enum BrowserDisplayPolicy {
+	BROWSER_DISPLAY_NATIVE,
+	BROWSER_DISPLAY_SCALED,
+};
+
+BrowserDisplayPolicy Browser_Display_Policy(void);
+
+// The resolution "?display=WIDTHxHEIGHT" named, or zero when the query string named none.
+int Browser_Display_Width(void);
+int Browser_Display_Height(void);
+
+
 // The canvas the page lays out for the game, named the way the renderer and the event
 // callbacks both want it.
 char const * Browser_Canvas_Selector(void);
@@ -44,8 +61,22 @@ void Browser_Service(void);
 typedef bool (*BrowserEventHook)(unsigned short key, int x, int y, bool is_mouse, bool is_release);
 void Browser_Set_Event_Hook(BrowserEventHook hook);
 
+/*
+ * The canvas measured two ways. The drawing buffer is in device pixels, which is what the
+ * renderer draws into and what a window position means; the laid out box is in CSS pixels,
+ * which is the size the page and the player see. They differ by the device pixel ratio,
+ * and the game's frame is sized in the second of them: a fixed width sidebar measured in
+ * device pixels would halve on the display that has two of them per CSS pixel.
+ */
 int Browser_Canvas_Width(void);
 int Browser_Canvas_Height(void);
+int Browser_Canvas_CSS_Width(void);
+int Browser_Canvas_CSS_Height(void);
+
+// The display the page is on, in CSS pixels, or zero when the page will not say. It bounds
+// what the display options offer, since a mode larger than the screen cannot be shown.
+int Browser_Screen_Width(void);
+int Browser_Screen_Height(void);
 
 // Is the page not being shown? The browser stops compositing a hidden tab and stops
 // scheduling animation frames for it, which is its own expression of GameInFocus.

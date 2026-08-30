@@ -11,6 +11,11 @@
      and the input callbacks both expect, and gets out of the way: the module reads the
      laid out size back and drives the resize itself, so the path is the one a real page
      would take rather than a synthetic one.
+
+     The canvas is the window. Everything the page shows of its own -- the status line and
+     the engine's debug output -- floats over the canvas rather than sitting beside it, so
+     that a line of output arriving does not resize the game. It is absent unless "?hud=on"
+     asks for it, since it is a diagnostic rather than part of the game.
 -->
 <html lang="en">
 <head>
@@ -19,31 +24,87 @@
 <title>OpenTS</title>
 <style>
 	:root { color-scheme: dark; }
+	html, body { height: 100%; }
 	body {
 		margin: 0;
+		overflow: hidden;
 		background: #101216;
 		color: #d8dbe0;
 		font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	}
-	header { padding: 8px 14px; border-bottom: 1px solid #262a31; }
-	h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .05em; }
-	#status { padding: 6px 14px; color: #8f98a3; white-space: pre-wrap; }
-	#stage { padding: 12px 14px; }
-	/* Outlined rather than bordered: the module measures the laid out box, and a border
-	   would be counted into the drawing buffer it asks the renderer for. */
+	/* The game fills the window. The module measures this box and asks the renderer for a
+	   drawing buffer of the same size in device pixels, so nothing may pad or border it. */
 	#canvas {
+		position: fixed;
+		inset: 0;
 		display: block;
-		width: 960px;
-		height: 720px;
-		max-width: 100%;
+		width: 100%;
+		height: 100%;
 		background: #000;
-		outline: 1px solid #262a31;
 	}
+	/* Floated over the canvas and transparent to the mouse: the game gets every click, and
+	   the panel growing never changes the size of the game. Being unhittable also makes the
+	   text unselectable, so #grab turns hit testing back on when the log is worth reading. */
+	#panel {
+		position: fixed;
+		left: 0;
+		bottom: 0;
+		max-width: min(680px, 100%);
+		padding: 6px 10px 8px;
+		pointer-events: none;
+		background: rgba(16, 18, 22, .72);
+		border-top: 1px solid rgba(120, 132, 148, .25);
+		border-right: 1px solid rgba(120, 132, 148, .25);
+		font-size: 11px;
+	}
+	#panel.off { display: none; }
+
+	/* Collapsed is the default: the log is a diagnostic, not part of the game, so it stays
+	   out of the way until it is asked for. */
+	#panel.collapsed { background: none; border: 0; padding: 4px 6px; }
+	#panel.collapsed h1,
+	#panel.collapsed #status,
+	#panel.collapsed #log,
+	#panel.collapsed #grab { display: none; }
+
+	#toggle {
+		pointer-events: auto;
+		cursor: pointer;
+		user-select: none;
+		display: inline-block;
+		padding: 1px 6px;
+		border: 1px solid rgba(120, 132, 148, .35);
+		border-radius: 3px;
+		background: rgba(16, 18, 22, .72);
+		color: #7d8794;
+		font-size: 10px;
+	}
+	#toggle:hover { color: #cfd6df; border-color: rgba(180, 195, 215, .6); }
+	#panel:not(.collapsed) #toggle { position: absolute; top: 4px; right: 52px; }
+	#panel.grabbed { pointer-events: auto; user-select: text; }
+	#panel.grabbed #log { max-height: 40vh; overflow: auto; }
+
+	/* The one part of the panel that always takes a click, so the mode can be left again. */
+	#grab {
+		position: absolute;
+		top: 4px;
+		right: 6px;
+		pointer-events: auto;
+		cursor: pointer;
+		user-select: none;
+		padding: 0 5px;
+		border: 1px solid rgba(120, 132, 148, .35);
+		border-radius: 3px;
+		color: #7d8794;
+		font-size: 10px;
+	}
+	#panel.grabbed #grab { color: #cfd6df; border-color: rgba(180, 195, 215, .6); }
+	h1 { margin: 0 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .05em; color: #7d8794; }
+	#status { color: #8f98a3; white-space: pre-wrap; }
 	#log {
-		margin: 0;
-		padding: 8px 14px 20px;
-		max-height: 16em;
-		overflow: auto;
+		margin: 4px 0 0;
+		max-height: 9em;
+		overflow: hidden;
 		color: #6f7883;
 		white-space: pre-wrap;
 	}
@@ -51,25 +112,98 @@
 </head>
 <body>
 
-<header><h1>OPENTS &mdash; WEBASSEMBLY</h1></header>
-<div id="status">loading&hellip;</div>
-<div id="stage"><canvas id="canvas" tabindex="0"></canvas></div>
-<pre id="log"></pre>
+<canvas id="canvas" tabindex="0"></canvas>
+<div id="panel">
+	<div id="toggle" title="Show or hide the diagnostic log">log</div>
+	<div id="grab" title="Take the mouse so the log can be selected and copied">select</div>
+	<h1>OPENTS &mdash; WEBASSEMBLY</h1>
+	<div id="status">loading&hellip;</div>
+	<pre id="log"></pre>
+</div>
 
 <script>
+	// The panel is transparent to the mouse so the game gets every click, which also means
+	// its text cannot be selected. This hands the mouse back for as long as the reader
+	// wants it, and the game keeps running underneath either way.
+	(function () {
+		var panel = document.getElementById("panel");
+		var grab = document.getElementById("grab");
+
+		grab.addEventListener("click", function () {
+			var on = panel.classList.toggle("grabbed");
+			grab.textContent = on ? "release" : "select";
+		});
+
+		// Collapsed unless this viewer has previously asked otherwise. Storage is per
+		// origin and may be unavailable, in which case the default simply stands.
+		var open = false;
+
+		try {
+			open = window.localStorage.getItem("opents.log") === "open";
+		} catch (e) {}
+
+		function apply() {
+			panel.classList.toggle("collapsed", !open);
+			if (!open) {
+				panel.classList.remove("grabbed");
+				grab.textContent = "select";
+			}
+		}
+
+		document.getElementById("toggle").addEventListener("click", function () {
+			open = !open;
+			apply();
+			try {
+				window.localStorage.setItem("opents.log", open ? "open" : "closed");
+			} catch (e) {}
+		});
+
+		apply();
+	}());
+
+	// Reads out of a disc image, when one is being used. A preloaded build never fetches,
+	// so the whole clause is left out rather than reporting zeroes. Unique blocks is the
+	// working set: the part of the image the game actually turned out to need.
+	function iso() {
+		if (typeof Module === "undefined" || !Module._OpenTS_Iso_Requests) return("");
+
+		var requests = Module._OpenTS_Iso_Requests();
+		if (requests === 0) return("");
+
+		var blocks = Module._OpenTS_Iso_Unique_Blocks();
+		var size = Module._OpenTS_Iso_Block_Size();
+		var mib = function (bytes) { return((bytes / 1048576).toFixed(1) + " MiB"); };
+
+		window.OpenTS_State.isoRequests = requests;
+		window.OpenTS_State.isoUniqueBlocks = blocks;
+
+		return("image " + requests + " requests  |  " + mib(Module._OpenTS_Iso_Fetched()) +
+			" fetched  |  " + blocks + " unique blocks (" + mib(blocks * size) + ")  |  ");
+	}
+
 	// What an automated check reads to tell an engine that is running from one that
 	// started and then stopped.
-	window.OpenTS_State = { started: false, frames: 0, waits: 0, lines: [] };
+	window.OpenTS_State = {
+		started: false, frames: 0, waits: 0, syncs: 0,
+		persistent: false, restored: false, lines: []
+	};
 
 	var logElement = document.getElementById("log");
 
+	// The panel sits over the game, so only the tail of the output is shown. The whole of
+	// it stays in OpenTS_State.lines, which is what an automated check reads.
 	function OpenTS_Record(text) {
 		window.OpenTS_State.lines.push(text);
 		if (window.OpenTS_State.lines.length > 400) {
 			window.OpenTS_State.lines.shift();
 		}
-		logElement.textContent = window.OpenTS_State.lines.join("\n");
-		logElement.scrollTop = logElement.scrollHeight;
+		logElement.textContent = window.OpenTS_State.lines.slice(-6).join("\n");
+	}
+
+	// The diagnostic panel is not part of the game, so it is absent unless asked for with
+	// "?hud=on". "?hud=off" stays accepted so an existing link keeps meaning what it did.
+	if ((new URLSearchParams(window.location.search).get("hud") || "") !== "on") {
+		document.getElementById("panel").classList.add("off");
 	}
 
 	// A page has no command line, so the query string stands in for one. "?scenario=GDI1A.MAP"
@@ -89,12 +223,67 @@
 		return args.concat(query.getAll("arg"));
 	}
 
+	// The one directory that survives the tab. Everything else the engine can see is memory:
+	// the game data is preloaded or fetched off a disc image, and neither belongs in a
+	// browser's database. win32compat.cpp resolves a save into this directory and asks for it
+	// to be written back; here it is created, mounted, and read in before the engine starts.
+	var OpenTS_SaveDirectory = "/save";
+
+	function OpenTS_Mount_Saves() {
+		var fs = Module.FS;
+
+		if (!fs || !fs.filesystems || !fs.filesystems.IDBFS) {
+			OpenTS_Record("saves are not persistent: this build has no IDBFS");
+			return false;
+		}
+
+		try {
+			fs.mkdir(OpenTS_SaveDirectory);
+			fs.mount(fs.filesystems.IDBFS, {}, OpenTS_SaveDirectory);
+		} catch (e) {
+			OpenTS_Record("saves are not persistent: " + e);
+			return false;
+		}
+
+		return true;
+	}
+
+	// The engine is started by hand rather than by the runtime, because what IndexedDB holds
+	// arrives asynchronously and a save has to be back on the filesystem before the engine
+	// looks for one.
+	function OpenTS_Start() {
+		window.OpenTS_State.started = true;
+
+		function go(restored) {
+			window.OpenTS_State.restored = restored;
+			try {
+				Module.callMain(Module.arguments);
+			} catch (e) {
+				report("the engine stopped: " + ((e && e.stack) || e));
+			}
+		}
+
+		if (!window.OpenTS_State.persistent) {
+			go(false);
+			return;
+		}
+
+		Module.FS.syncfs(true, function (error) {
+			if (error) {
+				OpenTS_Record("reading persistent storage failed: " + error);
+			}
+			go(!error);
+		});
+	}
+
 	var Module = {
 		arguments: OpenTS_Arguments(),
 		canvas: document.getElementById("canvas"),
+		noInitialRun: true,
 		print: function (text) { console.log(text); OpenTS_Record(text); },
 		printErr: function (text) { console.error(text); OpenTS_Record(text); },
-		onRuntimeInitialized: function () { window.OpenTS_State.started = true; },
+		preRun: [function () { window.OpenTS_State.persistent = OpenTS_Mount_Saves(); }],
+		onRuntimeInitialized: function () { OpenTS_Start(); },
 	};
 
 	// The engine keeps the thread between yields, so the status is polled from a timer
@@ -105,10 +294,15 @@
 		}
 		window.OpenTS_State.frames = Module._OpenTS_Browser_Frames();
 		window.OpenTS_State.waits = Module._OpenTS_Browser_Waits();
+		window.OpenTS_State.syncs = Module.OpenTS_Syncs || 0;
 		document.getElementById("status").textContent =
+			iso() +
 			"frames " + window.OpenTS_State.frames +
 			"  |  waits carried by the scaffold " + window.OpenTS_State.waits +
-			"  |  canvas " + Module.canvas.width + "x" + Module.canvas.height;
+			"  |  canvas " + Module.canvas.width + "x" + Module.canvas.height +
+			" device pixels at " + (window.devicePixelRatio || 1) + "x" +
+			"  |  saves written to storage " + window.OpenTS_State.syncs +
+			(window.OpenTS_State.persistent ? "" : "  |  storage is not persistent");
 	}, 250);
 
 	// The canvas takes the focus on a click so that a page with other focusable content
