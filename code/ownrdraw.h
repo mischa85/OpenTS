@@ -301,6 +301,9 @@ namespace OwnerDraw {
 	int Default_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 	bool Dialog_Message_Handler(void);
 
+	bool Is_Painting(void);
+	void Relayout_Dialogs(int oldwidth, int oldheight);
+
 	bool Start_Tooltip(Rect const & rect, char const * text, HWND window);
 	bool Show_Tooltip(bool save_background);
 	bool Hide_Tooltip(void);

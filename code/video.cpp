@@ -15,6 +15,7 @@
 
 #include "video.h"
 
+#include "_map.h"
 #include "_rect.h"
 #include "_surface.h"
 #include "bgfxbackend.h"
@@ -23,9 +24,12 @@
 #include "dsurface.h"
 #include "globals.h"
 #include "goptions.h"
+#include "gscreen.h"
+#include "init.h"
 #include "mainopt.h"
 #include "misc.h"
 #include "movies.h"
+#include "ownrdraw.h"
 #include "surface.h"
 #include "wincursor.h"
 #include "windlg.h"
@@ -223,9 +227,9 @@ void Video_Clamp_Frame_Size(int & width, int & height)
 /// Can every drawing surface in the engine be destroyed and rebuilt at this moment?
 /// </summary>
 /// <remarks>
-/// A dialog was drawn against the size it came up at and nothing repaints it from
-/// underneath, a scenario part way through loading is filling surfaces that are about to be
-/// replaced, and a movie holds the surface it draws into until it is torn down.
+/// A scenario part way through loading is filling surfaces that are about to be replaced, a
+/// movie holds the surface it draws into until it is torn down, and a paint is drawing into
+/// surfaces it would finish drawing into after they had gone.
 /// </remarks>
 static bool Mode_Change_Is_Safe(void)
 {
@@ -247,14 +251,39 @@ static bool Mode_Change_Is_Safe(void)
 		return(false);
 	}
 
-	// The main menu, the options dialogs and the message boxes are all dialogs, and each
-	// keeps a background it drew at the old size. Nothing redraws them from underneath, so
-	// the frame stays as it is until the last of them has gone.
-	if (WS_Top_Window() != NULL) {
+	// A dialog and its controls paint into the game's own surfaces rather than into their
+	// windows, so a paint part way through would finish into surfaces that had gone.
+	if (OwnerDraw::Is_Painting()) {
 		return(false);
 	}
 
 	return(true);
+}
+
+
+/// <summary>
+/// Draws the frame again after it has been resized underneath an open dialog.
+/// </summary>
+/// <param name="oldwidth">The frame width the dialogs were placed against.</param>
+/// <param name="oldheight">The frame height the dialogs were placed against.</param>
+/// <remarks>
+/// The mode change replaced every drawing surface the engine owns, and the loop a dialog
+/// runs while it is up draws neither the dialog nor what is behind it. So the frame is put
+/// together again from what the engine still holds, choosing what to draw the same way the
+/// main window does when Windows asks it to repaint.
+/// </remarks>
+static void Rebuild_Screen_Under_Dialogs(int oldwidth, int oldheight)
+{
+	OwnerDraw::Relayout_Dialogs(oldwidth, oldheight);
+
+	if (ScenarioActive) {
+		Map.Flag_To_Redraw(GS_REDRAW_ALL);
+		Map.Render();
+	} else {
+		Title_Screen_Restore(true);
+	}
+
+	Heal_Dialog_Controls();
 }
 
 
@@ -328,6 +357,10 @@ void Video_Service_Display(void)
 	int oldwidth = Options.ScreenWidth;
 	int oldheight = Options.ScreenHeight;
 
+	int framewidth = VideoModeWidth;
+	int frameheight = VideoModeHeight;
+	bool underdialog = (WS_Top_Window() != NULL);
+
 	Options.ScreenWidth = width;
 	Options.ScreenHeight = height;
 
@@ -338,6 +371,11 @@ void Video_Service_Display(void)
 	if (!changed) {
 		Options.ScreenWidth = oldwidth;
 		Options.ScreenHeight = oldheight;
+		return;
+	}
+
+	if (underdialog) {
+		Rebuild_Screen_Under_Dialogs(framewidth, frameheight);
 	}
 }
 
