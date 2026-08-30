@@ -12,13 +12,18 @@
 
 #include "always.h"
 
+#include "browser.h"
 #include "crtcompat.h"
+#include "docfile.h"
 #include "isohttp.h"
+#include "misc.h"
+#include "video.h"
 #include "win32compat.h"
 
 #if defined(__EMSCRIPTEN__)
 
 #include <dirent.h>
+#include <emscripten.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,6 +146,7 @@ void SetLastError(DWORD error)
 
 extern "C" const GUID GUID_NULL = {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}};
 extern "C" const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
+extern "C" const IID IID_ISequentialStream = {0x0C733A30, 0x2A1C, 0x11CE, {0xAD, 0xE5, 0x00, 0xAA, 0x00, 0x44, 0x77, 0x3D}};
 extern "C" const IID IID_IStream = {0x0000000C, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
 extern "C" const IID IID_IPersist = {0x0000010C, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
 extern "C" const IID IID_IPersistStream = {0x00000109, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
@@ -300,29 +306,20 @@ static bool Path_Present(std::string const & path)
 
 
 /*
-** Rebuilds a Win32 path as one the host will accept.
+** Matches a path against what the host actually holds, without regard to case.
 **
-** Backslashes become slashes, because the engine writes both and Windows accepts both.
-**
-** Case is the harder half. The engine asks for TIBSUN.MIX in upper case while the assets a
-** player supplies may be spelled either way, and Windows would not care. The host might:
-** Emscripten's virtual filesystem and Linux are case-sensitive even though APFS and NTFS
-** are not. So a path that exists as spelled is used as spelled -- one system call, and the
-** common case costs nothing -- and only a path that does not is walked component by
-** component, each missing component matched against its directory's entries without regard
-** to case. A component with no match at all stays as it was spelled, which is what lets a
-** file be created under the name the caller chose rather than under a neighbor's. Two
-** entries differing only in case resolve to the first in sort order, so repeated lookups
-** on one directory agree with each other.
+** The engine asks for TIBSUN.MIX in upper case while the assets a player supplies may be
+** spelled either way, and Windows would not care. The host might: Emscripten's virtual
+** filesystem and Linux are case-sensitive even though APFS and NTFS are not. So a path that
+** exists as spelled is used as spelled -- one system call, and the common case costs nothing
+** -- and only a path that does not is walked component by component, each missing component
+** matched against its directory's entries without regard to case. A component with no match
+** at all stays as it was spelled, which is what lets a file be created under the name the
+** caller chose rather than under a neighbor's. Two entries differing only in case resolve to
+** the first in sort order, so repeated lookups on one directory agree with each other.
 */
-static std::string Host_Path(char const * path)
+static std::string Resolve_Case(std::string const & translated)
 {
-	std::string translated(path != nullptr ? path : "");
-
-	for (char & character : translated) {
-		if (character == '\\') character = '/';
-	}
-
 	if (translated.empty() || Path_Present(translated)) return(translated);
 
 	std::string resolved;
@@ -361,6 +358,128 @@ static std::string Host_Path(char const * path)
 	}
 
 	return(resolved);
+}
+
+
+/*
+** The directory that survives the page. Everything else the engine can reach is gone the
+** moment the tab is: the game data arrives preloaded or off an image fetched over HTTP, and
+** the filesystem it lands in is memory. So one directory is mounted on IndexedDB before main
+** runs, and only that one -- copying the game data into a browser's database would cost
+** hundreds of megabytes of quota to store what the page already has.
+**
+** The engine writes its saves into the directory it runs in, under bare names, so the
+** overlay stands in front of that directory rather than beside it. Nothing is moved: a name
+** that exists as game data still resolves to the game data.
+*/
+#define OPENTS_PERSISTENT_DIRECTORY "/save"
+
+static std::string const & Persistent_Root(void)
+{
+	static std::string const root = []() -> std::string {
+		struct stat info;
+
+		if (::stat(OPENTS_PERSISTENT_DIRECTORY, &info) == 0 && S_ISDIR(info.st_mode)) {
+			return(OPENTS_PERSISTENT_DIRECTORY "/");
+		}
+
+		return(std::string());
+	}();
+
+	return(root);
+}
+
+
+static bool Is_Persistent(std::string const & path)
+{
+	std::string const & root = Persistent_Root();
+
+	return(!root.empty() && path.compare(0, root.size(), root) == 0);
+}
+
+
+/*
+** Rebuilds a Win32 path as one the host will accept. Backslashes become slashes, because the
+** engine writes both and Windows accepts both.
+**
+** A bare name is looked for in the persistent directory first and in the game directory
+** after, and a name that is in neither resolves into the persistent directory. That last rule
+** is what puts a saved game somewhere it survives the tab without the file layer having to be
+** told which opens are writes: a file that is about to be created exists nowhere, and a file
+** that is about to be read exists where it was written.
+*/
+static std::string Host_Path(char const * path)
+{
+	std::string translated(path != nullptr ? path : "");
+
+	for (char & character : translated) {
+		if (character == '\\') character = '/';
+	}
+
+	std::string const & root = Persistent_Root();
+
+	if (!root.empty() && !translated.empty() && translated.find('/') == std::string::npos) {
+		std::string const persistent = root + translated;
+
+		// The spelling the caller wrote, in both directories, before either is matched
+		// without regard to case: the engine spells the game data the way it is on disk, and
+		// that path should cost two system calls rather than a scan of two directories.
+		if (Path_Present(persistent)) return(persistent);
+		if (Path_Present(translated)) return(translated);
+
+		std::string const matched = Resolve_Case(persistent);
+		if (Path_Present(matched)) return(matched);
+
+		std::string const local = Resolve_Case(translated);
+		if (Path_Present(local)) return(local);
+
+		return(persistent);
+	}
+
+	return(Resolve_Case(translated));
+}
+
+
+/*
+** Hands the persistent directory to the browser to store.
+**
+** IndexedDB is reached asynchronously and the engine cannot wait on it, so the transfer is
+** started here and finishes on its own. The page counts the ones that complete, which is what
+** an automated check waits for before it reloads.
+*/
+static bool PersistentDirty = false;
+
+static void Flush_Persistent_Storage(void)
+{
+	if (!PersistentDirty) return;
+	PersistentDirty = false;
+
+	MAIN_THREAD_EM_ASM({
+		if (typeof FS === "undefined") return;
+
+		var again = function () {
+			FS.syncfs(false, function (error) {
+				if (error) {
+					console.error("OpenTS: writing persistent storage failed: " + error);
+				}
+				Module.OpenTS_Syncs = (Module.OpenTS_Syncs || 0) + 1;
+
+				if (Module.OpenTS_SyncAgain) {
+					Module.OpenTS_SyncAgain = false;
+					again();
+				} else {
+					Module.OpenTS_SyncRunning = false;
+				}
+			});
+		};
+
+		if (Module.OpenTS_SyncRunning) {
+			Module.OpenTS_SyncAgain = true;
+		} else {
+			Module.OpenTS_SyncRunning = true;
+			again();
+		}
+	});
 }
 
 
@@ -861,6 +980,8 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 	entry.DeleteOnClose = ((flags & FILE_FLAG_DELETE_ON_CLOSE) != 0);
 	entry.Path = path;
 
+	if (wantswrite && Is_Persistent(path)) PersistentDirty = true;
+
 	/*
 	** Both dispositions that accept a file already there report the fact through the
 	** last-error slot on an otherwise successful open, and callers read it back.
@@ -1178,8 +1299,14 @@ BOOL CloseHandle(HANDLE object)
 	bool const closed = (::close(entry->Descriptor) == 0);
 	int const failure = errno;
 
-	if (entry->DeleteOnClose) ::unlink(entry->Path.c_str());
+	if (entry->DeleteOnClose) {
+		::unlink(entry->Path.c_str());
+		if (Is_Persistent(entry->Path)) PersistentDirty = true;
+	}
+
 	Release_Handle(entry);
+
+	Flush_Persistent_Storage();
 
 	if (!closed) {
 		SetLastError(Win32_Error_From_Errno(failure));
@@ -1198,10 +1325,15 @@ BOOL DeleteFileA(LPCSTR filename)
 		return(FALSE);
 	}
 
-	if (::unlink(Host_Path(filename).c_str()) != 0) {
+	std::string const path = Host_Path(filename);
+
+	if (::unlink(path.c_str()) != 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}
+
+	if (Is_Persistent(path)) PersistentDirty = true;
+	Flush_Persistent_Storage();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1224,10 +1356,15 @@ BOOL MoveFileA(LPCSTR existing, LPCSTR newname)
 		return(FALSE);
 	}
 
-	if (::rename(Host_Path(existing).c_str(), target.c_str()) != 0) {
+	std::string const source = Host_Path(existing);
+
+	if (::rename(source.c_str(), target.c_str()) != 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}
+
+	if (Is_Persistent(source) || Is_Persistent(target)) PersistentDirty = true;
+	Flush_Persistent_Storage();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1296,6 +1433,9 @@ BOOL CopyFileA(LPCSTR existing, LPCSTR newname, BOOL failifexists)
 		SetLastError(Win32_Error_From_Errno(failure));
 		return(FALSE);
 	}
+
+	if (Is_Persistent(target)) PersistentDirty = true;
+	Flush_Persistent_Storage();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1536,7 +1676,7 @@ static void Fill_Find_Data(LPWIN32_FIND_DATAA data, std::string const & director
 		data->ftLastWriteTime = recorded;
 		data->nFileSizeLow = (DWORD)match.Image.Size;
 
-	} else if (::stat((directory + match.Name).c_str(), &info) == 0) {
+	} else if (::stat(Host_Path((directory + match.Name).c_str()).c_str(), &info) == 0) {
 		data->dwFileAttributes = Attributes_From_Stat(match.Name.c_str(), info);
 		data->ftCreationTime = Filetime_From_Host(info.st_ctim.tv_sec, info.st_ctim.tv_nsec);
 		data->ftLastAccessTime = Filetime_From_Host(info.st_atim.tv_sec, info.st_atim.tv_nsec);
@@ -1550,6 +1690,39 @@ static void Fill_Find_Data(LPWIN32_FIND_DATAA data, std::string const & director
 
 	strncpy(data->cFileName, match.Name.c_str(), sizeof(data->cFileName) - 1);
 	data->cFileName[sizeof(data->cFileName) - 1] = '\0';
+}
+
+
+/*
+** Adds what the persistent directory holds to a search of the game directory, which is the
+** directory it stands in front of. A search anywhere else does not reach it, and a name the
+** game directory already answered for is left alone so that the two agree with the order
+** Host_Path resolves a bare name in.
+*/
+static void Persistent_Matches(std::string const & directory, std::string const & leaf, std::vector<FindMatchType> & matches)
+{
+	std::string const & root = Persistent_Root();
+	if (root.empty() || !directory.empty()) return;
+
+	DIR * const scan = ::opendir(root.c_str());
+	if (scan == nullptr) return;
+
+	for (struct dirent * item = ::readdir(scan); item != nullptr; item = ::readdir(scan)) {
+		if (!Match_Wildcard(leaf.c_str(), item->d_name)) continue;
+
+		bool taken = false;
+
+		for (FindMatchType const & already : matches) {
+			if (::strcasecmp(already.Name.c_str(), item->d_name) == 0) taken = true;
+		}
+		if (taken) continue;
+
+		FindMatchType match;
+		match.Name = item->d_name;
+		matches.push_back(std::move(match));
+	}
+
+	::closedir(scan);
 }
 
 
@@ -1661,6 +1834,8 @@ HANDLE FindFirstFileA(LPCSTR filename, LPWIN32_FIND_DATAA data)
 			::closedir(scan);
 		}
 	}
+
+	Persistent_Matches(requested, leaf, matches);
 
 	/*
 	** The image is searched under the name the caller wrote rather than the one the host
@@ -1990,13 +2165,9 @@ BOOL DosDateTimeToFileTime(WORD dosdate, WORD dostime, LPFILETIME filetime)
 ** after naming itself once.
 */
 
-HMODULE GetModuleHandleA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
-DWORD GetModuleFileNameA(HMODULE, LPSTR filename, DWORD size) { if (filename != nullptr && size > 0) filename[0] = '\0'; return(WIN32_STUB(0)); }
 HMODULE LoadLibraryA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
 BOOL FreeLibrary(HMODULE) { return(WIN32_STUB(FALSE)); }
 FARPROC GetProcAddress(HMODULE, LPCSTR) { return(WIN32_STUB((FARPROC)nullptr)); }
-LPSTR GetCommandLineA(void) { return(WIN32_STUB((LPSTR)"")); }
-LPWSTR GetCommandLineW(void) { static WCHAR empty[1] = {0}; return(WIN32_STUB(empty)); }
 void ExitProcess(UINT code) { exit((int)code); }
 HANDLE GetCurrentProcess(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 HANDLE GetCurrentThread(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
@@ -2024,11 +2195,6 @@ void OutputDebugStringA(LPCSTR string)
 ** the engine's threading has not been ported, so any code that reaches one is running
 ** somewhere its assumptions have not been checked.
 */
-void InitializeCriticalSection(LPCRITICAL_SECTION section) { if (section != nullptr) memset(section, 0, sizeof(*section)); WIN32_STUB_VOID(); }
-void DeleteCriticalSection(LPCRITICAL_SECTION) { WIN32_STUB_VOID(); }
-void EnterCriticalSection(LPCRITICAL_SECTION) { WIN32_STUB_VOID(); }
-void LeaveCriticalSection(LPCRITICAL_SECTION) { WIN32_STUB_VOID(); }
-BOOL TryEnterCriticalSection(LPCRITICAL_SECTION) { return(WIN32_STUB(FALSE)); }
 
 HANDLE CreateEventA(LPSECURITY_ATTRIBUTES, BOOL, BOOL, LPCSTR) { return(WIN32_STUB((HANDLE)nullptr)); }
 BOOL SetEvent(HANDLE) { return(WIN32_STUB(FALSE)); }
@@ -2169,11 +2335,6 @@ BOOL GlobalUnlock(HGLOBAL) { return(FALSE); }
 
 HDC BeginPaint(HWND, LPPAINTSTRUCT) { return(WIN32_STUB((HDC)nullptr)); }
 BOOL EndPaint(HWND, PAINTSTRUCT const *) { return(WIN32_STUB(FALSE)); }
-HDC GetDC(HWND) { return(WIN32_STUB((HDC)nullptr)); }
-int ReleaseDC(HWND, HDC) { return(WIN32_STUB(0)); }
-int FillRect(HDC, RECT const *, HBRUSH) { return(WIN32_STUB(0)); }
-UINT_PTR SetTimer(HWND, UINT_PTR, UINT, TIMERPROC) { return(WIN32_STUB(0)); }
-BOOL KillTimer(HWND, UINT_PTR) { return(WIN32_STUB(FALSE)); }
 BOOL SetCursorPos(int, int) { return(WIN32_STUB(FALSE)); }
 SHORT GetKeyState(int) { return(WIN32_STUB(0)); }
 SHORT GetAsyncKeyState(int) { return(WIN32_STUB(0)); }
@@ -2530,29 +2691,38 @@ void _makepath(char * path, char const * drive, char const * dir, char const * f
 ** GDI, the window manager's remainder, resources, the console, OLE, and the multimedia
 ** timer. All stubs.
 */
-HDC CreateCompatibleDC(HDC) { return(WIN32_STUB((HDC)nullptr)); }
-BOOL DeleteDC(HDC) { return(WIN32_STUB(FALSE)); }
 HBITMAP CreateDIBSection(HDC, BITMAPINFO const *, UINT, void ** bits, HANDLE, DWORD) { if (bits != nullptr) *bits = nullptr; return(WIN32_STUB((HBITMAP)nullptr)); }
-HGDIOBJ SelectObject(HDC, HGDIOBJ) { return(WIN32_STUB((HGDIOBJ)nullptr)); }
-BOOL DeleteObject(HGDIOBJ) { return(WIN32_STUB(FALSE)); }
 int GetObjectA(HGDIOBJ, int, LPVOID) { return(WIN32_STUB(0)); }
-BOOL GdiFlush(void) { return(WIN32_STUB(FALSE)); }
 int SetStretchBltMode(HDC, int) { return(WIN32_STUB(0)); }
 BOOL StretchBlt(HDC, int, int, int, int, HDC, int, int, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
 BOOL BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
 int StretchDIBits(HDC, int, int, int, int, int, int, int, int, void const *, BITMAPINFO const *, UINT, DWORD) { return(WIN32_STUB(0)); }
-COLORREF SetTextColor(HDC, COLORREF) { return(WIN32_STUB((COLORREF)0xFFFFFFFF)); }
-COLORREF SetBkColor(HDC, COLORREF) { return(WIN32_STUB((COLORREF)0xFFFFFFFF)); }
-int SetBkMode(HDC, int) { return(WIN32_STUB(0)); }
-HGDIOBJ GetStockObject(int) { return(WIN32_STUB((HGDIOBJ)nullptr)); }
 
 HMONITOR MonitorFromWindow(HWND, DWORD) { return(WIN32_STUB((HMONITOR)nullptr)); }
 BOOL GetMonitorInfoA(HMONITOR, LPMONITORINFO) { return(WIN32_STUB(FALSE)); }
-BOOL EndDialog(HWND, INT_PTR) { return(WIN32_STUB(FALSE)); }
-BOOL IsDialogMessageA(HWND, LPMSG) { return(WIN32_STUB(FALSE)); }
 int TranslateAcceleratorA(HWND, HACCEL, LPMSG) { return(WIN32_STUB(0)); }
 int ToAscii(UINT, UINT, BYTE const *, LPWORD, UINT) { return(WIN32_STUB(0)); }
-BOOL CharToOemBuffA(LPCSTR, LPSTR, DWORD) { return(WIN32_STUB(FALSE)); }
+/// <summary>
+/// Translates a run of characters from the ANSI code page to the OEM one.
+/// </summary>
+/// <remarks>
+/// The two code pages agree across ASCII, which is what the shipped game data holds, so
+/// the run is copied through. A localized build wanting the high half translated needs a
+/// real code page table here. Source and destination may be the same buffer, which several
+/// callers rely on.
+/// </remarks>
+BOOL CharToOemBuffA(LPCSTR source, LPSTR destination, DWORD length)
+{
+	if (source == nullptr || destination == nullptr) {
+		return(FALSE);
+	}
+
+	for (DWORD index = 0; index < length; index++) {
+		destination[index] = source[index];
+	}
+
+	return(TRUE);
+}
 HLOCAL LocalFree(HLOCAL memory) { free(memory); return(nullptr); }
 
 int LoadStringA(HINSTANCE, UINT, LPSTR buffer, int size) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
@@ -2572,20 +2742,58 @@ BOOL SetConsoleMode(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
 BOOL GetConsoleMode(HANDLE, LPDWORD) { return(WIN32_STUB(FALSE)); }
 BOOL TerminateProcess(HANDLE, UINT code) { exit((int)code); }
 void RaiseException(DWORD, DWORD, DWORD, ULONG_PTR const *) { WIN32_STUB_ABORT(); }
-LPWSTR * CommandLineToArgvW(LPCWSTR, int * count) { if (count != nullptr) *count = 0; return(WIN32_STUB((LPWSTR *)nullptr)); }
 
-void AcquireSRWLockExclusive(PSRWLOCK) { WIN32_STUB_VOID(); }
-void ReleaseSRWLockExclusive(PSRWLOCK) { WIN32_STUB_VOID(); }
-void AcquireSRWLockShared(PSRWLOCK) { WIN32_STUB_VOID(); }
-void ReleaseSRWLockShared(PSRWLOCK) { WIN32_STUB_VOID(); }
-void InitializeSRWLock(PSRWLOCK lock) { if (lock != nullptr) lock->Ptr = nullptr; }
 
 BSTR SysAllocString(OLECHAR const *) { return(WIN32_STUB((BSTR)nullptr)); }
 void SysFreeString(BSTR) { WIN32_STUB_VOID(); }
 UINT SysStringLen(BSTR) { return(WIN32_STUB(0)); }
 HRESULT StringFromCLSID(REFCLSID, LPOLESTR * string) { if (string != nullptr) *string = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
-HRESULT OleSaveToStream(IPersistStream *, IStream *) { return(WIN32_STUB(E_NOTIMPL)); }
-HRESULT OleLoadFromStream(IStream *, REFIID, void ** object) { if (object != nullptr) *object = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
+/*
+** An object is framed on the stream by its class identifier and nothing else: sixteen bytes
+** naming the class, then whatever the object writes for itself. That framing is the save
+** file's type discriminator, so it is the one thing here that may not change shape.
+*/
+HRESULT OleSaveToStream(IPersistStream * persist, IStream * stream)
+{
+	if (persist == nullptr || stream == nullptr) return(E_INVALIDARG);
+
+	CLSID classid;
+	HRESULT result = persist->GetClassID(&classid);
+	if (FAILED(result)) return(result);
+
+	result = stream->Write(&classid, sizeof(classid), nullptr);
+	if (FAILED(result)) return(result);
+
+	return(persist->Save(stream, TRUE));
+}
+
+
+HRESULT OleLoadFromStream(IStream * stream, REFIID riid, void ** object)
+{
+	if (object != nullptr) *object = nullptr;
+	if (stream == nullptr || object == nullptr) return(E_INVALIDARG);
+
+	CLSID classid;
+	ULONG read = 0;
+	HRESULT result = stream->Read(&classid, sizeof(classid), &read);
+	if (FAILED(result)) return(result);
+	if (read != sizeof(classid)) return(E_FAIL);
+
+	if (classid == GUID_NULL) return(REGDB_E_CLASSNOTREG);
+
+	IPersistStream * persist = nullptr;
+	result = CoCreateInstance(classid, nullptr, CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER,
+		IID_IPersistStream, (void **)&persist);
+	if (FAILED(result)) return(result);
+
+	result = persist->Load(stream);
+	if (SUCCEEDED(result)) {
+		result = persist->QueryInterface(riid, object);
+	}
+
+	persist->Release();
+	return(result);
+}
 
 
 
@@ -2610,21 +2818,11 @@ BOOL Module32First(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
 BOOL Module32Next(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
 
 
-HWND CreateDialogParamA(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM) { return(WIN32_STUB((HWND)nullptr)); }
-HWND CreateDialogIndirectParamA(HINSTANCE, LPCDLGTEMPLATE, HWND, DLGPROC, LPARAM) { return(WIN32_STUB((HWND)nullptr)); }
-INT_PTR DialogBoxParamA(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM) { return(WIN32_STUB(-1)); }
 HMENU GetMenu(HWND) { return(WIN32_STUB((HMENU)nullptr)); }
 HMENU GetSystemMenu(HWND, BOOL) { return(WIN32_STUB((HMENU)nullptr)); }
 BOOL DeleteMenu(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
 BOOL EnableMenuItem(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
-HBRUSH CreateSolidBrush(COLORREF) { return(WIN32_STUB((HBRUSH)nullptr)); }
-int SaveDC(HDC) { return(WIN32_STUB(0)); }
-BOOL RestoreDC(HDC, int) { return(WIN32_STUB(FALSE)); }
-int SetGraphicsMode(HDC, int) { return(WIN32_STUB(0)); }
 int GetDeviceCaps(HDC, int) { return(WIN32_STUB(0)); }
-HFONT CreateFontIndirectA(LOGFONTA const *) { return(WIN32_STUB((HFONT)nullptr)); }
-BOOL GetTextMetricsA(HDC, LPTEXTMETRICA) { return(WIN32_STUB(FALSE)); }
-BOOL TextOutA(HDC, int, int, LPCSTR, int) { return(WIN32_STUB(FALSE)); }
 BOOL GetScrollInfo(HWND, int, LPSCROLLINFO) { return(WIN32_STUB(FALSE)); }
 int SetScrollInfo(HWND, int, LPCSCROLLINFO, BOOL) { return(WIN32_STUB(0)); }
 int GetTimeFormatA(LCID, DWORD, SYSTEMTIME const *, LPCSTR, LPSTR text, int count) { if (text != nullptr && count > 0) text[0] = '\0'; return(WIN32_STUB(0)); }
@@ -2656,27 +2854,198 @@ DWORD FormatMessageA(DWORD, LPCVOID, DWORD, DWORD, LPSTR buffer, DWORD size, va_
 BOOL SetConsoleScreenBufferSize(HANDLE, COORD) { return(WIN32_STUB(FALSE)); }
 PTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(PTOP_LEVEL_EXCEPTION_FILTER) { return(WIN32_STUB((PTOP_LEVEL_EXCEPTION_FILTER)nullptr)); }
 
-int GetBkMode(HDC) { return(WIN32_STUB(0)); }
-COLORREF GetBkColor(HDC) { return(WIN32_STUB((COLORREF)0xFFFFFFFF)); }
-COLORREF GetTextColor(HDC) { return(WIN32_STUB((COLORREF)0xFFFFFFFF)); }
-UINT SetTextAlign(HDC, UINT) { return(WIN32_STUB((UINT)0xFFFFFFFF)); }
 DWORD GetWindowContextHelpId(HWND) { return(WIN32_STUB(0)); }
 BOOL WinHelpA(HWND, LPCSTR, UINT, ULONG_PTR) { return(WIN32_STUB(FALSE)); }
-BOOL SetViewportOrgEx(HDC, int, int, LPPOINT) { return(WIN32_STUB(FALSE)); }
-BOOL SetWindowOrgEx(HDC, int, int, LPPOINT) { return(WIN32_STUB(FALSE)); }
-BOOL DPtoLP(HDC, LPPOINT, int) { return(WIN32_STUB(FALSE)); }
-BOOL LPtoDP(HDC, LPPOINT, int) { return(WIN32_STUB(FALSE)); }
 HBITMAP CreateBitmap(int, int, UINT, UINT, void const *) { return(WIN32_STUB((HBITMAP)nullptr)); }
 HICON CreateIconIndirect(PICONINFO) { return(WIN32_STUB((HICON)nullptr)); }
-BOOL EnumDisplaySettingsA(LPCSTR, DWORD, LPDEVMODEA) { return(WIN32_STUB(FALSE)); }
+/*
+** A page has no list of display modes to walk. What stands in for one is the set of frame
+** sizes the game can honestly be rendered at here: the canvas as the page has laid it out,
+** whatever the game is running at now, and the familiar 4:3 and widescreen sizes that fit
+** on the display the tab is on. A canvas is whatever size the page asks for, so every one
+** of them is a size the renderer really can produce; nothing larger than the screen is
+** offered, because a window cannot be opened bigger than the display holding it.
+**
+** Everything here is measured in CSS pixels, as the frame is. A display carrying two
+** device pixels for each CSS pixel shows the same modes as one carrying a single pixel,
+** and shows them more sharply.
+*/
+struct DisplayModeEntry
+{
+	int Width;
+	int Height;
+};
+
+static const DisplayModeEntry _DisplayLadder[] = {
+	{ 640, 400 },	{ 640, 480 },	{ 800, 600 },	{ 1024, 768 },	{ 1152, 864 },
+	{ 1280, 720 },	{ 1280, 800 },	{ 1280, 960 },	{ 1280, 1024 },	{ 1366, 768 },
+	{ 1440, 900 },	{ 1600, 900 },	{ 1600, 1200 },	{ 1680, 1050 },	{ 1920, 1080 },
+	{ 1920, 1200 },	{ 2048, 1152 },	{ 2560, 1440 },	{ 2560, 1600 },
+};
+
+static DisplayModeEntry _DisplayModes[32];
+static int _DisplayModeCount = 0;
+
+
+static void Add_Display_Mode(int width, int height)
+{
+	if (width < 640 || height < 400) return;
+	if (_DisplayModeCount >= (int)(sizeof(_DisplayModes) / sizeof(_DisplayModes[0]))) return;
+
+	for (int index = 0; index < _DisplayModeCount; index++) {
+		if (_DisplayModes[index].Width == width && _DisplayModes[index].Height == height) return;
+	}
+
+	_DisplayModes[_DisplayModeCount].Width = width;
+	_DisplayModes[_DisplayModeCount].Height = height;
+	_DisplayModeCount++;
+}
+
+
+static void Build_Display_Modes(void)
+{
+	_DisplayModeCount = 0;
+
+	int screenwidth = Browser_Screen_Width();
+	int screenheight = Browser_Screen_Height();
+
+	// A page that will not say how big the display is gets the sizes a laptop can be
+	// relied on to manage rather than the whole ladder.
+	if (screenwidth <= 0 || screenheight <= 0) {
+		screenwidth = 1920;
+		screenheight = 1080;
+	}
+
+	for (unsigned index = 0; index < sizeof(_DisplayLadder) / sizeof(_DisplayLadder[0]); index++) {
+		if (_DisplayLadder[index].Width <= screenwidth && _DisplayLadder[index].Height <= screenheight) {
+			Add_Display_Mode(_DisplayLadder[index].Width, _DisplayLadder[index].Height);
+		}
+	}
+
+	/*
+	** The window itself is always on the list, and choosing it is how the player asks for
+	** the frame to keep following the window, so it has to be the size the window actually
+	** produces rather than the size it was measured at.
+	*/
+	int canvaswidth = Browser_Canvas_CSS_Width();
+	int canvasheight = Browser_Canvas_CSS_Height();
+
+	if (canvaswidth > 0 && canvasheight > 0) {
+		Video_Clamp_Frame_Size(canvaswidth, canvasheight);
+		Add_Display_Mode(canvaswidth, canvasheight);
+	}
+
+	// So that the list the player is looking at has the resolution they are looking at it in.
+	Add_Display_Mode(VideoModeWidth, VideoModeHeight);
+
+	std::sort(_DisplayModes, _DisplayModes + _DisplayModeCount,
+		[](DisplayModeEntry const & lhs, DisplayModeEntry const & rhs) {
+			return((lhs.Width != rhs.Width) ? (lhs.Width < rhs.Width) : (lhs.Height < rhs.Height));
+		});
+}
+
+
+BOOL EnumDisplaySettingsA(LPCSTR, DWORD mode, LPDEVMODEA devmode)
+{
+	if (devmode == nullptr) return(FALSE);
+
+	int width = 0;
+	int height = 0;
+
+	if (mode == ENUM_CURRENT_SETTINGS) {
+		width = Browser_Canvas_CSS_Width();
+		height = Browser_Canvas_CSS_Height();
+		if (width <= 0 || height <= 0) return(FALSE);
+	} else {
+		// The list is taken afresh at the start of an enumeration, as a driver's is, so a
+		// canvas that resizes part way through does not shorten what the caller is reading.
+		if (mode == 0) {
+			Build_Display_Modes();
+		}
+		if ((int)mode >= _DisplayModeCount) return(FALSE);
+		width = _DisplayModes[mode].Width;
+		height = _DisplayModes[mode].Height;
+	}
+
+	memset(devmode, 0, sizeof(*devmode));
+	devmode->dmSize = sizeof(*devmode);
+	devmode->dmBitsPerPel = 16;
+	devmode->dmPelsWidth = (DWORD)width;
+	devmode->dmPelsHeight = (DWORD)height;
+	devmode->dmDisplayFrequency = 60;
+	return(TRUE);
+}
 
 extern "C" const FMTID FMTID_SummaryInformation = {0xF29F85E0, 0x4FF9, 0x1068, {0xAB, 0x91, 0x08, 0x00, 0x2B, 0x27, 0xB3, 0xD9}};
 extern "C" const IID IID_IStorage = {0x0000000B, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
 
-HRESULT StgCreateDocfile(OLECHAR const *, DWORD, DWORD, IStorage ** storage) { if (storage != nullptr) *storage = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
-HRESULT StgOpenStorage(OLECHAR const *, IStorage *, DWORD, void *, DWORD, IStorage ** storage) { if (storage != nullptr) *storage = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
-HRESULT StgIsStorageFile(OLECHAR const *) { return(WIN32_STUB(S_FALSE)); }
-HRESULT CoFileTimeNow(FILETIME * filetime) { if (filetime != nullptr) { filetime->dwLowDateTime = 0; filetime->dwHighDateTime = 0; } return(WIN32_STUB(E_NOTIMPL)); }
+/*
+** A storage is named in UTF-16 and the file layer underneath takes a narrow path. Every
+** storage the engine opens is named by a path it built itself out of ASCII, so anything
+** outside ASCII is refused rather than guessed at through a code page.
+*/
+static bool Narrow_Storage_Name(OLECHAR const * name, std::string & narrow)
+{
+	if (name == nullptr) return(false);
+
+	narrow.clear();
+
+	for (OLECHAR const * ptr = name; *ptr != 0; ptr++) {
+		if ((unsigned short)*ptr > 0x7F) return(false);
+		narrow.push_back((char)*ptr);
+	}
+
+	return(!narrow.empty());
+}
+
+
+HRESULT StgCreateDocfile(OLECHAR const * name, DWORD mode, DWORD reserved, IStorage ** storage)
+{
+	if (storage != nullptr) *storage = nullptr;
+	if (reserved != 0) return(STG_E_INVALIDPARAMETER);
+
+	std::string narrow;
+	if (!Narrow_Storage_Name(name, narrow)) return(STG_E_INVALIDNAME);
+
+	return(DocFile_Create(narrow.c_str(), mode, storage));
+}
+
+
+HRESULT StgOpenStorage(OLECHAR const * name, IStorage * priority, DWORD mode, void * exclude, DWORD reserved, IStorage ** storage)
+{
+	if (storage != nullptr) *storage = nullptr;
+	if (priority != nullptr || exclude != nullptr || reserved != 0) return(STG_E_INVALIDPARAMETER);
+
+	std::string narrow;
+	if (!Narrow_Storage_Name(name, narrow)) return(STG_E_INVALIDNAME);
+
+	return(DocFile_Open(narrow.c_str(), mode, storage));
+}
+
+
+HRESULT StgIsStorageFile(OLECHAR const * name)
+{
+	std::string narrow;
+	if (!Narrow_Storage_Name(name, narrow)) return(STG_E_INVALIDNAME);
+
+	return(DocFile_Is_Storage_File(narrow.c_str()));
+}
+
+
+HRESULT CoFileTimeNow(FILETIME * filetime)
+{
+	if (filetime == nullptr) return(E_INVALIDARG);
+
+	// Win32 counts 100 nanosecond intervals from the start of 1601; the host counts seconds
+	// from the start of 1970.
+	unsigned long long const epoch = 116444736000000000ULL;
+	unsigned long long const now = epoch + (unsigned long long)::time(nullptr) * 10000000ULL;
+
+	filetime->dwLowDateTime = (DWORD)(now & 0xFFFFFFFFULL);
+	filetime->dwHighDateTime = (DWORD)(now >> 32);
+
+	return(S_OK);
+}
 
 
 DWORD GetAdaptersInfo(PIP_ADAPTER_INFO, PULONG size) { if (size != nullptr) *size = 0; return(WIN32_STUB(ERROR_BUFFER_OVERFLOW)); }
@@ -2685,9 +3054,6 @@ DWORD GetAdaptersInfo(PIP_ADAPTER_INFO, PULONG size) { if (size != nullptr) *siz
 HANDLE OpenMutexA(DWORD, BOOL, LPCSTR) { return(WIN32_STUB((HANDLE)nullptr)); }
 HRESULT OleInitialize(LPVOID reserved) { return(CoInitialize(reserved)); }
 void OleUninitialize(void) { CoUninitialize(); }
-BOOL GetTextExtentPoint32A(HDC, LPCSTR, int, LPSIZE size) { if (size != nullptr) { size->cx = 0; size->cy = 0; } return(WIN32_STUB(FALSE)); }
-HFONT CreateFontA(int, int, int, int, int, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCSTR) { return(WIN32_STUB((HFONT)nullptr)); }
-BOOL ModifyWorldTransform(HDC, void const *, DWORD) { return(WIN32_STUB(FALSE)); }
 
 
 BOOL SymInitialize(HANDLE, LPCSTR, BOOL) { return(WIN32_STUB(FALSE)); }
@@ -2700,12 +3066,10 @@ BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return(WI
 int MessageBoxIndirectA(MSGBOXPARAMSA const *) { return(WIN32_STUB(IDCANCEL)); }
 
 
-HWND GetNextDlgTabItem(HWND, HWND, BOOL) { return(WIN32_STUB((HWND)nullptr)); }
 HWND GetNextDlgGroupItem(HWND, HWND, BOOL) { return(WIN32_STUB((HWND)nullptr)); }
 
 
 int GetKeyNameTextA(LONG, LPSTR buffer, int size) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
-int DrawTextA(HDC, LPCSTR, int, LPRECT, UINT) { return(WIN32_STUB(0)); }
 
 
 /*

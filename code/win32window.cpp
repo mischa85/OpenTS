@@ -300,21 +300,17 @@ int Win32_Window_Max_Cursor_Size(void)
 /// Puts the selected cursor onto the canvas.
 /// </summary>
 /// <remarks>
-/// The page always shows a pointer. Windows leaves the screen without one only until the
-/// next mouse move, when WM_SETCURSOR puts the window class's cursor back up; a page raises
-/// no such message and registers no window class, so a hidden pointer would stay hidden for
-/// good and the player would have nothing to point with. The page's own pointer stands in
-/// for the class cursor whenever the game is not drawing one of its own.
+/// The null cursor falls back to the page's own pointer rather than to nothing. Windows
+/// leaves the screen without one only until the next mouse move, when WM_SETCURSOR puts the
+/// window class's cursor back up; a page raises no such message and registers no window
+/// class, so drawing nothing here would leave the player with nothing to point with. The
+/// blank cursor is how a caller asks for no pointer at all.
 /// </remarks>
 static void Apply_Cursor(void)
 {
 	static std::string _applied;
 
-	char const * css = "default";
-
-	if (_DisplayCount >= 0 && _Current != nullptr) {
-		css = _Current->Css.c_str();
-	}
+	char const * css = (_Current != nullptr) ? _Current->Css.c_str() : "default";
 
 	if (_applied == css) {
 		return;
@@ -322,8 +318,10 @@ static void Apply_Cursor(void)
 
 	_applied = css;
 
+	// The document is looked for rather than assumed, because this also builds into a test
+	// harness, which runs on a WebAssembly host that has no page at all.
 	EM_ASM({
-		var element = document.querySelector(UTF8ToString($0));
+		var element = (typeof document === "undefined") ? null : document.querySelector(UTF8ToString($0));
 		if (element) {
 			element.style.cursor = UTF8ToString($1);
 		}
@@ -588,6 +586,29 @@ HCURSOR LoadCursorA(HINSTANCE instance, LPCSTR name)
 }
 
 
+/// <summary>
+/// Fetches the cursor a page draws nothing for.
+/// </summary>
+/// <remarks>
+/// Windows has no such cursor because the null one already means this, and because the
+/// class cursor is standing by to end it. Neither holds on a page, so hiding the pointer
+/// and having no pointer to show have to be said apart.
+/// </remarks>
+HCURSOR Win32_Window_Blank_Cursor(void)
+{
+	static Win32CursorClass * _blank = nullptr;
+
+	if (_blank == nullptr) {
+		_blank = new Win32CursorClass;
+		_blank->Css = "none";
+		_blank->IsShared = true;
+		_Cursors.push_back(_blank);
+	}
+
+	return((HCURSOR)_blank);
+}
+
+
 HCURSOR SetCursor(HCURSOR cursor)
 {
 	Win32CursorClass * previous = _Current;
@@ -612,22 +633,17 @@ HCURSOR SetCursor(HCURSOR cursor)
 /// <remarks>
 /// Windows asks the window what the pointer should be, through WM_SETCURSOR, on the next
 /// move after anything has disturbed it, and puts the window class's own cursor back when
-/// the window declines. A page raises no such message and registers no window class, so
-/// the same question is put here: the display count changing is the moment the game takes
-/// the pointer over or gives it back, and the page's own pointer is the class cursor it
-/// falls back to.
+/// the window declines. A page raises no such message and registers no window class, so the
+/// game's own cursor stands in for the class cursor and the pointer is put back here
+/// instead. The count is the bookkeeping described where it is declared, and nothing on a
+/// canvas turns on it.
 /// </remarks>
-/// <returns>int; The count after the change. The pointer is drawn while it is not
-/// negative.</returns>
+/// <returns>int; The count after the change.</returns>
 int ShowCursor(BOOL show)
 {
 	_DisplayCount += (show != FALSE) ? 1 : -1;
 
-	if (!Win_Cursor_Handle_Set_Cursor()) {
-		SetCursor(LoadCursorA(nullptr, IDC_ARROW));
-	}
-
-	Apply_Cursor();
+	Win_Cursor_Apply();
 	return(_DisplayCount);
 }
 

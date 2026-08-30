@@ -33,4 +33,9 @@ HCURSOR Win32_Window_Create_Cursor(unsigned long const * pixels, int width, int 
 // than a clipped one, so a caller scales its image down to fit instead.
 int Win32_Window_Max_Cursor_Size(void);
 
+// The cursor that draws nothing. The null cursor cannot say this here: with no window class
+// behind the canvas it falls back to the page's own pointer, so asking for no pointer at all
+// needs a cursor of its own.
+HCURSOR Win32_Window_Blank_Cursor(void);
+
 #endif	// __EMSCRIPTEN__

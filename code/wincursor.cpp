@@ -222,6 +222,54 @@ static void Flush_Cursor_Cache(void)
 
 
 /// <summary>
+/// Answers whether the pointer is drawn even where the caller has not asked for it.
+/// </summary>
+/// <remarks>
+/// A page registers no window class, so nothing would draw the pointer while the mouse is
+/// released to a dialog and the game's own cursor stands in for the class cursor.
+/// </remarks>
+static bool Cursor_Stands_In_For_Class(void)
+{
+#if defined(__EMSCRIPTEN__)
+	return(true);
+#else
+	return(false);
+#endif
+}
+
+
+/// <summary>
+/// Draws the pointer the game has chosen.
+/// </summary>
+/// <remarks>
+/// The game's own hide only counts while it holds the mouse. Once the mouse has been
+/// released the pointer belongs to the window class, and Windows keeps drawing it whatever
+/// the game's visibility state says.
+/// </remarks>
+static void Apply_Current_Cursor(void)
+{
+	bool const held = (MouseCursor != NULL && MouseCursor->Is_Captured());
+
+	if (held && !_CursorVisible) {
+#if defined(__EMSCRIPTEN__)
+		/*
+		 * Windows draws nothing for the null cursor and only puts the class cursor back
+		 * once the game declines the next WM_SETCURSOR. A page raises no such message, so
+		 * the two are separate things here: a null falls back to the page's own pointer,
+		 * and this is the cursor that means the game asked for none.
+		 */
+		SetCursor(Win32_Window_Blank_Cursor());
+#else
+		SetCursor(NULL);
+#endif
+		return;
+	}
+
+	SetCursor(_CurrentCursor);
+}
+
+
+/// <summary>
 /// Selects the cursor for a shape frame, building it if it has not been seen before.
 /// </summary>
 /// <param name="shape">The shape set the frame belongs to.</param>
@@ -280,8 +328,8 @@ void Win_Cursor_Set(ShapeSet const * shape, int frame, int hotx, int hoty, bool 
 
 	_CurrentCursor = cursor;
 
-	if (apply) {
-		SetCursor(_CursorVisible ? _CurrentCursor : NULL);
+	if (apply || Cursor_Stands_In_For_Class()) {
+		Apply_Current_Cursor();
 	}
 }
 
@@ -294,7 +342,7 @@ void Win_Cursor_Set_Visible(bool visible)
 	_CursorVisible = visible;
 
 	if (MouseCursor != NULL && MouseCursor->Is_Captured()) {
-		SetCursor(visible ? _CurrentCursor : NULL);
+		Apply_Current_Cursor();
 	}
 }
 
@@ -310,8 +358,20 @@ bool Win_Cursor_Handle_Set_Cursor(void)
 		return(false);
 	}
 
-	SetCursor(_CursorVisible ? _CurrentCursor : NULL);
+	Apply_Current_Cursor();
 	return(true);
+}
+
+
+/// <summary>
+/// Draws the pointer the game last chose, whether or not the game holds the mouse.
+/// </summary>
+/// <remarks>
+/// This is what stands in for the window class cursor Windows would put back on its own.
+/// </remarks>
+void Win_Cursor_Apply(void)
+{
+	Apply_Current_Cursor();
 }
 
 

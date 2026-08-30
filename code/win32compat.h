@@ -483,6 +483,27 @@ typedef struct tagWNDCLASSEXA {
 	HICON hIconSm;
 } WNDCLASSEXA, WNDCLASSEX, * LPWNDCLASSEXA, * LPWNDCLASSEX;
 
+/*
+** What WM_NCCREATE and WM_CREATE carry. The field order is Win32's own and is a
+** compatibility boundary in itself: ownrdraw.cpp reads the creation parameter as
+** *(HWND *)lParam, which is only the same thing as lpCreateParams while that member
+** stays first.
+*/
+typedef struct tagCREATESTRUCTA {
+	LPVOID lpCreateParams;
+	HINSTANCE hInstance;
+	HMENU hMenu;
+	HWND hwndParent;
+	int cy;
+	int cx;
+	int y;
+	int x;
+	LONG style;
+	LPCSTR lpszName;
+	LPCSTR lpszClass;
+	DWORD dwExStyle;
+} CREATESTRUCTA, CREATESTRUCT, * LPCREATESTRUCTA, * LPCREATESTRUCT;
+
 typedef struct tagDRAWITEMSTRUCT {
 	UINT CtlType;
 	UINT CtlID;
@@ -783,6 +804,7 @@ typedef struct tWAVEFORMATEX {
 #define WM_GETFONT		0x0031
 #define WM_WINDOWPOSCHANGING 0x0046
 #define WM_WINDOWPOSCHANGED 0x0047
+#define WM_NCCREATE		0x0081
 #define WM_NCDESTROY	0x0082
 #define WM_NCHITTEST	0x0084
 #define WM_NCLBUTTONDOWN 0x00A1
@@ -2401,19 +2423,42 @@ typedef struct tagTVHITTESTINFO {
 	HTREEITEM hItem;
 } TVHITTESTINFO, TV_HITTESTINFO, * LPTVHITTESTINFO;
 
+/*
+** A dialog template and the item templates that follow it, as a resource compiler writes
+** them. Both are two-byte packed and both are followed by variable length name, class,
+** title and font fields, so neither is the whole record: they are the fixed head of one.
+** The extended form a resource may use instead -- recognized by a first DWORD of
+** 0xFFFF0001 -- carries different fields at different offsets and is read as bytes rather
+** than declared here.
+*/
+#pragma pack(push, 2)
 typedef struct {
-	WORD dlgVersion;
-	WORD signature;
-	DWORD helpID;
-	DWORD exStyle;
 	DWORD style;
-	WORD cDlgItems;
+	DWORD dwExtendedStyle;
+	WORD cdit;
 	short x;
 	short y;
 	short cx;
 	short cy;
-} DLGTEMPLATE;
+} DLGTEMPLATE, * LPDLGTEMPLATE;
+
+typedef struct {
+	DWORD style;
+	DWORD dwExtendedStyle;
+	short x;
+	short y;
+	short cx;
+	short cy;
+	WORD id;
+} DLGITEMTEMPLATE, * LPDLGITEMTEMPLATE;
+#pragma pack(pop)
+
 typedef DLGTEMPLATE const * LPCDLGTEMPLATE;
+typedef DLGITEMTEMPLATE const * LPCDLGITEMTEMPLATE;
+
+#define DS_SETFONT			0x0040L
+
+#define DLGWINDOWEXTRA		30
 
 #define TVGN_ROOT			0x0000
 #define TVGN_NEXT			0x0001
@@ -2472,6 +2517,7 @@ typedef DLGTEMPLATE const * LPCDLGTEMPLATE;
 HWND CreateDialogParamA(HINSTANCE instance, LPCSTR templatename, HWND parent, DLGPROC dialogproc, LPARAM initparam);
 HWND CreateDialogIndirectParamA(HINSTANCE instance, LPCDLGTEMPLATE dialogtemplate, HWND parent, DLGPROC dialogproc, LPARAM initparam);
 INT_PTR DialogBoxParamA(HINSTANCE instance, LPCSTR templatename, HWND parent, DLGPROC dialogproc, LPARAM initparam);
+DWORD GetDialogBaseUnits(void);
 BOOL EnumChildWindows(HWND parent, WNDENUMPROC callback, LPARAM parameter);
 int GetClassNameA(HWND window, LPSTR classname, int count);
 HWND ChildWindowFromPoint(HWND parent, POINT point);
@@ -2902,7 +2948,8 @@ typedef struct tagTVDISPINFOA {
 	((HWND)SendMessageA((hwnd), TVM_GETEDITCONTROL, 0, 0))
 
 /*
-** Structured storage. The save game is a compound file under Windows.
+** Structured storage. The save game is a compound file on both targets: OLE writes it under
+** Windows and docfile.cpp writes the same container here.
 */
 #define STGM_SHARE_DENY_READ	0x00000030L
 #define STGM_SHARE_DENY_WRITE	0x00000020L
@@ -2921,6 +2968,26 @@ typedef struct tagTVDISPINFOA {
 #define REGCLS_SINGLEUSE		0
 #define REGCLS_MULTIPLEUSE		1
 #define REGCLS_MULTI_SEPARATE	2
+#define STGC_DEFAULT			0
+#define STATFLAG_DEFAULT		0
+#define STATFLAG_NONAME			1
+
+#define STG_E_INVALIDFUNCTION		((HRESULT)0x80030001L)
+#define STG_E_FILENOTFOUND			((HRESULT)0x80030002L)
+#define STG_E_PATHNOTFOUND			((HRESULT)0x80030003L)
+#define STG_E_ACCESSDENIED			((HRESULT)0x80030005L)
+#define STG_E_INSUFFICIENTMEMORY	((HRESULT)0x80030008L)
+#define STG_E_WRITEFAULT			((HRESULT)0x8003001DL)
+#define STG_E_READFAULT				((HRESULT)0x8003001EL)
+#define STG_E_SHAREVIOLATION		((HRESULT)0x80030020L)
+#define STG_E_FILEALREADYEXISTS		((HRESULT)0x80030050L)
+#define STG_E_INVALIDPARAMETER		((HRESULT)0x80030057L)
+#define STG_E_MEDIUMFULL			((HRESULT)0x80030070L)
+#define STG_E_INVALIDHEADER			((HRESULT)0x800300FBL)
+#define STG_E_INVALIDNAME			((HRESULT)0x800300FCL)
+#define STG_E_UNKNOWN				((HRESULT)0x800300FDL)
+#define STG_E_UNIMPLEMENTEDFUNCTION	((HRESULT)0x800300FEL)
+#define STG_E_INVALIDFLAG			((HRESULT)0x800300FFL)
 
 typedef GUID FMTID;
 typedef OLECHAR ** SNB;
@@ -3141,6 +3208,10 @@ BOOL SymGetLineFromAddr64(HANDLE process, DWORD64 address, PDWORD displacement, 
 #define LBS_OWNERDRAWFIXED		0x0010L
 #define LBS_HASSTRINGS			0x0040L
 #define LBS_EXTENDEDSEL			0x0800L
+
+#define CBS_SIMPLE				0x0001L
+#define CBS_DROPDOWN			0x0002L
+#define CBS_DROPDOWNLIST		0x0003L
 
 #define TVIS_SELECTED		0x0002
 #define TVIS_CUT			0x0004

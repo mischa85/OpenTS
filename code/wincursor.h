@@ -22,5 +22,6 @@ class ShapeSet;
 void Win_Cursor_Set(ShapeSet const * shape, int frame, int hotx, int hoty, bool apply);
 void Win_Cursor_Set_Visible(bool visible);
 bool Win_Cursor_Handle_Set_Cursor(void);
+void Win_Cursor_Apply(void);
 void Win_Cursor_Refresh(void);
 void Win_Cursor_Shutdown(void);
