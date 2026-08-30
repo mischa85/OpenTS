@@ -25,7 +25,12 @@ final class RootViewController: UIViewController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
-		view.backgroundColor = .systemBackground
+
+		// The web view is not opaque, so this shows wherever the page does not paint --
+		// the safe area insets a full screen game reaches under. The game's own frame is
+		// letterboxed against black, and the system background is white in a light
+		// appearance, which would frame the picture.
+		view.backgroundColor = .black
 
 		if DiscLibrary.shared.isConfigured {
 			showGame()
