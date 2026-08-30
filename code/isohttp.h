@@ -107,6 +107,69 @@ class ISOBlockIndexClass
 
 
 /*
+ * Where a run of reads is heading, and how far in front of it the fetching may go.
+ *
+ * A movie is read a frame at a time while it plays, and a read that leaves the block the
+ * last one ended in costs a round trip the decoding cannot overlap, because the transport
+ * does not return until the bytes are there. Watching the cursor is what lets the span in
+ * front of it be asked for early instead, so the round trip is spent while the frames
+ * behind it are still being decoded.
+ *
+ * Only a run that has already moved forward is followed. A read that goes somewhere else
+ * is a seek, which ends the run and makes whatever was asked for ahead of it worthless, so
+ * the window earns its size rather than starting at it: a burst that stops after two blocks
+ * has over-read by a quarter of a megabyte and no more.
+ *
+ * Nothing here fetches. It decides which blocks are worth asking for and how far the asking
+ * may run, which is arithmetic over block numbers and is tested as such.
+ */
+class ISOReadAheadClass
+{
+	public:
+		ISOReadAheadClass(void);
+
+		void Reset(void);
+
+		/// <summary>Follows a read to the blocks it covered.</summary>
+		/// <param name="first">The first block the read touched.</param>
+		/// <param name="last">The last block it touched.</param>
+		void Note(std::uint64_t first, std::uint64_t last);
+
+		/// <summary>Reports the span in front of the cursor worth asking for now.</summary>
+		/// <param name="blocks">How many blocks the image holds.</param>
+		/// <param name="start">Receives the first block of the span.</param>
+		/// <param name="count">Receives how many blocks it covers.</param>
+		/// <returns>bool; Is there a span worth asking for?</returns>
+		bool Span(std::uint64_t blocks, std::uint64_t & start, std::uint64_t & count) const;
+
+		/// <summary>Records that every block below one has been asked for or found.</summary>
+		void Issued(std::uint64_t upto);
+
+		/// <summary>Did the last read leave the run, making what is ahead worthless?</summary>
+		bool Broke(void) const {return(Break);}
+
+		unsigned int Run(void) const {return(Length);}
+		std::uint64_t Cursor(void) const {return(Next);}
+		std::uint64_t Edge(void) const {return(Filled);}
+
+		enum {
+			RUN_MIN = 3,		// Reads in a forward run before the pattern is believed.
+			WINDOW_MIN = 4,		// Blocks kept in front of the cursor once it is.
+			WINDOW_MAX = 16,	// And the most, which bounds the run ahead at a megabyte.
+			SPAN_MAX = 8		// Blocks per request, so the first of them lands early.
+		};
+
+	private:
+
+		std::uint64_t Next;
+		std::uint64_t Filled;
+		std::uint64_t Wide;
+		unsigned int Length;
+		bool Break;
+};
+
+
+/*
  * Serves an image out of a URL.
  *
  * Reads arrive small and clustered -- a directory sector here, a mixfile header there --
@@ -120,6 +183,11 @@ class ISOBlockIndexClass
  * What has been fetched is kept in the browser's database, so a second run reads the same
  * blocks back instead of the network. The memory-resident set stays the small window set
  * above; the stored set is bounded separately and read a block at a time.
+ *
+ * A read that continues a run is answered differently. ISOReadAheadClass says which blocks
+ * the run is about to want, and those are asked for without waiting: the request is left in
+ * flight and the engine goes back to decoding, which is where the page hands the thread
+ * back and the answer arrives. What lands before it is wanted costs the read nothing at all.
  *
  * A server that ignores the range and answers with the entire image is rejected rather
  * than accommodated: every read would then cost the whole file.
@@ -173,6 +241,10 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		bool Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length);
 		BlockType const * Block(std::uint64_t index);
 
+		void Look_Ahead(void);
+		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length);
+		void Ahead_Drop(void);
+
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
 		void Store_Keep(std::uint64_t offset, void const * buffer, unsigned int length);
@@ -191,6 +263,8 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		// Where this image's figures are counted, since every image is read separately and
 		// a block number means nothing without the image it belongs to.
 		std::size_t Meter;
+
+		ISOReadAheadClass Ahead;
 
 		std::string Signature;
 		std::string Slot;

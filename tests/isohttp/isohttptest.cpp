@@ -540,6 +540,140 @@ void Check_Block_Index(void)
 	Check(bounded.Bytes() == ISOBlockIndexClass::STORE_LIMIT, "leaving the store no larger than the cap");
 }
 
+
+/*
+**	------------------------------------------------------------------------------------
+**	How far in front of a read the fetching is allowed to run. Whether a request actually
+**	overlaps the decoding is a question about a browser, but which blocks are worth asking
+**	for is arithmetic over block numbers, and a window aimed wrongly is the difference
+**	between a movie that plays and a disc that is pulled down for nothing.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Read_Ahead(void)
+{
+	std::uint64_t const blocks = 1000;
+	std::uint64_t start = 0;
+	std::uint64_t count = 0;
+
+	ISOReadAheadClass ahead;
+
+	Check(!ahead.Span(blocks, start, count), "nothing is fetched ahead of a source nobody has read");
+
+	/*
+	**	A read on its own says nothing about where the next one is going, and neither does a
+	**	second one somewhere else. Metadata is read in small pieces all over an image, and
+	**	pulling a window in after each would cost more than the reads themselves.
+	*/
+	ahead.Note(500, 500);
+	Check(!ahead.Span(blocks, start, count), "one read establishes no run");
+
+	ahead.Note(20, 20);
+	Check(ahead.Broke() && !ahead.Span(blocks, start, count), "a read somewhere else is a seek, not a run");
+
+	ahead.Note(700, 700);
+	ahead.Note(701, 701);
+	Check(!ahead.Broke(), "a read in the block after the last one continues the run");
+	Check(!ahead.Span(blocks, start, count), "which is not yet enough of a run to fetch on");
+
+	/*
+	**	Most of a movie's reads are shorter than a block and never leave the one before them.
+	**	Those hold the run rather than building it, so what the window follows is the reads
+	**	that actually move forward.
+	*/
+	ahead.Note(701, 701);
+	ahead.Note(701, 701);
+	Check(!ahead.Span(blocks, start, count), "a read that does not leave its block does not advance the run");
+
+	ahead.Note(702, 702);
+	Check(ahead.Span(blocks, start, count), "a run that keeps moving forward is fetched ahead of");
+	Check(start == 703, "the span begins where the reading has not reached");
+	Check(count == (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+		"and opens no wider than the window a young run has earned");
+
+	/*
+	**	Asking twice for the same blocks would spend the connection on bytes already on
+	**	their way, so what has been asked for is not asked for again until the cursor has
+	**	moved past it.
+	*/
+	ahead.Issued(start + count);
+	Check(!ahead.Span(blocks, start, count), "what has been asked for is not asked for again");
+
+	/*
+	**	The window widens as the run proves itself, which is what keeps a short burst cheap
+	**	and lets a movie reach far enough ahead to cover a round trip.
+	*/
+	for (unsigned int step = 0; step < 8; step++) {
+		std::uint64_t const at = 703 + step;
+		ahead.Note(at, at);
+		if (ahead.Span(blocks, start, count)) ahead.Issued(start + count);
+	}
+
+	Check(ahead.Edge() - ahead.Cursor() <= (std::uint64_t)ISOReadAheadClass::WINDOW_MAX,
+		"a long run never reaches further ahead than the window allows");
+	Check(ahead.Edge() - ahead.Cursor() > (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+		"but does reach further than a young one");
+
+	/*
+	**	A seek makes everything in front of the run it left worthless. The run starts again
+	**	from where the seek landed and asks for nothing until it is believed once more.
+	*/
+	ahead.Note(10, 10);
+	Check(ahead.Broke(), "a seek out of the run is reported so what is in flight can be let go");
+	Check(!ahead.Span(blocks, start, count), "and the window closes until a new run is established");
+	Check(ahead.Cursor() == 11, "the run starts again from where the seek landed");
+
+	/*
+	**	The image ends, and a request that runs past it would be answered short or refused.
+	*/
+	ISOReadAheadClass edge;
+
+	for (std::uint64_t at = blocks - 6; at < blocks; at++) {
+		edge.Note(at, at);
+	}
+
+	if (edge.Span(blocks, start, count)) {
+		Check(start + count <= blocks, "no span is asked for past the end of the image");
+	} else {
+		Check(edge.Cursor() >= blocks, "nothing is asked for once the reading has reached the end");
+	}
+
+	/*
+	**	A read may cover more than one block. It still counts as one step of a run, and the
+	**	window opens in front of where it finished rather than where it began.
+	*/
+	ISOReadAheadClass extent;
+
+	extent.Note(0, 1);
+	extent.Note(2, 3);
+	extent.Note(4, 5);
+	Check(extent.Span(blocks, start, count) && start == 6,
+		"a run of multi-block reads is followed from where the last of them ended");
+	Check(count <= (std::uint64_t)ISOReadAheadClass::SPAN_MAX,
+		"and no one request is larger than a span");
+
+	/*
+	**	A read long enough to be a span of its own carries its own round trip and goes out as
+	**	one request whatever it covers, so there is nothing in front of it worth guessing at.
+	**	That is how a mixfile is loaded, and the loading moves from file to file.
+	*/
+	ISOReadAheadClass loading;
+
+	loading.Note(0, 39);
+	loading.Note(40, 79);
+	loading.Note(80, 119);
+	Check(!loading.Span(blocks, start, count),
+		"a read that is already a span of its own is not fetched ahead of");
+
+	loading.Note(120, 120);
+	loading.Note(121, 121);
+	Check(loading.Span(blocks, start, count) && start == 122,
+		"and the window opens again as soon as the reads are short enough to need it");
+
+	extent.Reset();
+	Check(extent.Cursor() == 0 && extent.Run() == 0 && !extent.Span(blocks, start, count),
+		"a source that is closed forgets where its reading had reached");
+}
+
 } // namespace
 
 
@@ -710,6 +844,7 @@ int main(int argc, char ** argv)
 	Check_Image_Locations();
 	Check_Several_Images();
 	Check_Block_Index();
+	Check_Read_Ahead();
 
 	std::printf("\n%s\n", Failures == 0 ? "all checks passed" : "checks failed");
 	return (Failures == 0) ? 0 : 1;

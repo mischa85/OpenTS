@@ -1149,11 +1149,14 @@ inside quota and makes the first run fast.
 > neither does the import UX that most of the estimate was for. Requirement 3
 > held exactly: nothing above `FileClass` changed.
 >
-> The transport is a synchronous `XMLHttpRequest`, and that is forced rather
-> than chosen: the engine's first file open happens in a static constructor,
-> before `main`, where a JSPI suspend is illegal, so an asynchronous fetch there
-> would end the run (`code/isohttp.cpp:13`–`:21`). It is the one place in the
-> port where the scaffold could not be used.
+> The transport that answers a read is a synchronous `XMLHttpRequest`, and that
+> is forced rather than chosen: the engine's first file open happens in a static
+> constructor, before `main`, where a JSPI suspend is illegal, so an
+> asynchronous fetch there would end the run (`code/isohttp.cpp:13`–`:21`). It
+> is the one place in the port where the scaffold could not be used. Reads that
+> settle into a forward run are also fetched ahead of, and that fetch is an
+> ordinary asynchronous one — starting it is not a wait, and the read that wants
+> it copies it off the heap.
 >
 > The licensing analysis above is unchanged and still governs: the image is the
 > player's own, named by the page or the host, and the project serves none.
