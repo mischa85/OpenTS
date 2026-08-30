@@ -41,6 +41,17 @@ class ISOBlockSourceClass
 		/// <summary>Reports how large the image is.</summary>
 		/// <returns>The size of the image in bytes, or zero when it is not known.</returns>
 		virtual std::uint64_t Total_Size(void) = 0;
+
+		/// <summary>Says what a run of the image is about to be used for.</summary>
+		/// <param name="kind">Whether the run is being read now or may be wanted later.</param>
+		/// <param name="offset">Byte offset from the start of the image.</param>
+		/// <param name="length">How many bytes the run covers.</param>
+		/// <remarks>Advisory, and answered by doing nothing at all. A source whose bytes are
+		/// already at hand has nothing to gain from one; a source that fetches them over a
+		/// network reads ahead within the run rather than inferring which way it is going,
+		/// and never past its end.</remarks>
+		virtual void Hint(ISOHintType kind, std::uint64_t offset, std::uint64_t length)
+			{(void)kind; (void)offset; (void)length;}
 };
 
 
@@ -130,6 +141,7 @@ class ISOVolumeClass
 		bool Enumerate(ISOEntryClass const & directory, std::vector<std::string> & names) const;
 
 		int Read(ISOEntryClass const & entry, std::uint32_t offset, void * buffer, unsigned int length) const;
+		void Hint(ISOEntryClass const & entry, ISOHintType kind, std::uint32_t offset, std::uint32_t length) const;
 
 	private:
 

@@ -51,6 +51,22 @@ void ISOFileClass::Detach(void)
 }
 
 
+/// <summary>Says what a run of this file is about to be used for.</summary>
+void ISOFileClass::Hint(ISOHintType kind, int offset, int length)
+{
+	if (!Is_Attached() || offset < 0) return;
+
+	std::uint32_t const size = Entry.Size;
+	std::uint32_t const at = (std::uint32_t)offset;
+
+	if (at >= size) return;
+
+	std::uint32_t const span = (length < 0) ? (size - at) : (std::uint32_t)length;
+
+	Volume->Hint(Entry, kind, at, span);
+}
+
+
 char const * ISOFileClass::File_Name(void) const
 {
 	return(Filename.c_str());
@@ -113,6 +129,14 @@ int ISOFileClass::Open(int rights)
 
 	Position = 0;
 	IsOpen = true;
+
+	/*
+	**	An open says what a directory lookup cannot: these bytes are one file and are about
+	**	to be read from front to back. A caller that then reads only part of it -- the
+	**	mixfile system biases an object to one embedded file -- narrows the run with a hint
+	**	of its own.
+	*/
+	Volume->Hint(Entry, ISO_HINT_SEQUENTIAL, 0, Entry.Size);
 	return(true);
 }
 

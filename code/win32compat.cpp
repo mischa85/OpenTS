@@ -767,6 +767,39 @@ static std::shared_ptr<ISOVolumeClass> Image_Entry(char const * filename, ISOEnt
 }
 
 
+/// <summary>Says what a run of an already open file is about to be used for.</summary>
+bool Win32_Hint_Handle(HANDLE file, ISOHintType kind, unsigned int offset, unsigned int length)
+{
+	HandleEntryType * const entry = Entry_From_File_Handle(file);
+
+	if (entry == nullptr || entry->Kind != HANDLE_KIND_IMAGE || !entry->Volume) return(false);
+	if (offset >= entry->Image.Size) return(false);
+
+	std::uint32_t const span = (length != 0) ? (std::uint32_t)length : (entry->Image.Size - offset);
+
+	entry->Volume->Hint(entry->Image, kind, (std::uint32_t)offset, span);
+	return(true);
+}
+
+
+/// <summary>Says what a run of a file on a mounted image is about to be used for.</summary>
+bool Win32_Hint_File(char const * filename, ISOHintType kind, unsigned int offset, unsigned int length)
+{
+	if (filename == nullptr || *filename == '\0') return(false);
+
+	ISOEntryClass found;
+	std::shared_ptr<ISOVolumeClass> volume = Image_Entry(filename, found);
+
+	if (!volume) return(false);
+	if (offset >= found.Size) return(false);
+
+	std::uint32_t const span = (length != 0) ? (std::uint32_t)length : (found.Size - offset);
+
+	volume->Hint(found, kind, (std::uint32_t)offset, span);
+	return(true);
+}
+
+
 /*
 ** File times. Win32 counts hundred-nanosecond intervals from the start of 1601 and the
 ** host counts seconds from the start of 1970; this is the distance between the two epochs.
@@ -999,6 +1032,16 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 			entry.Volume = std::move(volume);
 			entry.Image = found;
 			entry.Cursor = 0;
+
+			/*
+			** The image is told what the directory lookup just established and the reads
+			** that follow cannot say: these bytes are one file, they are about to be read
+			** from front to back, and they end where the file does. An image whose bytes
+			** are at hand does nothing with it; one being fetched over a network reads
+			** ahead from the first block rather than after the reads it would take to
+			** notice, and never past the end of the file.
+			*/
+			entry.Volume->Hint(entry.Image, ISO_HINT_SEQUENTIAL, 0, entry.Image.Size);
 
 			SetLastError(NO_ERROR);
 			return(Handle_From_Index(index));

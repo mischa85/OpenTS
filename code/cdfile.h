@@ -94,6 +94,15 @@ class CDFileClass : public BufferIOFileClass
 		static void Add_Search_Drive(char *path);
 		static void Clear_Search_Drives(void);
 
+		/// <summary>Says a file will probably be wanted before long.</summary>
+		/// <param name="filename">The name the engine would open, whether it names a file
+		/// of its own or one embedded in a mixfile.</param>
+		/// <remarks>Advisory and free. The name is resolved to the run of bytes it occupies
+		/// on whichever search entry supplies it, and that entry is told; an entry with the
+		/// bytes already at hand does nothing with it. A name that resolves to nothing, or
+		/// to something already in memory, costs the resolution and no more.</remarks>
+		static void Prefetch(char const * filename);
+
 		static bool Find_First_File(char *buffer);
 		static bool Find_Next_File(char *buffer);
 		static void Find_Close(void);
@@ -102,6 +111,7 @@ class CDFileClass : public BufferIOFileClass
 
 		bool Is_Image_File(void) const {return(ISOFile.Is_Attached());}
 		int Raw_Seek_Image(int pos, int dir=SEEK_CUR);
+		void Hint_Extent(void);
 
 		/*
 		**	Is multi-drive searching disabled for this file object?

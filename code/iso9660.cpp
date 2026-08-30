@@ -545,6 +545,44 @@ int ISOVolumeClass::Read(ISOEntryClass const & entry, std::uint32_t offset, void
 }
 
 
+/// <summary>Tells the block source what a run of a file is about to be used for.</summary>
+/// <param name="entry">The file the run belongs to.</param>
+/// <param name="kind">Whether the run is being read now or may be wanted later.</param>
+/// <param name="offset">Byte offset within the file.</param>
+/// <param name="length">How many bytes the run covers.</param>
+/// <remarks>The walk is the one Read does, so a hint names exactly the bytes a read of the
+/// same span would ask for. Each extent is named separately, because ECMA-119 does not
+/// require two runs of one file to sit next to each other on the disc.</remarks>
+void ISOVolumeClass::Hint(ISOEntryClass const & entry, ISOHintType kind, std::uint32_t offset, std::uint32_t length) const
+{
+	if (!Source) return;
+	if (entry.IsDirectory || offset >= entry.Size) return;
+
+	if (length > entry.Size - offset) {
+		length = entry.Size - offset;
+	}
+
+	std::uint32_t skip = offset;
+
+	for (ISOExtentType const & extent : entry.Extents) {
+		if (length == 0) break;
+
+		if (skip >= extent.Length) {
+			skip -= extent.Length;
+			continue;
+		}
+
+		std::uint32_t const available = extent.Length - skip;
+		std::uint32_t const chunk = length < available ? length : available;
+
+		Source->Hint(kind, (std::uint64_t)extent.Start * ISO_SECTOR_SIZE + skip, chunk);
+
+		length -= chunk;
+		skip = 0;
+	}
+}
+
+
 /// <summary>Compares two names the way a disc lookup should.</summary>
 /// <param name="left">First name.</param>
 /// <param name="right">Second name.</param>

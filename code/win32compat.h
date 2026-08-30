@@ -35,6 +35,7 @@
 #if defined(__EMSCRIPTEN__)
 
 #include "crtcompat.h"
+#include "iso9660.hh"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -95,6 +96,17 @@ void Win32_Unsupported_Reached(char const * description);
 */
 bool Win32_Mount_Image(char const * location);
 void Win32_Unmount_Image(void);
+
+/// <summary>Says what a run of a file on a mounted image is about to be used for.</summary>
+/// <param name="filename">The name the engine would open.</param>
+/// <param name="kind">Whether the run is being read now or may be wanted later.</param>
+/// <param name="offset">Byte offset within the file.</param>
+/// <param name="length">How many bytes it covers, or 0 for the rest of the file.</param>
+/// <returns>bool; Did the name resolve to a file on a mounted image?</returns>
+/// <remarks>Advisory. It exists because the image knows what an open cannot say for
+/// itself: a name the engine has not opened yet still has a place on the disc, and a
+/// distant server is worth telling about it while there is nothing else to fetch.</remarks>
+bool Win32_Hint_File(char const * filename, ISOHintType kind, unsigned int offset, unsigned int length);
 
 
 /*
@@ -1598,6 +1610,18 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD tobread, LPDWORD read, LPOVERLAPPED overlapped);
 BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD towrite, LPDWORD written, LPOVERLAPPED overlapped);
 DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distancehigh, DWORD method);
+
+/// <summary>Says what a run of an already open file is about to be used for.</summary>
+/// <param name="file">A handle the file API handed out.</param>
+/// <param name="kind">Whether the run is being read now or may be wanted later.</param>
+/// <param name="offset">Byte offset within the file.</param>
+/// <param name="length">How many bytes it covers, or 0 for the rest of the file.</param>
+/// <returns>bool; Was the handle one an image answers for?</returns>
+/// <remarks>What an open cannot say and this can: the mixfile system opens an archive and
+/// then reads one embedded file out of the middle of it, so the run being read is a
+/// fraction of the file the handle names and ends long before it does.</remarks>
+bool Win32_Hint_Handle(HANDLE file, ISOHintType kind, unsigned int offset, unsigned int length);
+
 DWORD GetFileSize(HANDLE file, LPDWORD sizehigh);
 BOOL SetEndOfFile(HANDLE file);
 BOOL FlushFileBuffers(HANDLE file);

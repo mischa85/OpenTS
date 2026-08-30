@@ -687,6 +687,259 @@ void Check_Image_Identity(void)
 
 /*
 **	------------------------------------------------------------------------------------
+**	What the link costs, and what the read ahead is worth doing because of it. The whole
+**	point is that none of it is a constant: the same code reads a disc on this machine and
+**	a disc on the far side of the world, and the difference between the two is three orders
+**	of magnitude of round trip. The arithmetic that turns a pair of measurements into a
+**	window is checked here against both.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Link(void)
+{
+	ISOLinkClass link;
+
+	Check(!link.Measured() && link.Window() == (unsigned int)ISOLinkClass::WINDOW_MIN,
+		"a link nothing has been read over reaches no further than the floor");
+	Check(link.Span() == (unsigned int)ISOLinkClass::SPAN_MIN,
+		"and asks for no more than one span at a time");
+	Check(link.Flights() == (unsigned int)ISOLinkClass::FLIGHTS_MIN,
+		"with no more outstanding than a link on this machine would want");
+
+	/*
+	**	A disc served from the same machine. The round trip is most of a millisecond and the
+	**	rate is a hundred megabytes a second, which is a window of a few blocks: there is
+	**	almost nothing in front of the reading for a window to hide.
+	*/
+	ISOLinkClass local;
+
+	for (unsigned int step = 0; step < 12; step++) {
+		local.Note(2048, 0.5);
+		local.Note(65536, 1.15);
+	}
+
+	Check(local.Measured(), "a few requests are enough to measure a link");
+	Check(local.Trip() < 1.0, "a disc on this machine costs well under a millisecond a request");
+	Check(local.Window() <= 8, "so the reading is barely got in front of at all");
+	Check(local.Span() == (unsigned int)ISOLinkClass::SPAN_MIN,
+		"and a request asks for the same span it always did");
+	Check(local.Flights() == (unsigned int)ISOLinkClass::FLIGHTS_MIN,
+		"with the same number outstanding");
+
+	/*
+	**	The same server with forty milliseconds in front of it. A round trip now costs what
+	**	twenty blocks take to deliver, so the window has to be about that or it empties
+	**	before the request refilling it lands.
+	*/
+	ISOLinkClass forty;
+
+	for (unsigned int step = 0; step < 20; step++) {
+		forty.Note(2048, 40.0);
+		forty.Note(65536, 43.2);
+	}
+
+	Check(forty.Trip() > 30.0 && forty.Trip() < 50.0, "forty milliseconds is measured as forty");
+	Check(forty.Window() > local.Window() * 4,
+		"a link with a round trip in front of it is reached much further ahead of");
+	Check(forty.Flights() == (unsigned int)ISOLinkClass::FLIGHTS_MIN,
+		"one request at a time still fills a link this close");
+
+	/*
+	**	And a hundred and fifty, which is a server on another continent. The window is
+	**	several times what forty earned, the requests are larger rather than merely more
+	**	frequent, and more of them are allowed beside each other because a single stream no
+	**	longer fills the link by itself.
+	*/
+	ISOLinkClass distant;
+
+	for (unsigned int step = 0; step < 20; step++) {
+		distant.Note(2048, 150.0);
+		distant.Note(65536, 153.2);
+	}
+
+	Check(distant.Window() > forty.Window() * 2, "a distant server is reached further ahead of again");
+	Check(distant.Span() > forty.Span(), "and is asked for more at a time rather than more often");
+	Check(distant.Flights() > forty.Flights(), "with more requests beside each other");
+	Check(distant.Reach() > forty.Reach(),
+		"and more of a file is worth taking whole rather than paying another trip for");
+
+	Check(distant.Window() <= (unsigned int)ISOLinkClass::WINDOW_MAX
+		&& distant.Span() <= (unsigned int)ISOLinkClass::SPAN_MAX
+		&& distant.Flights() <= (unsigned int)ISOLinkClass::FLIGHTS_MAX,
+		"and none of the three runs past what it is allowed");
+
+	/*
+	**	One request that queued behind another says nothing about the link, and a window
+	**	that widened on it would spend the connection on a stall that has already passed.
+	**	One that was faster than anything seen so far does say something, and is taken.
+	*/
+	ISOLinkClass drift;
+
+	for (unsigned int step = 0; step < 20; step++) {
+		drift.Note(2048, 40.0);
+		drift.Note(65536, 43.2);
+	}
+
+	unsigned int const settled = drift.Window();
+
+	drift.Note(2048, 4000.0);
+	Check(drift.Window() < settled * 3, "a single stalled request does not open the window wide");
+
+	for (unsigned int step = 0; step < 20; step++) {
+		drift.Note(2048, 40.0);
+	}
+	Check(drift.Trip() < 60.0, "and the reading it stalled behind is left behind within a few more");
+
+	/*
+	**	A link that genuinely worsens is followed, or every window behind it is short of what
+	**	it now takes to refill one.
+	*/
+	for (unsigned int step = 0; step < 40; step++) {
+		drift.Note(2048, 150.0);
+	}
+	Check(drift.Trip() > 120.0, "a link that has really slowed down is followed to where it went");
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	A run the file layer declared. An ISO9660 file is one run of consecutive sectors, so an
+**	open says both of the things a block source cannot work out for itself: that the reading
+**	is about to go forward, and where it stops. What is checked here is that the declaration
+**	costs the two reads of noticing nothing, and that nothing in front of the reading is
+**	ever asked for past the end of the file.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Declared_Runs(void)
+{
+	std::uint64_t const blocks = 20000;
+	unsigned int const window = 64;
+	unsigned int const span = 16;
+	std::uint64_t start = 0;
+	std::uint64_t count = 0;
+
+	ISOReadAheadClass file;
+
+	file.Begin(400, 460);
+	Check(file.Bounded() && file.Limit() == 460 && file.Cursor() == 400,
+		"a declared run starts where the file does");
+	Check(file.Continues(400), "and is believed before anything has been read of it");
+	Check(file.Span(blocks, window, span, start, count)
+		&& start == 400 && count == (std::uint64_t)ISOLinkClass::WINDOW_MIN,
+		"the smallest window is open before the file has been read from at all");
+
+	/*
+	**	The first read of the file opens a window, where an undeclared run would have needed
+	**	a second read to be believed at all. That is a whole round trip off the front of
+	**	every file the engine opens.
+	*/
+	file.Note(400, 400);
+	Check(file.Span(blocks, window, span, start, count) && start == 401,
+		"the first read of a declared file is fetched ahead of");
+
+	file.Issued(start + count);
+
+	/*
+	**	The reading runs on, and the window grows with what it has covered rather than with
+	**	how many reads it took to cover it.
+	*/
+	for (std::uint64_t at = 401; at < 440; at++) {
+		file.Note(at, at);
+		if (file.Span(blocks, window, span, start, count)) {
+			Check(start + count <= 460, "nothing is ever asked for past the end of the file");
+			file.Issued(start + count);
+		}
+	}
+
+	Check(file.Edge() == 460, "and the window stops there rather than running into the next one");
+	Check(file.Edge() - file.Cursor() < (std::uint64_t)window,
+		"so the end of a file costs less over-reading than the middle of one");
+
+	/*
+	**	A read that already covers a span of its own is not fetched ahead of when nobody
+	**	said where it was going, because the loading that reads that way moves from file to
+	**	file. Inside a declared file it is, since the asking cannot leave the file.
+	*/
+	ISOReadAheadClass bulk;
+
+	bulk.Begin(0, 4000);
+	bulk.Note(0, 39);
+	Check(bulk.Span(blocks, window, span, start, count) && start == 40,
+		"a bulk read inside a declared file is fetched ahead of");
+
+	ISOReadAheadClass loose;
+
+	loose.Note(0, 39);
+	loose.Note(40, 79);
+	Check(!loose.Span(blocks, window, span, start, count),
+		"and the same read with nothing declared about it is not");
+
+	/*
+	**	Several runs at once, and a declaration among them. Declaring the file a run is
+	**	already following leaves that run alone: the engine opens the same file many times
+	**	over, and starting again at the front of it each time would ask for what the reading
+	**	had already been given.
+	*/
+	std::uint64_t lost = 0;
+	std::uint64_t stop = 0;
+
+	ISOReadRunsClass runs;
+
+	runs.Declare(1000, 1400);
+	runs.Note(1000, 1000, lost, stop);
+
+	Check(runs.Current().Bounded() && runs.Current().Limit() == 1400,
+		"the first read inside a declared file takes the file's end with it");
+	Check(runs.Current().Span(blocks, window, span, start, count) && start == 1001,
+		"and is fetched ahead of from that first read");
+
+	/*
+	**	A declaration is remembered and nothing more. The engine declares a file whenever it
+	**	opens one and opens far more of them than it reads, so a declaration that took a run
+	**	over would spend most of its time throwing away what a stream still being read had
+	**	asked for.
+	*/
+	runs.Current().Issued(start + count);
+
+	std::uint64_t const held = runs.Current().Cursor();
+	std::uint64_t const edge = runs.Current().Edge();
+
+	for (unsigned int step = 0; step < 40; step++) {
+		runs.Declare(20000 + step * 100, 20000 + step * 100 + 50);
+	}
+
+	runs.Note(1001, 1001, lost, stop);
+	Check(runs.Current().Cursor() == held + 1 && runs.Current().Edge() == edge,
+		"a stream is undisturbed by any number of files being declared beside it");
+	Check(runs.Current().Limit() == 1400, "and keeps the end its own file declared");
+
+	/*
+	**	The mixfile system declares the whole of an archive and then the one embedded file
+	**	it wanted. Both cover the reading, and it is the embedded one that says where it
+	**	stops.
+	*/
+	ISOReadRunsClass nested;
+
+	nested.Declare(0, 100000);
+	nested.Declare(5000, 5100);
+	nested.Note(5000, 5000, lost, stop);
+	Check(nested.Current().Limit() == 5100,
+		"a read inside two declarations takes the end of the narrower one");
+
+	/*
+	**	A read landing where nothing was declared is the run that has to be noticed, and is
+	**	not believed until it has moved forward twice.
+	*/
+	ISOReadRunsClass stray;
+
+	stray.Declare(0, 100);
+	stray.Note(9000, 9000, lost, stop);
+	Check(!stray.Current().Bounded() && !stray.Current().Span(blocks, window, span, start, count),
+		"a read outside every declaration establishes nothing on its own");
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
 **	How far in front of a read the fetching is allowed to run. Whether a request actually
 **	overlaps the decoding is a question about a browser, but which blocks are worth asking
 **	for is arithmetic over block numbers, and a window aimed wrongly is the difference
@@ -699,9 +952,17 @@ void Check_Read_Ahead(void)
 	std::uint64_t start = 0;
 	std::uint64_t count = 0;
 
+	/*
+	**	The window and the span the link is worth are the read ahead's inputs rather than
+	**	its constants, so the checks below name what a fast link would have measured and a
+	**	set of their own names what a slow one would.
+	*/
+	unsigned int const window = 16;
+	unsigned int const span = (unsigned int)ISOLinkClass::SPAN_MIN;
+
 	ISOReadAheadClass ahead;
 
-	Check(!ahead.Span(blocks, start, count), "nothing is fetched ahead of a source nobody has read");
+	Check(!ahead.Span(blocks, window, span, start, count), "nothing is fetched ahead of a source nobody has read");
 	Check(!ahead.Continues(500), "and a run nobody has read carries nothing on");
 
 	/*
@@ -710,11 +971,11 @@ void Check_Read_Ahead(void)
 	**	pulling a window in after each would cost more than the reads themselves.
 	*/
 	ahead.Note(500, 500);
-	Check(!ahead.Span(blocks, start, count), "one read establishes no run");
+	Check(!ahead.Span(blocks, window, span, start, count), "one read establishes no run");
 
 	Check(!ahead.Continues(20), "a read somewhere else is a seek, not a run");
 	ahead.Note(20, 20);
-	Check(!ahead.Span(blocks, start, count), "and the reading starts again from where it landed");
+	Check(!ahead.Span(blocks, window, span, start, count), "and the reading starts again from where it landed");
 
 	/*
 	**	Two reads moving forward are the whole of what a run has to prove. A clip playing in
@@ -725,9 +986,9 @@ void Check_Read_Ahead(void)
 	Check(ahead.Continues(701), "a read in the block after the last one continues the run");
 	ahead.Note(701, 701);
 
-	Check(ahead.Span(blocks, start, count), "a second read moving forward is fetched ahead of");
+	Check(ahead.Span(blocks, window, span, start, count), "a second read moving forward is fetched ahead of");
 	Check(start == 702, "the span begins where the reading has not reached");
-	Check(count == (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+	Check(count == (std::uint64_t)ISOLinkClass::WINDOW_MIN,
 		"and opens no wider than the window a young run has earned");
 
 	/*
@@ -736,7 +997,7 @@ void Check_Read_Ahead(void)
 	**	moved past it.
 	*/
 	ahead.Issued(start + count);
-	Check(!ahead.Span(blocks, start, count), "what has been asked for is not asked for again");
+	Check(!ahead.Span(blocks, window, span, start, count), "what has been asked for is not asked for again");
 
 	/*
 	**	Most of a movie's reads are shorter than a block and never leave the one before them.
@@ -754,12 +1015,12 @@ void Check_Read_Ahead(void)
 	for (unsigned int step = 0; step < 8; step++) {
 		std::uint64_t const at = 702 + step;
 		ahead.Note(at, at);
-		if (ahead.Span(blocks, start, count)) ahead.Issued(start + count);
+		if (ahead.Span(blocks, window, span, start, count)) ahead.Issued(start + count);
 	}
 
-	Check(ahead.Edge() - ahead.Cursor() <= (std::uint64_t)ISOReadAheadClass::WINDOW_MAX,
+	Check(ahead.Edge() - ahead.Cursor() <= (std::uint64_t)window,
 		"a long run never reaches further ahead than the window allows");
-	Check(ahead.Edge() - ahead.Cursor() > (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+	Check(ahead.Edge() - ahead.Cursor() > (std::uint64_t)ISOLinkClass::WINDOW_MIN,
 		"but does reach further than a young one");
 
 	/*
@@ -768,7 +1029,7 @@ void Check_Read_Ahead(void)
 	*/
 	Check(!ahead.Continues(10), "a read out of the run is reported so what is in flight can be let go");
 	ahead.Note(10, 10);
-	Check(!ahead.Span(blocks, start, count), "and the window closes until a new run is established");
+	Check(!ahead.Span(blocks, window, span, start, count), "and the window closes until a new run is established");
 	Check(ahead.Cursor() == 11, "the run starts again from where the seek landed");
 
 	/*
@@ -780,7 +1041,7 @@ void Check_Read_Ahead(void)
 		edge.Note(at, at);
 	}
 
-	if (edge.Span(blocks, start, count)) {
+	if (edge.Span(blocks, window, span, start, count)) {
 		Check(start + count <= blocks, "no span is asked for past the end of the image");
 	} else {
 		Check(edge.Cursor() >= blocks, "nothing is asked for once the reading has reached the end");
@@ -795,10 +1056,9 @@ void Check_Read_Ahead(void)
 	extent.Note(0, 1);
 	extent.Note(2, 3);
 	extent.Note(4, 5);
-	Check(extent.Span(blocks, start, count) && start == 6,
+	Check(extent.Span(blocks, window, span, start, count) && start == 6,
 		"a run of multi-block reads is followed from where the last of them ended");
-	Check(count <= (std::uint64_t)ISOReadAheadClass::SPAN_MAX,
-		"and no one request is larger than a span");
+	Check(count <= (std::uint64_t)span, "and no one request is larger than a span");
 
 	/*
 	**	A read long enough to be a span of its own carries its own round trip and goes out as
@@ -810,15 +1070,15 @@ void Check_Read_Ahead(void)
 	loading.Note(0, 39);
 	loading.Note(40, 79);
 	loading.Note(80, 119);
-	Check(!loading.Span(blocks, start, count),
+	Check(!loading.Span(blocks, window, span, start, count),
 		"a read that is already a span of its own is not fetched ahead of");
 
 	loading.Note(120, 120);
-	Check(loading.Span(blocks, start, count) && start == 121,
+	Check(loading.Span(blocks, window, span, start, count) && start == 121,
 		"and the window opens again as soon as the reads are short enough to need it");
 
 	extent.Reset();
-	Check(extent.Cursor() == 0 && extent.Run() == 0 && !extent.Span(blocks, start, count),
+	Check(extent.Cursor() == 0 && extent.Run() == 0 && !extent.Span(blocks, window, span, start, count),
 		"a source that is closed forgets where its reading had reached");
 }
 
@@ -835,6 +1095,8 @@ void Check_Read_Ahead(void)
 void Check_Read_Runs(void)
 {
 	std::uint64_t const blocks = 20000;
+	unsigned int const window = 16;
+	unsigned int const span = (unsigned int)ISOLinkClass::SPAN_MIN;
 	std::uint64_t start = 0;
 	std::uint64_t count = 0;
 	std::uint64_t lost = 0;
@@ -843,7 +1105,7 @@ void Check_Read_Runs(void)
 	ISOReadRunsClass runs;
 
 	Check(!runs.Note(1014, 1014, lost, stop), "the first read of a set displaces no run");
-	Check(!runs.Current().Span(blocks, start, count), "and one read establishes no run");
+	Check(!runs.Current().Span(blocks, window, span, start, count), "and one read establishes no run");
 
 	/*
 	**	The clip's whole footprint is three blocks read back to back inside one frame. The
@@ -851,7 +1113,7 @@ void Check_Read_Runs(void)
 	**	no decoding in between for a round trip to hide in.
 	*/
 	runs.Note(1014, 1015, lost, stop);
-	Check(runs.Current().Span(blocks, start, count) && start == 1016,
+	Check(runs.Current().Span(blocks, window, span, start, count) && start == 1016,
 		"a clip's second block is enough of a run to ask for the third");
 	runs.Current().Issued(start + count);
 
@@ -861,7 +1123,7 @@ void Check_Read_Runs(void)
 	*/
 	Check(!runs.Note(10457, 10457, lost, stop), "a read somewhere else takes a run of its own");
 	runs.Note(10458, 10458, lost, stop);
-	Check(runs.Current().Span(blocks, start, count) && start == 10459,
+	Check(runs.Current().Span(blocks, window, span, start, count) && start == 10459,
 		"which earns a window of its own");
 	runs.Current().Issued(start + count);
 
@@ -881,7 +1143,7 @@ void Check_Read_Runs(void)
 	lost = 0;
 	stop = 0;
 	Check(runs.Note(5000, 5000, lost, stop), "a fifth run takes over the one longest unread");
-	Check(lost == 10459 && stop == 10459 + (std::uint64_t)ISOReadAheadClass::WINDOW_MIN,
+	Check(lost == 10459 && stop == 10459 + (std::uint64_t)ISOLinkClass::WINDOW_MIN,
 		"and reports that run's outstanding span, so only those bytes are let go");
 
 	runs.Note(1017, 1017, lost, stop);
@@ -889,7 +1151,7 @@ void Check_Read_Runs(void)
 		"the clip's run outlives four other streams reading the same image");
 
 	runs.Reset();
-	Check(runs.Current().Run() == 0 && !runs.Current().Span(blocks, start, count),
+	Check(runs.Current().Run() == 0 && !runs.Current().Span(blocks, window, span, start, count),
 		"and a source that is closed forgets every run it was following");
 }
 
@@ -1064,8 +1326,10 @@ int main(int argc, char ** argv)
 	Check_Several_Images();
 	Check_Block_Index();
 	Check_Image_Identity();
+	Check_Link();
 	Check_Read_Ahead();
 	Check_Read_Runs();
+	Check_Declared_Runs();
 
 	std::printf("\n%s\n", Failures == 0 ? "all checks passed" : "checks failed");
 	return (Failures == 0) ? 0 : 1;

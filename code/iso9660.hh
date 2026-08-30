@@ -50,3 +50,16 @@ enum ISORecordFlag {
 	ISO_RECORD_EXTENDED_PERMISSIONS = 0x10,
 	ISO_RECORD_MULTI_EXTENT = 0x80
 };
+
+
+/*
+ * What a hint says about a run of an image, in the order of how much it claims.
+ *
+ * A hint is advisory and free. It exists because the file layer knows two things the block
+ * source cannot work out for itself: that a run of bytes is one file and will be read from
+ * front to back, and that a file the engine has not opened yet is likely to be wanted.
+ */
+enum ISOHintType {
+	ISO_HINT_SEQUENTIAL,	// Being read now, front to back, and ending where it says.
+	ISO_HINT_SOON			// Probably wanted later, and only worth fetching while nothing else is.
+};

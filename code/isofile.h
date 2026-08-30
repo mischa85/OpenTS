@@ -34,6 +34,12 @@ class ISOFileClass : public FileClass
 		void Detach(void);
 		bool Is_Attached(void) const {return(Volume != nullptr && Entry.Is_Valid());}
 
+		/// <summary>Says what a run of this file is about to be used for.</summary>
+		/// <param name="kind">Whether the run is being read now or may be wanted later.</param>
+		/// <param name="offset">Byte offset within the file.</param>
+		/// <param name="length">How many bytes it covers, or -1 for the rest of the file.</param>
+		void Hint(ISOHintType kind, int offset, int length);
+
 		virtual char const * File_Name(void) const override;
 		virtual char const * Set_Name(char const * filename) override;
 		virtual int Create(void) override;

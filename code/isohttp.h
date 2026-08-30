@@ -30,6 +30,16 @@
 
 
 /*
+** The unit an image is fetched, cached and stored in. Everything below that counts blocks
+** counts these: a read too short to be worth its own request is served from one, a run's
+** window is measured in them, and the store holds nothing else.
+*/
+enum {
+	ISO_BLOCK_SIZE = 65536
+};
+
+
+/*
  * What the browser's database is holding for one image, kept in memory while the run lasts
  * and written back beside the blocks so the next run knows what is there without reading
  * it. The whole of it is ordinary arithmetic over a signature and a list of block numbers,
@@ -108,6 +118,110 @@ class ISOBlockIndexClass
 
 
 /*
+ * What the link to one image turns out to cost, measured from the requests the engine is
+ * already making rather than from any traffic of its own.
+ *
+ * A request costs a round trip before its first byte and then the bytes themselves, and the
+ * two have to be told apart because they scale differently: the trip is paid once however
+ * much is asked for, so the further away a server is the more of the image one request
+ * should carry and the further in front of the reading it should run. A disc on the same
+ * machine and a disc on the far side of the world are the same code path with the two
+ * numbers three orders of magnitude apart, which is why nothing here is a constant.
+ *
+ * The two are separated by what a request is asked for. A directory sector is two kilobytes
+ * and its whole cost is the trip; a block or a span is large enough that what is left once
+ * the trip is taken off is the rate. Neither estimate is allowed to settle on one sample:
+ * both follow the readings, quickly towards a better one and slowly towards a worse, so an
+ * early outlier is left behind within a few requests rather than steering the run.
+ *
+ * Nothing here fetches or waits. It is arithmetic over pairs of bytes and milliseconds, and
+ * is tested as such.
+ */
+class ISOLinkClass
+{
+	public:
+		ISOLinkClass(void);
+
+		void Reset(void);
+
+		/// <summary>Takes in what one completed request cost.</summary>
+		/// <param name="bytes">How many bytes it carried.</param>
+		/// <param name="milliseconds">How long it took, start to finish.</param>
+		void Note(std::uint64_t bytes, double milliseconds);
+
+		double Trip(void) const {return(Round);}
+		double Rate(void) const {return(Speed);}
+		bool Measured(void) const {return(Round > 0.0 && Speed > 0.0);}
+
+		/// <summary>How many blocks a run keeps in front of itself.</summary>
+		/// <remarks>The bandwidth-delay product, doubled. A refill is asked for once the
+		/// window is half spent, so the half that is left has to carry the reading for the
+		/// round trip the refill costs; at most that half is drained at the rate the link
+		/// delivers, which makes one round trip's worth of bytes the half and two the
+		/// whole. A link with nothing between it and the disc lands on the floor, which is
+		/// what a local file and a server on the same machine both get.</remarks>
+		unsigned int Window(void) const;
+
+		/// <summary>How many blocks one request asks for.</summary>
+		/// <remarks>The window in a fixed number of requests, so a distant link asks for
+		/// more at a time rather than more often: splitting a window into requests buys
+		/// nothing once the trip dominates what each of them costs.</remarks>
+		unsigned int Span(void) const;
+
+		/// <summary>How many requests one image may have outstanding.</summary>
+		/// <remarks>The span scales with the window, so the count needed to keep the link
+		/// full barely moves and stays at the floor for anything close by. What does move
+		/// is what a single stream can carry: a connection to a distant server spends its
+		/// first round trips opening its congestion window, so a long trip is allowed more
+		/// requests beside each other.</remarks>
+		unsigned int Flights(void) const;
+
+		/// <summary>How many bytes are worth taking rather than paying another trip for.</summary>
+		/// <remarks>One round trip's worth of them. Reaching further than this costs more
+		/// than asking again would have, which is the whole of why a small file is worth
+		/// fetching whole and a large one is not.</remarks>
+		std::uint64_t Reach(void) const;
+
+		enum {
+			WINDOW_MIN = 2,		// Blocks in front of a run whatever the link costs.
+			WINDOW_MAX = 128,	// And the most, which bounds one run's reach at eight megabytes.
+			SPAN_MIN = 8,		// Blocks per request, so the first of them lands early.
+			SPAN_MAX = 32,		// And the most, which is one request for two megabytes.
+			SPLIT = 4,			// Requests a full window is asked for in.
+			FLIGHTS_MIN = 4,	// Requests outstanding per image.
+			FLIGHTS_MAX = 8
+		};
+
+		// A request no larger than this is all round trip; one at least this large has a
+		// rate in it worth reading. Between them a request says nothing either way.
+		static constexpr std::uint64_t TRIP_MAX = 8192;
+		static constexpr std::uint64_t RATE_MIN = 32768;
+
+		// How far one reading moves an estimate, towards a smaller and towards a larger.
+		// Falling fast finds the floor a link is capable of; rising slowly keeps one queued
+		// request from widening every window behind it.
+		static constexpr double FALL = 0.34;
+		static constexpr double RISE = 0.10;
+
+		// And how far out of step with what is believed one reading may be before it is
+		// treated as a property of that moment rather than of the link.
+		static constexpr double SURGE = 4.0;
+
+		// Round trips a window covers, and how long a trip has to be before one request at
+		// a time stops filling the link, in milliseconds.
+		static constexpr double COVER = 2.0;
+		static constexpr double CROWD = 60.0;
+
+	private:
+
+		static double Follow(double current, double sample);
+
+		double Round;
+		double Speed;
+};
+
+
+/*
  * Where a run of reads is heading, and how far in front of it the fetching may go.
  *
  * A movie is read a frame at a time while it plays, and a read that leaves the block the
@@ -116,11 +230,17 @@ class ISOBlockIndexClass
  * front of it be asked for early instead, so the round trip is spent while the frames
  * behind it are still being decoded.
  *
- * Only a run that has already moved forward is followed, and the window earns its size
- * rather than starting at it: a burst that stops after two blocks has over-read by an
- * eighth of a megabyte and no more. Two blocks is where the following starts, because a
- * short movie is read in a burst of that size and would otherwise be over before a longer
- * threshold believed it.
+ * A run is followed either because it was declared or because it was noticed. The file layer
+ * declares one when it opens a file: an ISO9660 file is a run of consecutive sectors with a
+ * known start and a known end, so a read of it is known to be sequential from its first byte
+ * and known to stop where the file does. A run nobody declared has to be noticed instead,
+ * which costs the two forward reads it takes to believe it and leaves the far end unknown.
+ *
+ * Either way the window earns its size rather than starting at it: a run may reach no
+ * further in front of the reading than the reading has already covered, so a burst that
+ * stops has over-read by at most what it read. Where a run was declared it also stops at
+ * the end of the file, which is what makes reaching a long way in front of a movie cost
+ * nothing when the movie is watched to the end.
  *
  * Nothing here fetches. It decides which blocks are worth asking for and how far the asking
  * may run, which is arithmetic over block numbers and is tested as such.
@@ -131,6 +251,18 @@ class ISOReadAheadClass
 		ISOReadAheadClass(void);
 
 		void Reset(void);
+
+		/// <summary>Takes on a run the file layer has declared.</summary>
+		/// <param name="first">The first block of the run.</param>
+		/// <param name="stop">The block it ends before.</param>
+		/// <remarks>The run is believed at once, since what declared it knows the reading
+		/// is sequential; it has covered nothing yet, so the window it may open is still
+		/// the smallest one.</remarks>
+		void Begin(std::uint64_t first, std::uint64_t stop);
+
+		/// <summary>Has this run been declared, and does it end where one says?</summary>
+		bool Bounded(void) const {return(Stop != 0);}
+		std::uint64_t Limit(void) const {return(Stop);}
 
 		/// <summary>Would a read carry on where this run has reached?</summary>
 		/// <param name="first">The first block the read touches.</param>
@@ -149,10 +281,13 @@ class ISOReadAheadClass
 
 		/// <summary>Reports the span in front of the cursor worth asking for now.</summary>
 		/// <param name="blocks">How many blocks the image holds.</param>
+		/// <param name="window">The most the link is worth reaching in front of a run.</param>
+		/// <param name="span">The most one request is worth asking for.</param>
 		/// <param name="start">Receives the first block of the span.</param>
 		/// <param name="count">Receives how many blocks it covers.</param>
 		/// <returns>bool; Is there a span worth asking for?</returns>
-		bool Span(std::uint64_t blocks, std::uint64_t & start, std::uint64_t & count) const;
+		bool Span(std::uint64_t blocks, unsigned int window, unsigned int span,
+			std::uint64_t & start, std::uint64_t & count) const;
 
 		/// <summary>Records that every block below one has been asked for or found.</summary>
 		void Issued(std::uint64_t upto);
@@ -162,10 +297,7 @@ class ISOReadAheadClass
 		std::uint64_t Edge(void) const {return(Filled);}
 
 		enum {
-			RUN_MIN = 2,		// Reads in a forward run before the pattern is believed.
-			WINDOW_MIN = 2,		// Blocks kept in front of the cursor once it is.
-			WINDOW_MAX = 16,	// And the most, which bounds the run ahead at a megabyte.
-			SPAN_MAX = 8		// Blocks per request, so the first of them lands early.
+			RUN_MIN = 2			// Reads in a forward run before an undeclared one is believed.
 		};
 
 	private:
@@ -173,6 +305,8 @@ class ISOReadAheadClass
 		std::uint64_t Next;
 		std::uint64_t Filled;
 		std::uint64_t Wide;
+		std::uint64_t From;
+		std::uint64_t Stop;
 		unsigned int Length;
 };
 
@@ -208,6 +342,16 @@ class ISOReadRunsClass
 		/// asked for in front of that run is bytes nobody will read now.</returns>
 		bool Note(std::uint64_t first, std::uint64_t last, std::uint64_t & lost, std::uint64_t & stop);
 
+		/// <summary>Takes in a run of blocks the file layer says is one file.</summary>
+		/// <param name="first">The first block of the file.</param>
+		/// <param name="stop">The block it ends before.</param>
+		/// <remarks>A declaration is only ever remembered here, never acted on. The engine
+		/// declares a file whenever it opens one and opens far more of them than it reads,
+		/// so a declaration that took a run over would spend most of its time throwing away
+		/// what a stream still being read had asked for. The reading is what decides: a read
+		/// that starts a run inside a declared file takes that file's end with it.</remarks>
+		void Declare(std::uint64_t first, std::uint64_t stop);
+
 		ISOReadAheadClass & Current(void) {return(Runs[Order[0]]);}
 		ISOReadAheadClass const & Current(void) const {return(Runs[Order[0]]);}
 
@@ -217,13 +361,32 @@ class ISOReadRunsClass
 		** takes the oldest of them over rather than growing the set.
 		*/
 		enum {
-			RUNS = 4
+			RUNS = 4,
+
+			/*
+			** And how many declared files are remembered while they wait for a read to
+			** arrive in one of them. The engine opens a handful at a time -- an archive,
+			** the file inside it, the artwork and the audio beside it -- and the oldest
+			** goes when a fifth is declared.
+			*/
+			BOUNDS = 8
 		};
 
 	private:
 
+		struct BoundType {
+			std::uint64_t First;
+			std::uint64_t Stop;
+		};
+
+		/// <summary>Finds the declared file a read has landed in.</summary>
+		/// <returns>The block that file ends before, or zero when no declaration covers it.</returns>
+		std::uint64_t Bound(std::uint64_t first) const;
+
 		ISOReadAheadClass Runs[RUNS];
 		std::size_t Order[RUNS];
+		BoundType Declared[BOUNDS];
+		std::size_t Written;
 };
 
 
@@ -250,6 +413,19 @@ class ISOReadRunsClass
  * being read faster than the network answers spends one round trip on two requests rather
  * than one apiece.
  *
+ * How far in front of the reading that goes is not fixed. ISOLinkClass measures what a
+ * request to this image costs out of the requests being made anyway, and the window, the
+ * size of one request and the number outstanding all come from that: a disc on the same
+ * machine is read very nearly as it was before any of this, and a disc on the far side of
+ * the world is read a long way in front of the engine because that is the only thing that
+ * covers the round trip.
+ *
+ * The file layer says when a run is a file, which is worth more than any amount of guessing:
+ * an ISO9660 file is one run of consecutive sectors, so the reading is known to be forward
+ * from the first byte and known to stop where the file does. It also says which files it
+ * expects to want later. Those are fetched only while nothing is being read, and are given
+ * up the instant a run wants the connection back.
+ *
  * A server that ignores the range and answers with the entire image is rejected rather
  * than accommodated: every read would then cost the whole file.
  */
@@ -274,10 +450,11 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 
 		virtual bool Read_At(std::uint64_t offset, void * buffer, unsigned int length) override;
 		virtual std::uint64_t Total_Size(void) override {return(Length);}
+		virtual void Hint(ISOHintType kind, std::uint64_t offset, std::uint64_t length) override;
 
 		enum {
-			BLOCK_SIZE = 65536,		// Bytes fetched for a read too short to be worth its own request.
-			BLOCK_CACHE = 32		// Windows kept, which bounds the read ahead at two megabytes.
+			BLOCK_SIZE = ISO_BLOCK_SIZE,	// Bytes fetched for a read too short for its own request.
+			BLOCK_CACHE = 32				// Windows kept, which bounds those at two megabytes.
 		};
 
 	private:
@@ -304,6 +481,31 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		// written anyway, in milliseconds.
 		static constexpr double STORE_IDLE = 250.0;
 
+		/*
+		** What one image may be told to fetch while nothing is being read of it. The queue
+		** is the names the engine said it would probably want; the budget is what those are
+		** allowed to cost, and holds the guessing to a few files rather than a disc.
+		*/
+		enum {
+			SOON_QUEUE = 8
+		};
+
+		static constexpr std::uint64_t SOON_BUDGET = 24ull * 1024ull * 1024ull;
+
+	/*
+	** How much of what has been fetched may be bytes nobody read. Reading ahead is a
+	** guess, and a guess is paid for on somebody's connection, so what the guessing has
+	** cost is held to a share of what has been fetched: over it, the window closes to a
+	** single request until the reading catches up. It is the one bound that does not depend
+	** on the guessing being right, which is why it is the outer one -- the link decides how
+	** far ahead is worth reaching and this decides how much of that is affordable. It is a
+	** ceiling rather than a target, and is set above where the reading settles, because a
+	** limit sitting on the ordinary operating point holds the window shut for the rest of
+	** the run instead of only when the guessing has gone wrong.
+	*/
+	static constexpr double WASTE_SHARE = 0.10;
+	static constexpr std::uint64_t WASTE_FLOOR = 1024ull * 1024ull;
+
 		bool Transfer(std::uint64_t offset, void * buffer, unsigned int length);
 		bool Fetch_Run(std::uint64_t offset, void * buffer, unsigned int length);
 		BlockType const * Block(std::uint64_t index);
@@ -312,6 +514,7 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length);
 		void Ahead_Drop(void);
 		void Ahead_Drop(std::uint64_t first, std::uint64_t stop);
+		void Soon(std::uint64_t offset, std::uint64_t length);
 
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length);
@@ -333,6 +536,8 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		std::size_t Meter;
 
 		ISOReadRunsClass Ahead;
+		ISOLinkClass Link;
+		std::uint64_t Queued;
 
 		std::string Signature;
 		std::string Slot;

@@ -40,7 +40,13 @@
 #include "always.h"
 
 #include "cdfile.h"
+#include "mixfile.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#endif
+
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -101,6 +107,7 @@ int CDFileClass::Open(int rights)
 		**	Biased files must be positioned past the bias start position.
 		*/
 		if (BiasStart != 0 || BiasLength != -1) {
+			Hint_Extent();
 			CDFileClass::Seek(0, SEEK_SET);
 		}
 
@@ -170,6 +177,7 @@ int CDFileClass::Read(void *buffer, int size)
 		opened = true;
 
 		if (BiasStart != 0 || BiasLength != -1) {
+			Hint_Extent();
 			CDFileClass::Seek(0, SEEK_SET);
 		}
 	}
@@ -302,6 +310,7 @@ void CDFileClass::Bias(int start, int length)
 {
 	if (!Is_Image_File()) {
 		BASECLASS::Bias(start, length);
+		Hint_Extent();
 		return;
 	}
 
@@ -318,9 +327,110 @@ void CDFileClass::Bias(int start, int length)
 	}
 	BiasLength = BiasLength > 0 ? BiasLength : 0;
 
+	Hint_Extent();
+
 	if (ISOFile.Is_Open()) {
 		CDFileClass::Seek(0, SEEK_SET);
 	}
+}
+
+
+/// <summary>Tells the image the run of bytes this object will actually read.</summary>
+/// <remarks>An open on the image says the whole file is coming, which is right until the
+/// mixfile system biases the object to one embedded file. The bias is the narrower truth
+/// and replaces it, so what is read ahead of the reading stops at the end of the embedded
+/// file rather than running on into the next one.</remarks>
+void CDFileClass::Hint_Extent(void)
+{
+	if (Is_Image_File()) {
+		if (BiasLength != -1) {
+			ISOFile.Hint(ISO_HINT_SEQUENTIAL, BiasStart, BiasLength);
+		} else {
+			ISOFile.Hint(ISO_HINT_SEQUENTIAL, 0, -1);
+		}
+		return;
+	}
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	**	A browser build reads its discs through the file API, so the object holding the
+	**	archive is an ordinary open file as far as this class is concerned and the handle
+	**	is what names the run.
+	*/
+	if (!BASECLASS::Is_Open()) return;
+
+	Win32_Hint_Handle(Get_File_Handle(), ISO_HINT_SEQUENTIAL,
+		(unsigned int)((BiasStart > 0) ? BiasStart : 0),
+		(unsigned int)((BiasLength > 0) ? BiasLength : 0));
+#endif
+}
+
+
+/// <summary>Says a file will probably be wanted before long.</summary>
+/// <remarks>
+/// The engine knows what it is about to need well before it opens it -- a menu reads the
+/// names of the videos its items play when the menu is built, and the player then spends
+/// seconds reading the screen. Naming one here turns that pause into the time the bytes
+/// arrive in, which on a distant server is the difference between a click that plays and a
+/// click that stalls.
+///
+/// Nothing here fetches. The resolution is the whole of it: a name becomes the run of bytes
+/// it occupies on an image, and the image decides what that is worth. A file the engine
+/// already holds in memory, or that no search entry supplies, resolves to nothing.
+/// </remarks>
+void CDFileClass::Prefetch(char const * filename)
+{
+	if (filename == NULL || *filename == '\0') return;
+
+	/*
+	**	Mixfile lookup uppercases what it is given, so it is given a copy. The name here
+	**	belongs to the caller and is commonly a literal.
+	*/
+	char name[_MAX_PATH];
+
+	std::strncpy(name, filename, sizeof(name) - 1);
+	name[sizeof(name) - 1] = '\0';
+
+	int start = 0;
+	int length = -1;
+
+	void * resident = NULL;
+	MixFileClass * mixfile = NULL;
+
+	if (MixFileClass::Offset(name, &resident, &mixfile, &start, &length)) {
+
+		/*
+		**	An embedded file is a run of the mixfile that carries it, and the offset the
+		**	lookup reports is measured from the start of that mixfile. One already cached
+		**	into memory needs nothing fetched.
+		*/
+		if (resident != NULL || mixfile == NULL || mixfile->Filename == NULL) return;
+		if (length <= 0) return;
+
+		std::strncpy(name, mixfile->Filename, sizeof(name) - 1);
+		name[sizeof(name) - 1] = '\0';
+	} else {
+		start = 0;
+		length = -1;
+	}
+
+	CDFileClass locator;
+
+	locator.Set_Name(name);
+
+	if (locator.Is_Image_File()) {
+		locator.ISOFile.Hint(ISO_HINT_SOON, start, length);
+		return;
+	}
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	**	A browser build reads its discs through the file API rather than through a search
+	**	entry, so the name is put to the image the same way an open would put it.
+	*/
+	Win32_Hint_File(name, ISO_HINT_SOON, (unsigned int)((start > 0) ? start : 0),
+		(unsigned int)((length > 0) ? length : 0));
+#endif
 }
 
 
