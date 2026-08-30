@@ -177,8 +177,26 @@
 		window.OpenTS_State.isoRequests = requests;
 		window.OpenTS_State.isoUniqueBlocks = blocks;
 
+		// The persistent store, when the build has one. Hits are blocks the browser already
+		// held, so a warm run reads most of its data without going to the network at all.
+		var store = "";
+
+		if (Module._OpenTS_Iso_Store_State) {
+			var state = Module._OpenTS_Iso_Store_State();
+			var hits = Module._OpenTS_Iso_Store_Hits();
+			var kept = Module._OpenTS_Iso_Store_Kept();
+
+			window.OpenTS_State.isoStoreHits = hits;
+			window.OpenTS_State.isoStoreState = state;
+
+			store = "  |  cache " + (state === 2 ? "unavailable" :
+				hits + " served, " + kept + " kept" +
+				(Module._OpenTS_Iso_Store_Discarded() ? ", store discarded" : ""));
+		}
+
 		return("image " + requests + " requests  |  " + mib(Module._OpenTS_Iso_Fetched()) +
-			" fetched  |  " + blocks + " unique blocks (" + mib(blocks * size) + ")  |  ");
+			" fetched  |  " + blocks + " unique blocks (" + mib(blocks * size) + ")" +
+			store + "  |  ");
 	}
 
 	// What an automated check reads to tell an engine that is running from one that
