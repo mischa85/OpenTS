@@ -1,0 +1,17 @@
+# Serves the browser target on http://localhost:8765.
+#
+# The three discs are read straight out of their images, so point OPENTS_DISCS at the
+# directory holding FIRESTORM.iso, TS1.iso and TS2.iso and run "docker compose up".
+# They are mounted read only, one file at a time, under the names the page looks for.
+# Firestorm comes first because the discs overlap and its copies are the ones an
+# installation that upgraded over the base game would be running.
+
+services:
+  opents:
+    build: .
+    ports:
+      - "${OPENTS_PORT:-8765}:80"
+    volumes:
+      - ${OPENTS_DISCS:-./discs}/FIRESTORM.iso:/usr/share/nginx/html/FIRESTORM.iso:ro
+      - ${OPENTS_DISCS:-./discs}/TS1.iso:/usr/share/nginx/html/TS1.iso:ro
+      - ${OPENTS_DISCS:-./discs}/TS2.iso:/usr/share/nginx/html/TS2.iso:ro

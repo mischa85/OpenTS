@@ -190,6 +190,31 @@ that follows an installation, and a page installs nothing, so it covers no
 setup; `PlayIntro=true` under `[Intro]` in `SUN.INI` asks for it anyway
 (`code/startup.cpp:642`). Every other target still plays it once.
 
+### In a container
+
+`Dockerfile` builds the page with the pinned Emscripten and serves the result
+from nginx, which answers ranges without being asked to. `compose.yaml` publishes
+it and mounts the discs, so a run needs neither a toolchain nor a server of one's
+own:
+
+```bash
+OPENTS_DISCS=~/Downloads docker compose up
+```
+
+`OPENTS_DISCS` names the directory holding `FIRESTORM.iso`, `TS1.iso` and
+`TS2.iso`; the three are mounted read only under the names the page looks for,
+and `OPENTS_PORT` moves the published port from its default of 8765. The discs
+are never copied into the image — `.dockerignore` keeps `Run/` and every `*.iso`
+out of the build context, because an image carrying the game data would be
+redistributing it.
+
+The build context is the working tree rather than a fresh clone, so
+`thirdparty/bgfx.cmake` has to be populated first:
+
+```bash
+git submodule update --init --recursive
+```
+
 ### Tests
 
 `tests/` builds under Emscripten, and the Emscripten toolchain file points

@@ -1,0 +1,16 @@
+# The build directories are large, are rebuilt inside the image anyway, and one of them
+# holds a mounted disc image. Keeping them out of the context is what makes the build quick.
+[Bb]uild/
+[Bb]uild-*/
+
+# Game data belongs to whoever runs the image, never to the image itself.
+Run/
+*.iso
+
+.git/
+.github/
+.vscode/
+.cursor/
+.claude/
+manual/
+docs/
