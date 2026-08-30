@@ -1284,16 +1284,19 @@ int ScoreFontClass::String_Width(const char * string)
 /// <returns>Returns with the width in pixels that the character occupies.</returns>
 int ScoreFontClass::Char_Width(char ch)
 {
-	char out[1];
-
 	if (ch == 32) {
 		return(8);
 	}
 
-	CharToOemBuff(&ch, out, sizeof(out));
+	/*
+	   Converted in place, so a host that cannot perform the conversion leaves the
+	   character as it was given rather than an indeterminate byte.
+	*/
+	char out = ch;
+	CharToOemBuff(&out, &out, sizeof(out));
 
 	int frame;
-	frame = std::max((out[0] & 0xFF) - 33, 0);
+	frame = std::max((out & 0xFF) - 33, 0);
 	frame = 3 * std::min(frame, 216);
 
 	return(ShapePtr->Get_Rect(frame + 2).Width);
@@ -1335,11 +1338,11 @@ void ScoreFontClass::Print_Char(Surface *surf, char ch, int x, int y, int v, boo
 /// <param name="brightness_frame">The brightness frame to draw the glyphs with.</param>
 void ScoreFontClass::Print_String(Surface *surf, const char * string, int x, int y, int brightness_frame)
 {
-	unsigned char buf[2];
 	while (*string != '\0') {
 		if (*string != 32) {
-			CharToOemBuff(string, (LPSTR)buf, sizeof(char));
-			int frame = 3 * std::min(std::max(buf[0] - 33, 0), 216);
+			unsigned char character = (unsigned char)*string;
+			CharToOemBuff((LPCSTR)&character, (LPSTR)&character, sizeof(character));
+			int frame = 3 * std::min(std::max(character - 33, 0), 216);
 
 			Draw_Shape(*surf, *Drawer, ShapePtr, frame + brightness_frame, Point2D(x - ShapePtr->Get_Rect(frame + 2).X, y), surf->Get_Rect(), SHAPE_WIN_REL);
 		}
