@@ -45,6 +45,8 @@
 #include <new.h>
 #endif
 
+#include <vector>
+
 HINSTANCE LanguageResources;
 
 #if defined(__EMSCRIPTEN__)
@@ -301,6 +303,56 @@ char const * Fetch_String(int id)
 }
 
 
+/*
+ * How large each resource handed out so far is. A resource reaches its caller as a bare
+ * pointer, and a caller that walks a variable length one -- the dialog template
+ * interpreter -- has to know where it stops. The library stays mapped for the life of the
+ * process and holds a few dozen resources, so a note per resource costs nothing and never
+ * goes stale.
+ */
+struct ResourceExtent
+{
+	void const * Data;
+	unsigned int Size;
+};
+
+static std::vector<ResourceExtent> _extents;
+
+
+static void Record_Resource_Extent(void const * data, unsigned int size)
+{
+	for (unsigned int index = 0; index < _extents.size(); index++) {
+		if (_extents[index].Data == data) {
+			_extents[index].Size = size;
+			return;
+		}
+	}
+
+	ResourceExtent extent;
+	extent.Data = data;
+	extent.Size = size;
+	_extents.push_back(extent);
+}
+
+
+/// <summary>
+/// Reports how large a resource previously fetched is.
+/// </summary>
+/// <param name="data">The pointer Fetch_Resource handed back.</param>
+/// <returns>Returns with the size of the resource in bytes, or zero when the pointer did
+/// not come from Fetch_Resource.</returns>
+unsigned int Fetch_Resource_Size(void const * data)
+{
+	for (unsigned int index = 0; index < _extents.size(); index++) {
+		if (_extents[index].Data == data) {
+			return(_extents[index].Size);
+		}
+	}
+
+	return(0);
+}
+
+
 /// <summary>
 /// Fetches a raw resource from the language library.
 /// This routine locates the named resource and locks it down so that the caller may read
@@ -309,11 +361,21 @@ char const * Fetch_String(int id)
 /// </summary>
 /// <param name="resname">Name or identifier of the resource to fetch.</param>
 /// <param name="restype">Type of the resource to fetch.</param>
+/// <param name="ressize">Filled in with the size of the resource, when supplied. A caller
+/// that walks a variable length resource needs it to know where the resource ends.</param>
 /// <returns>Returns with a pointer to the resource data. Otherwise, NULL is returned.</returns>
-void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
+void const * Fetch_Resource(LPCSTR resname, LPCSTR restype, unsigned int * ressize)
 {
+	if (ressize != NULL) {
+		*ressize = 0;
+	}
+
 #if defined(__EMSCRIPTEN__)
-	return(LanguageImage.Fetch_Resource(Resource_Name(restype), Resource_Name(resname)));
+	std::size_t size = 0;
+	void const * data = LanguageImage.Fetch_Resource(Resource_Name(restype), Resource_Name(resname), &size);
+	if (data == NULL) {
+		return(NULL);
+	}
 #else
 	/// The superfluous MAKEINTRESOURCE cast is the game's, and the C4302 warning with it.
 	HRSRC handle = FindResource(LanguageResources, MAKEINTRESOURCE(resname), restype);
@@ -326,8 +388,20 @@ void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
 		return(NULL);
 	}
 
-	return(LockResource(rhandle));
+	DWORD size = SizeofResource(LanguageResources, handle);
+	void const * data = LockResource(rhandle);
+	if (data == NULL) {
+		return(NULL);
+	}
 #endif
+
+	Record_Resource_Extent(data, (unsigned int)size);
+
+	if (ressize != NULL) {
+		*ressize = (unsigned int)size;
+	}
+
+	return(data);
 }
 
 

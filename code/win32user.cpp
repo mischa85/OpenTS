@@ -39,9 +39,11 @@
 #if defined(__EMSCRIPTEN__)
 
 #include "browser.h"
+#include "data.h"
 #include "dbgprint.h"
 #include "keyboard.h"
 #include "vidscale.h"
+#include "win32ctrl.h"
 
 #include <emscripten/emscripten.h>
 
@@ -96,6 +98,7 @@ struct UserWindow
 	bool Visible;
 	bool Enabled;
 	bool NeedsPaint;
+	bool Painting;
 	RECT UpdateRect;
 	UserWindow * Parent;
 
@@ -117,10 +120,25 @@ struct UserHotKey
 };
 
 
+/*
+** A window timer. Windows synthesizes WM_TIMER rather than queueing it, so that a pump too
+** slow for the period is given one tick rather than a backlog of them; the due time here is
+** pushed forward as the tick is taken, which is what produces that.
+*/
+struct UserTimer
+{
+	UserWindow * Window;
+	UINT_PTR ID;
+	UINT Elapse;
+	DWORD Due;
+};
+
+
 static std::vector<UserClass *> _Classes;
 static std::vector<UserWindow *> _Windows;
 static std::vector<UserWindow *> _TopLevel;
 static std::vector<UserHotKey> _HotKeys;
+static std::vector<UserTimer> _Timers;
 static std::deque<MSG> _Queue;
 
 static UserWindow * _Focus = nullptr;
@@ -130,6 +148,15 @@ static UserWindow * _Foreground = nullptr;
 static ATOM _NextAtom = 0xC000;
 
 static bool _QueueReported = false;
+
+/*
+** How many times in a row one window may be handed the same generated paint before it is
+** taken to be a window that never validates itself.
+*/
+static unsigned int const PAINT_REPEAT_LIMIT = 64;
+
+static UserWindow * _PaintWindow = nullptr;
+static unsigned int _PaintRepeats = 0;
 
 /*
 ** What the page last reported, so that a change in it can be turned into a message. The
@@ -567,6 +594,116 @@ static bool Message_Matches(MSG const & entry, HWND window, UINT filtermin, UINT
 }
 
 
+/// <summary>
+/// Finds the window with the best claim to a paint, front to back and parents first.
+/// </summary>
+static UserWindow * Window_Awaiting_Paint(UserWindow * parent)
+{
+	std::vector<UserWindow *> const & windows = (parent != nullptr) ? parent->Children : _TopLevel;
+
+	for (unsigned int index = 0; index < windows.size(); index++) {
+		UserWindow * window = windows[index];
+
+		if (!window->Visible) {
+			continue;
+		}
+
+		if (window->NeedsPaint) {
+			return(window);
+		}
+
+		UserWindow * deeper = Window_Awaiting_Paint(window);
+		if (deeper != nullptr) {
+			return(deeper);
+		}
+	}
+
+	return(nullptr);
+}
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Window timers.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/// <summary>
+/// Sets a window timer, or resets one the window already has under that identifier.
+/// </summary>
+/// <remarks>
+/// Only the form that posts to a window is here. The other form -- an identifier Windows
+/// allocates, whose ticks go to a TIMERPROC rather than to a window -- has no caller in the
+/// engine, so it reports itself rather than being half built.
+/// </remarks>
+UINT_PTR SetTimer(HWND window, UINT_PTR id, UINT elapse, TIMERPROC callback)
+{
+	if (callback != nullptr) {
+		return(WIN32_UNSUPPORTED("SetTimer: a timer whose ticks go to a callback", 0));
+	}
+
+	UserWindow * entry = Window_Of(window);
+	if (entry == nullptr) {
+		return(WIN32_UNSUPPORTED("SetTimer: a timer belonging to no window", 0));
+	}
+
+	DWORD due = GetTickCount() + elapse;
+
+	for (unsigned int index = 0; index < _Timers.size(); index++) {
+		if (_Timers[index].Window == entry && _Timers[index].ID == id) {
+			_Timers[index].Elapse = elapse;
+			_Timers[index].Due = due;
+			return(id);
+		}
+	}
+
+	UserTimer timer;
+	timer.Window = entry;
+	timer.ID = id;
+	timer.Elapse = elapse;
+	timer.Due = due;
+	_Timers.push_back(timer);
+	return(id);
+}
+
+
+BOOL KillTimer(HWND window, UINT_PTR id)
+{
+	UserWindow * entry = Window_Of(window);
+	if (entry == nullptr) {
+		return(FALSE);
+	}
+
+	for (unsigned int index = 0; index < _Timers.size(); index++) {
+		if (_Timers[index].Window == entry && _Timers[index].ID == id) {
+			_Timers.erase(_Timers.begin() + index);
+			return(TRUE);
+		}
+	}
+
+	return(FALSE);
+}
+
+
+/// <summary>
+/// Finds the timer with the best claim to a tick.
+/// </summary>
+/// <returns>Returns with the position of the timer, or -1 when none is due.</returns>
+static int Timer_Awaiting_Tick(void)
+{
+	DWORD now = GetTickCount();
+
+	for (unsigned int index = 0; index < _Timers.size(); index++) {
+		if ((LONG)(now - _Timers[index].Due) >= 0) {
+			return((int)index);
+		}
+	}
+
+	return(-1);
+}
+
+
 BOOL PeekMessageA(LPMSG message, HWND window, UINT filtermin, UINT filtermax, UINT remove)
 {
 	if (message == nullptr) {
@@ -585,6 +722,79 @@ BOOL PeekMessageA(LPMSG message, HWND window, UINT filtermin, UINT filtermax, UI
 		}
 
 		return(TRUE);
+	}
+
+	/*
+	** WM_PAINT is generated rather than posted, so it is reported once the queue is empty
+	** and goes on being reported until the window validates itself. That is what makes an
+	** InvalidateRect with no UpdateWindow behind it reach the window at all, which is how
+	** the front end asks for most of its repainting.
+	*/
+	UserWindow * painting = Window_Awaiting_Paint(nullptr);
+
+	if (painting != _PaintWindow) {
+		_PaintWindow = painting;
+		_PaintRepeats = 0;
+	}
+
+	if (painting != nullptr) {
+		_PaintRepeats++;
+
+		/*
+		** A window that invalidates itself and never validates spins the pump. Windows
+		** spins with it; a page stops answering instead, so the update is dropped here and
+		** the window is named rather than left to freeze the tab.
+		*/
+		if (_PaintRepeats > PAINT_REPEAT_LIMIT) {
+			DebugString("Win32 user: a %s window never validates its paint; the update is being dropped.\n",
+				(painting->Class != nullptr) ? painting->Class->Name.c_str() : "?");
+			ValidateRect(Handle_Of(painting), nullptr);
+			painting = nullptr;
+			_PaintWindow = nullptr;
+			_PaintRepeats = 0;
+		}
+	}
+
+	if (painting != nullptr) {
+		MSG paint;
+		paint.hwnd = Handle_Of(painting);
+		paint.message = WM_PAINT;
+		paint.wParam = 0;
+		paint.lParam = 0;
+		paint.time = 0;
+		paint.pt.x = _LastMouse.x;
+		paint.pt.y = _LastMouse.y;
+
+		if (Message_Matches(paint, window, filtermin, filtermax)) {
+			*message = paint;
+			return(TRUE);
+		}
+	}
+
+	/*
+	** WM_TIMER is generated too, and after WM_PAINT because Windows ranks it last of all.
+	** The timer is rearmed only where the tick is taken, so a caller that peeks without
+	** removing sees the same tick until somebody consumes it.
+	*/
+	int due = Timer_Awaiting_Tick();
+
+	if (due >= 0) {
+		MSG tick;
+		tick.hwnd = Handle_Of(_Timers[(unsigned int)due].Window);
+		tick.message = WM_TIMER;
+		tick.wParam = (WPARAM)_Timers[(unsigned int)due].ID;
+		tick.lParam = 0;
+		tick.time = GetTickCount();
+		tick.pt.x = _LastMouse.x;
+		tick.pt.y = _LastMouse.y;
+
+		if (Message_Matches(tick, window, filtermin, filtermax)) {
+			if ((remove & PM_REMOVE) != 0) {
+				_Timers[(unsigned int)due].Due = GetTickCount() + _Timers[(unsigned int)due].Elapse;
+			}
+			*message = tick;
+			return(TRUE);
+		}
 	}
 
 	/*
@@ -690,6 +900,13 @@ LRESULT DefWindowProcA(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 			return(length);
 		}
 
+		case WM_NCCREATE:
+			/*
+			** Anything but zero lets the creation stand, and a class that does not handle
+			** this message must not be the one that stops its own window existing.
+			*/
+			return(TRUE);
+
 		case WM_CLOSE:
 			DestroyWindow(window);
 			return(0);
@@ -753,6 +970,7 @@ HWND CreateWindowExA(DWORD exstyle, LPCSTR classname, LPCSTR windowname, DWORD s
 	window->Visible = ((style & WS_VISIBLE) != 0);
 	window->Enabled = ((style & WS_DISABLED) == 0);
 	window->NeedsPaint = window->Visible;
+	window->Painting = false;
 	window->UpdateRect.left = 0;
 	window->UpdateRect.top = 0;
 	window->UpdateRect.right = width;
@@ -775,17 +993,36 @@ HWND CreateWindowExA(DWORD exstyle, LPCSTR classname, LPCSTR windowname, DWORD s
 
 	HWND handle = Handle_Of(window);
 
-	if (param != nullptr) {
-		/*
-		 * Windows delivers the creation parameter inside a CREATESTRUCT, and win32compat.h
-		 * has no such structure to build one in. A procedure that reads it therefore gets
-		 * nothing, which is worth saying out loud rather than passing a pointer of another
-		 * shape.
-		 */
-		WIN32_UNSUPPORTED("CreateWindowEx: the creation parameter has no CREATESTRUCT to travel in", 0);
+	/*
+	** The creation parameter travels to the procedure inside this, which is the only way a
+	** class gets its state before its first message. The structure describes the call as it
+	** was made, so the class name is passed on as the caller wrote it -- string or atom --
+	** and the sizes are the ones asked for rather than the ones stored.
+	*/
+	CREATESTRUCTA create;
+	create.lpCreateParams = param;
+	create.hInstance = window->Instance;
+	create.hMenu = menu;
+	create.hwndParent = parent;
+	create.cy = height;
+	create.cx = width;
+	create.y = y;
+	create.x = x;
+	create.style = (LONG)style;
+	create.lpszName = windowname;
+	create.lpszClass = classname;
+	create.dwExStyle = exstyle;
+
+	/*
+	** Either message may refuse the window, and Windows spells the refusal differently in
+	** each: FALSE from WM_NCCREATE, -1 from WM_CREATE.
+	*/
+	if (SendMessageA(handle, WM_NCCREATE, 0, (LPARAM)&create) == 0) {
+		DestroyWindow(handle);
+		return(nullptr);
 	}
 
-	if (SendMessageA(handle, WM_CREATE, 0, 0) == (LRESULT)-1) {
+	if (SendMessageA(handle, WM_CREATE, 0, (LPARAM)&create) == (LRESULT)-1) {
 		DestroyWindow(handle);
 		return(nullptr);
 	}
@@ -795,6 +1032,24 @@ HWND CreateWindowExA(DWORD exstyle, LPCSTR classname, LPCSTR windowname, DWORD s
 	}
 
 	return(handle);
+}
+
+
+/// <summary>
+/// Marks the area a window occupies in its parent as needing repainting.
+/// </summary>
+/// <remarks>
+/// Nothing composites here: what a window drew is on the engine's surfaces, and the parent
+/// repainting is what puts the background back. So a window that goes away, moves, or is
+/// hidden has to tell its parent, exactly as Windows tells it.
+/// </remarks>
+static void Invalidate_Behind(UserWindow * window)
+{
+	if (window->Parent == nullptr || !window->Visible) {
+		return;
+	}
+
+	InvalidateRect(Handle_Of(window->Parent), &window->Rect, TRUE);
 }
 
 
@@ -822,6 +1077,8 @@ static void Destroy_Window(UserWindow * window)
 {
 	HWND handle = Handle_Of(window);
 
+	Invalidate_Behind(window);
+
 	SendMessageA(handle, WM_DESTROY, 0, 0);
 
 	while (!window->Children.empty()) {
@@ -833,6 +1090,7 @@ static void Destroy_Window(UserWindow * window)
 	if (_Focus == window) _Focus = nullptr;
 	if (_Active == window) _Active = nullptr;
 	if (_Foreground == window) _Foreground = nullptr;
+	if (_PaintWindow == window) _PaintWindow = nullptr;
 
 	if (GetCapture() == handle) {
 		ReleaseCapture();
@@ -841,6 +1099,14 @@ static void Destroy_Window(UserWindow * window)
 	for (unsigned int index = 0; index < _HotKeys.size(); ) {
 		if (_HotKeys[index].Window == window) {
 			_HotKeys.erase(_HotKeys.begin() + index);
+		} else {
+			index++;
+		}
+	}
+
+	for (unsigned int index = 0; index < _Timers.size(); ) {
+		if (_Timers[index].Window == window) {
+			_Timers.erase(_Timers.begin() + index);
 		} else {
 			index++;
 		}
@@ -882,11 +1148,13 @@ BOOL ShowWindow(HWND window, int command)
 	bool visible = (command != SW_HIDE);
 
 	if (visible != wasvisible) {
-		entry->Visible = visible;
 		if (visible) {
+			entry->Visible = true;
 			entry->Style |= WS_VISIBLE;
 			InvalidateRect(window, nullptr, TRUE);
 		} else {
+			Invalidate_Behind(entry);
+			entry->Visible = false;
 			entry->Style &= ~(DWORD)WS_VISIBLE;
 		}
 		SendMessageA(window, WM_SHOWWINDOW, visible ? TRUE : FALSE, 0);
@@ -971,6 +1239,10 @@ static void Move_Window(UserWindow * window, int x, int y, int width, int height
 	bool moved = (window->Rect.left != x || window->Rect.top != y);
 	bool resized = ((window->Rect.right - window->Rect.left) != width ||
 					(window->Rect.bottom - window->Rect.top) != height);
+
+	if (moved || resized) {
+		Invalidate_Behind(window);
+	}
 
 	window->Rect.left = x;
 	window->Rect.top = y;
@@ -1639,15 +1911,19 @@ BOOL UpdateWindow(HWND window)
 		return(FALSE);
 	}
 
-	if (!entry->NeedsPaint || !entry->Visible) {
+	if (!entry->NeedsPaint || !entry->Visible || entry->Painting) {
 		return(TRUE);
 	}
 
-	// Cleared first so that a procedure which paints by calling back here does not recur.
-	entry->NeedsPaint = false;
-	SetRectEmpty(&entry->UpdateRect);
-
+	/*
+	** The update region survives the paint, as it does on Windows: a control asks what it
+	** has to repaint while it is repainting, and validates itself when it is done. So the
+	** recursion a procedure that paints by calling back here would cause is guarded
+	** against directly rather than by dropping the region first.
+	*/
+	entry->Painting = true;
 	SendMessageA(window, WM_PAINT, 0, 0);
+	entry->Painting = false;
 	return(TRUE);
 }
 
@@ -1750,6 +2026,660 @@ HICON LoadIconA(HINSTANCE, LPCSTR name)
 
 	_tokens++;
 	return((HICON)(ULONG_PTR)(0x1C00 + _tokens));
+}
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Dialogs.
+** ---------------------------------------------------------------------------------------
+**
+** A dialog template is a compiled description of a window and the controls inside it, and
+** the dialog manager is what turns one into windows. The front end has nothing else: every
+** screen behind the main menu is a template in the shipped language library, so a template
+** that is not read is a screen that does not exist.
+**
+** Two shapes of template are in circulation and the library carries both. The extended one
+** announces itself with a first double word of 0xFFFF0001, which no classic one can begin
+** with because that would be a style with two undefined bits and an item count of one in
+** the wrong place. Everything after the fixed head is variable: name fields are either an
+** ordinal or a UTF-16 string, item templates start on four byte boundaries, and each one
+** ends with a block of creation data only the control it belongs to can read.
+*/
+
+
+/*
+** The dialog base units. Windows measures a template in units of a quarter of the system
+** font's average character width and an eighth of its height. There is no system font on a
+** page, so the classic 8 by 16 the shipped templates were laid out against stands in for
+** it, and windlg.cpp measures its design space the same way.
+*/
+static int const DIALOG_BASE_UNIT_X = 8;
+static int const DIALOG_BASE_UNIT_Y = 16;
+
+// The class a dialog with no class of its own belongs to, spelled as Windows spells it.
+static char const * const DIALOG_CLASS_NAME = "#32770";
+
+// The first double word of an extended template, and nothing else.
+static DWORD const DIALOG_TEMPLATE_EX_SIGNATURE = 0xFFFF0001;
+
+/*
+** How far a template of unknown length may be walked. Windows walks one with no bound at
+** all, because a template is a resource the program shipped; data.cpp knows the length of
+** every resource it hands out and that length is what bounds a template from there. A
+** template from anywhere else -- one a caller built in memory -- gets this instead of a
+** walk with no end, and it is an order of magnitude past the largest template shipped.
+*/
+static unsigned int const DIALOG_TEMPLATE_LIMIT = 64u * 1024u;
+
+
+/*
+** What a modal dialog leaves behind. DialogBox runs its own message pump and returns what
+** EndDialog was called with, so the two need somewhere to meet.
+*/
+struct ModalDialog
+{
+	HWND Window;
+	INT_PTR Result;
+	bool Ended;
+};
+
+static std::vector<ModalDialog *> _ModalDialogs;
+
+
+/// What a template's name field turned out to hold.
+enum class TemplateNameType
+{
+	Empty,
+	Ordinal,
+	Text
+};
+
+
+/*
+** A read head over one template, which stops at the end of the resource rather than
+** running past it. data.cpp remembers how long each resource it hands out is, which is
+** what makes the end knowable at all.
+*/
+struct DialogTemplateReader
+{
+	unsigned char const * Base;
+	unsigned char const * Point;
+	unsigned char const * End;
+	bool Overrun;
+
+	DialogTemplateReader(void const * data, unsigned int size) :
+		Base((unsigned char const *)data),
+		Point((unsigned char const *)data),
+		End((unsigned char const *)data + size),
+		Overrun(false)
+	{
+	}
+
+	bool Has(unsigned int bytes) const
+	{
+		return(!Overrun && (unsigned int)(End - Point) >= bytes);
+	}
+
+	WORD Fetch_Word(void)
+	{
+		if (!Has(2)) {
+			Overrun = true;
+			return(0);
+		}
+
+		WORD value;
+		memcpy(&value, Point, sizeof(value));
+		Point += sizeof(value);
+		return(value);
+	}
+
+	DWORD Fetch_Long(void)
+	{
+		DWORD low = Fetch_Word();
+		DWORD high = Fetch_Word();
+		return(low | (high << 16));
+	}
+
+	short Fetch_Short(void)
+	{
+		return((short)Fetch_Word());
+	}
+
+	void Skip(unsigned int bytes)
+	{
+		if (!Has(bytes)) {
+			Overrun = true;
+			Point = End;
+			return;
+		}
+
+		Point += bytes;
+	}
+
+	/// Advances to the next four byte boundary, measured from the start of the template.
+	void Align(void)
+	{
+		Skip((unsigned int)((4 - ((size_t)(Point - Base) & 3)) & 3));
+	}
+
+	TemplateNameType Fetch_Name(std::string & text, unsigned int & ordinal);
+};
+
+
+/// <summary>
+/// Reads one of a template's name fields.
+/// </summary>
+/// <remarks>
+/// A template writes the six original control classes as ordinals and everything else as
+/// UTF-16. The engine's captions and class names are ASCII, so a character outside it is
+/// stood in for rather than encoded into a string the rest of the engine reads as bytes.
+/// </remarks>
+TemplateNameType DialogTemplateReader::Fetch_Name(std::string & text, unsigned int & ordinal)
+{
+	text.clear();
+	ordinal = 0;
+
+	WORD character = Fetch_Word();
+
+	if (character == 0) {
+		return(TemplateNameType::Empty);
+	}
+
+	if (character == 0xFFFF) {
+		ordinal = Fetch_Word();
+		return(TemplateNameType::Ordinal);
+	}
+
+	while (character != 0 && !Overrun) {
+		text.push_back((character < 0x80) ? (char)character : '?');
+		character = Fetch_Word();
+	}
+
+	return(TemplateNameType::Text);
+}
+
+
+struct DialogTemplateHeader
+{
+	DWORD Style;
+	DWORD ExStyle;
+	unsigned int ItemCount;
+	int X;
+	int Y;
+	int CX;
+	int CY;
+	std::string Class;
+	std::string Title;
+	bool HasClass;
+};
+
+
+struct DialogTemplateItem
+{
+	DWORD Style;
+	DWORD ExStyle;
+	int X;
+	int Y;
+	int CX;
+	int CY;
+	int ID;
+	std::string Class;
+	std::string Title;
+};
+
+
+static int Dialog_Units_To_Pixels_X(int units)
+{
+	return(units * DIALOG_BASE_UNIT_X / 4);
+}
+
+
+static int Dialog_Units_To_Pixels_Y(int units)
+{
+	return(units * DIALOG_BASE_UNIT_Y / 8);
+}
+
+
+/// <summary>
+/// Reads a template's head, up to the first item.
+/// </summary>
+/// <param name="extended">Receives whether this is an extended template, which the items
+/// after it are laid out differently for.</param>
+/// <returns>bool; true when the head was read without running off the end.</returns>
+static bool Read_Dialog_Header(DialogTemplateReader & reader, DialogTemplateHeader & header, bool & extended)
+{
+	extended = false;
+	if (reader.Has(4)) {
+		DWORD signature;
+		memcpy(&signature, reader.Point, sizeof(signature));
+		extended = (signature == DIALOG_TEMPLATE_EX_SIGNATURE);
+	}
+
+	if (extended) {
+		reader.Skip(4);					// the version and the signature
+		reader.Fetch_Long();			// the help identifier
+		header.ExStyle = reader.Fetch_Long();
+		header.Style = reader.Fetch_Long();
+	} else {
+		header.Style = reader.Fetch_Long();
+		header.ExStyle = reader.Fetch_Long();
+	}
+
+	header.ItemCount = reader.Fetch_Word();
+	header.X = reader.Fetch_Short();
+	header.Y = reader.Fetch_Short();
+	header.CX = reader.Fetch_Short();
+	header.CY = reader.Fetch_Short();
+
+	std::string scratch;
+	unsigned int ordinal = 0;
+
+	reader.Fetch_Name(scratch, ordinal);	// the menu, which nothing here can show
+
+	header.HasClass = (reader.Fetch_Name(header.Class, ordinal) == TemplateNameType::Text);
+	reader.Fetch_Name(header.Title, ordinal);
+
+	if ((header.Style & DS_SETFONT) != 0) {
+		reader.Fetch_Word();				// the point size
+		if (extended) {
+			reader.Fetch_Word();			// the weight
+			reader.Skip(2);					// the italic flag and the character set
+		}
+		reader.Fetch_Name(scratch, ordinal);	// the face name
+	}
+
+	return(!reader.Overrun);
+}
+
+
+/// <summary>
+/// Reads one item template.
+/// </summary>
+/// <returns>bool; true when the item was read without running off the end.</returns>
+static bool Read_Dialog_Item(DialogTemplateReader & reader, bool extended, DialogTemplateItem & item)
+{
+	reader.Align();
+
+	if (extended) {
+		reader.Fetch_Long();			// the help identifier
+		item.ExStyle = reader.Fetch_Long();
+		item.Style = reader.Fetch_Long();
+	} else {
+		item.Style = reader.Fetch_Long();
+		item.ExStyle = reader.Fetch_Long();
+	}
+
+	item.X = reader.Fetch_Short();
+	item.Y = reader.Fetch_Short();
+	item.CX = reader.Fetch_Short();
+	item.CY = reader.Fetch_Short();
+
+	/*
+	** A classic template identifies a control with a word, so the placeholder the resource
+	** compiler writes for an unused identifier arrives as 65535 rather than as -1. Windows
+	** widens it the same way, and the front end compares against the widened form.
+	*/
+	item.ID = extended ? (int)reader.Fetch_Long() : (int)reader.Fetch_Word();
+
+	unsigned int ordinal = 0;
+	if (reader.Fetch_Name(item.Class, ordinal) == TemplateNameType::Ordinal) {
+		char const * name = Win32_Stock_Control_Class(ordinal);
+		item.Class = (name != nullptr) ? name : "";
+	}
+
+	reader.Fetch_Name(item.Title, ordinal);
+
+	/*
+	** The creation data block, which only the control it was written for can read. Its
+	** leading word counts itself, and a template with nothing to say writes a bare zero.
+	*/
+	WORD creation = reader.Fetch_Word();
+	if (creation > sizeof(WORD)) {
+		reader.Skip(creation - sizeof(WORD));
+	}
+
+	return(!reader.Overrun);
+}
+
+
+/// <summary>
+/// Runs a dialog's messages through its dialog procedure first.
+/// </summary>
+/// <remarks>
+/// This is the class procedure every dialog window is created with, and the DWL_DLGPROC
+/// word is what makes a window a dialog as far as the rest of the engine is concerned:
+/// ownrdraw.cpp reads it to tell a dialog from one of its controls. A dialog procedure
+/// reports whether it handled a message rather than returning a result, and leaves a real
+/// result in DWL_MSGRESULT where the message carries one.
+/// </remarks>
+static LRESULT CALLBACK Dialog_Window_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+	DLGPROC procedure = (DLGPROC)(ULONG_PTR)GetWindowLongA(window, DWL_DLGPROC);
+
+	if (procedure != nullptr) {
+		SetWindowLongA(window, DWL_MSGRESULT, 0);
+
+		INT_PTR handled = procedure(window, message, wparam, lparam);
+		if (handled != 0) {
+			LONG result = GetWindowLongA(window, DWL_MSGRESULT);
+			return((result != 0) ? (LRESULT)result : (LRESULT)handled);
+		}
+	}
+
+	return(DefWindowProcA(window, message, wparam, lparam));
+}
+
+
+static void Register_Dialog_Class(void)
+{
+	static bool registered = false;
+	if (registered) {
+		return;
+	}
+	registered = true;
+
+	WNDCLASSA windowclass;
+	memset(&windowclass, 0, sizeof(windowclass));
+
+	windowclass.style = CS_DBLCLKS;
+	windowclass.lpfnWndProc = Dialog_Window_Proc;
+	windowclass.cbWndExtra = DLGWINDOWEXTRA;
+	windowclass.lpszClassName = DIALOG_CLASS_NAME;
+
+	RegisterClassA(&windowclass);
+}
+
+
+/// <summary>
+/// Finds the control a dialog should open with the focus on.
+/// </summary>
+/// <returns>Returns with the first visible, enabled tab stop, or NULL when the dialog has
+/// none.</returns>
+static HWND First_Tab_Stop(HWND dialog)
+{
+	UserWindow * entry = Window_Of(dialog);
+	if (entry == nullptr) {
+		return(nullptr);
+	}
+
+	/*
+	** Tab order follows the template, and a child created later sits in front of its
+	** siblings, so the template order is the sibling chain read backwards.
+	*/
+	for (unsigned int index = entry->Children.size(); index > 0; index--) {
+		UserWindow * child = entry->Children[index - 1];
+
+		if ((child->Style & WS_TABSTOP) == 0) continue;
+		if (!child->Visible || !child->Enabled) continue;
+
+		return(Handle_Of(child));
+	}
+
+	return(nullptr);
+}
+
+
+DWORD GetDialogBaseUnits(void)
+{
+	return(MAKELONG(DIALOG_BASE_UNIT_X, DIALOG_BASE_UNIT_Y));
+}
+
+
+HWND CreateDialogIndirectParamA(HINSTANCE instance, LPCDLGTEMPLATE dialogtemplate, HWND parent,
+	DLGPROC dialogproc, LPARAM initparam)
+{
+	if (dialogtemplate == nullptr) {
+		return(nullptr);
+	}
+
+	unsigned int size = Fetch_Resource_Size(dialogtemplate);
+	if (size == 0) {
+		size = DIALOG_TEMPLATE_LIMIT;
+	}
+
+	Register_Dialog_Class();
+	Win32_Register_Stock_Controls();
+
+	DialogTemplateReader reader(dialogtemplate, size);
+	DialogTemplateHeader header;
+	bool extended = false;
+
+	if (!Read_Dialog_Header(reader, header, extended)) {
+		return(nullptr);
+	}
+
+	char const * classname = header.HasClass ? header.Class.c_str() : DIALOG_CLASS_NAME;
+
+	/*
+	** The dialog is built before it is shown, so that a procedure handling WM_INITDIALOG
+	** can move and populate it without any of that being seen happening.
+	*/
+	HWND dialog = CreateWindowExA(header.ExStyle, classname, header.Title.c_str(),
+		header.Style & ~(DWORD)WS_VISIBLE,
+		Dialog_Units_To_Pixels_X(header.X), Dialog_Units_To_Pixels_Y(header.Y),
+		Dialog_Units_To_Pixels_X(header.CX), Dialog_Units_To_Pixels_Y(header.CY),
+		parent, nullptr, instance, nullptr);
+
+	if (dialog == nullptr) {
+		return(nullptr);
+	}
+
+	SetWindowLongA(dialog, DWL_DLGPROC, (LONG)(ULONG_PTR)dialogproc);
+
+	for (unsigned int index = 0; index < header.ItemCount; index++) {
+		DialogTemplateItem item;
+
+		if (!Read_Dialog_Item(reader, extended, item)) {
+			break;
+		}
+
+		if (item.Class.empty()) {
+			continue;
+		}
+
+		CreateWindowExA(item.ExStyle, item.Class.c_str(), item.Title.c_str(), item.Style | WS_CHILD,
+			Dialog_Units_To_Pixels_X(item.X), Dialog_Units_To_Pixels_Y(item.Y),
+			Dialog_Units_To_Pixels_X(item.CX), Dialog_Units_To_Pixels_Y(item.CY),
+			dialog, (HMENU)(ULONG_PTR)item.ID, instance, nullptr);
+	}
+
+	HWND focus = First_Tab_Stop(dialog);
+
+	if (SendMessageA(dialog, WM_INITDIALOG, (WPARAM)focus, initparam) != 0 && focus != nullptr) {
+		SetFocus(focus);
+	}
+
+	if ((header.Style & WS_VISIBLE) != 0) {
+		ShowWindow(dialog, SW_SHOW);
+	}
+
+	return(dialog);
+}
+
+
+/// <summary>
+/// Creates a dialog from a template named in a module's resources.
+/// </summary>
+/// <remarks>
+/// The language library is the only resource image this target has, so a template asked
+/// for out of the executable is looked for there and honestly not found when it is
+/// somewhere else. windlg.cpp measures its layout against such a template and carries a
+/// fallback for exactly this.
+/// </remarks>
+HWND CreateDialogParamA(HINSTANCE instance, LPCSTR templatename, HWND parent, DLGPROC dialogproc,
+	LPARAM initparam)
+{
+	void const * dialogtemplate = Fetch_Resource(templatename, (LPCSTR)RT_DIALOG);
+	if (dialogtemplate == nullptr) {
+		return(nullptr);
+	}
+
+	return(CreateDialogIndirectParamA(instance, (LPCDLGTEMPLATE)dialogtemplate, parent, dialogproc, initparam));
+}
+
+
+INT_PTR DialogBoxParamA(HINSTANCE instance, LPCSTR templatename, HWND parent, DLGPROC dialogproc,
+	LPARAM initparam)
+{
+	HWND dialog = CreateDialogParamA(instance, templatename, parent, dialogproc, initparam);
+	if (dialog == nullptr) {
+		return(-1);
+	}
+
+	ModalDialog modal;
+	modal.Window = dialog;
+	modal.Result = 0;
+	modal.Ended = false;
+	_ModalDialogs.push_back(&modal);
+
+	ShowWindow(dialog, SW_SHOW);
+	SetFocus(dialog);
+
+	/*
+	** The modal pump, which is the engine's own service loop rather than a wait: a page
+	** owns the thread the engine is borrowing, so a loop that does not hand it back stops
+	** the tab rather than blocking a thread.
+	*/
+	while (!modal.Ended && IsWindow(dialog)) {
+		Browser_Service();
+		Win32_User_Service();
+
+		MSG message;
+		while (PeekMessageA(&message, nullptr, 0, 0, PM_REMOVE)) {
+			if (IsDialogMessageA(dialog, &message)) {
+				continue;
+			}
+			TranslateMessage(&message);
+			DispatchMessageA(&message);
+		}
+
+		Browser_Yield_If_Due();
+	}
+
+	for (unsigned int index = 0; index < _ModalDialogs.size(); index++) {
+		if (_ModalDialogs[index] == &modal) {
+			_ModalDialogs.erase(_ModalDialogs.begin() + index);
+			break;
+		}
+	}
+
+	if (IsWindow(dialog)) {
+		DestroyWindow(dialog);
+	}
+
+	return(modal.Result);
+}
+
+
+BOOL EndDialog(HWND dialog, INT_PTR result)
+{
+	for (unsigned int index = 0; index < _ModalDialogs.size(); index++) {
+		if (_ModalDialogs[index]->Window == dialog) {
+			_ModalDialogs[index]->Result = result;
+			_ModalDialogs[index]->Ended = true;
+			return(TRUE);
+		}
+	}
+
+	/*
+	** A modeless dialog was never waited on, so there is nothing to hand the result to and
+	** the only thing left to do is what closing it would have done.
+	*/
+	return(DestroyWindow(dialog));
+}
+
+
+HWND GetNextDlgTabItem(HWND dialog, HWND control, BOOL previous)
+{
+	UserWindow * entry = Window_Of(dialog);
+	if (entry == nullptr || entry->Children.empty()) {
+		return(nullptr);
+	}
+
+	/*
+	** Template order, which the sibling chain holds backwards because a child created
+	** later sits in front of the ones before it.
+	*/
+	std::vector<UserWindow *> order(entry->Children.rbegin(), entry->Children.rend());
+
+	int start = -1;
+	for (unsigned int index = 0; index < order.size(); index++) {
+		if (Handle_Of(order[index]) == control) {
+			start = (int)index;
+			break;
+		}
+	}
+
+	int count = (int)order.size();
+	int step = (previous != FALSE) ? -1 : 1;
+
+	for (int distance = 1; distance <= count; distance++) {
+		int index = ((start + step * distance) % count + count) % count;
+		UserWindow * candidate = order[(unsigned int)index];
+
+		if ((candidate->Style & WS_TABSTOP) == 0) continue;
+		if (!candidate->Visible || !candidate->Enabled) continue;
+
+		return(Handle_Of(candidate));
+	}
+
+	return(nullptr);
+}
+
+
+/// <summary>
+/// Offers a message to a modeless dialog before the normal handling sees it.
+/// </summary>
+/// <remarks>
+/// A message aimed anywhere but this dialog is declined, so the caller's loop -- which
+/// offers every message to every open dialog in turn -- goes on to dispatch it normally.
+/// What is claimed here is the keyboard navigation a dialog is expected to do for itself.
+/// </remarks>
+BOOL IsDialogMessageA(HWND dialog, LPMSG message)
+{
+	if (dialog == nullptr || message == nullptr) {
+		return(FALSE);
+	}
+
+	if (message->hwnd != dialog && !IsChild(dialog, message->hwnd)) {
+		return(FALSE);
+	}
+
+	if (message->message == WM_KEYDOWN) {
+		LRESULT code = SendMessageA(message->hwnd, WM_GETDLGCODE, 0, 0);
+
+		switch (message->wParam) {
+			case VK_TAB:
+				if ((code & DLGC_WANTTAB) == 0) {
+					HWND next = GetNextDlgTabItem(dialog, message->hwnd,
+						Browser_Key_Is_Down(VK_SHIFT) ? TRUE : FALSE);
+					if (next != nullptr) {
+						SetFocus(next);
+					}
+					return(TRUE);
+				}
+				break;
+
+			case VK_RETURN:
+				if ((code & DLGC_WANTALLKEYS) == 0) {
+					SendMessageA(dialog, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), 0);
+					return(TRUE);
+				}
+				break;
+
+			case VK_ESCAPE:
+				SendMessageA(dialog, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
+				return(TRUE);
+
+			default:
+				break;
+		}
+	}
+
+	TranslateMessage(message);
+	DispatchMessageA(message);
+	return(TRUE);
 }
 
 

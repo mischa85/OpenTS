@@ -43,7 +43,8 @@ int Load_Picture(FileClass &file, Buffer & scratchbuf, Buffer & destbuf, unsigne
 void * Load_Alloc_Data(FileClass & file);
 int Load_Uncompress(FileClass & file, Buffer & uncomp_buff, Buffer & dest_buff, void * reserved_data);
 char const * Fetch_String(int id);
-void const * Fetch_Resource(LPCSTR resname, LPCSTR restype);
+void const * Fetch_Resource(LPCSTR resname, LPCSTR restype, unsigned int * ressize = NULL);
+unsigned int Fetch_Resource_Size(void const * data);
 void * Hires_Load(char * name);
 
 bool Init_Language_Resources(bool show_error);

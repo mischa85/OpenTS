@@ -600,12 +600,28 @@ BOOL CALLBACK Resize_Dialog(HWND window, LPARAM lParam)
 
 	if (resize_dialog_width == 0) {
 		HWND win = CreateDialogParam(ProgramInstance, (LPCSTR)198, NULL, Resize_Dialog_Proc, NULL);
-		GetClientRect(win, &wrcl);
-		DestroyWindow(win);
-		w = wrcl.right;
-		wheight = wrcl.bottom;
-		resize_dialog_width = w;
-		resize_dialog_height = wheight;
+		if (win != NULL) {
+			GetClientRect(win, &wrcl);
+			DestroyWindow(win);
+			resize_dialog_width = wrcl.right;
+			resize_dialog_height = wrcl.bottom;
+		}
+
+		/*
+		 * The reference dialog measures the design space: it is laid out at
+		 * resize_dialog_scale_x by resize_dialog_scale_y dialog units, so its client
+		 * rectangle states what a dialog unit is worth in pixels. Where the executable
+		 * carries no such template the dialog base units state the same thing, and
+		 * dividing by nothing at all is not an option.
+		 */
+		if (resize_dialog_width <= 0 || resize_dialog_height <= 0) {
+			DWORD units = GetDialogBaseUnits();
+			resize_dialog_width = resize_dialog_scale_x * (int)LOWORD(units) / 4;
+			resize_dialog_height = resize_dialog_scale_y * (int)HIWORD(units) / 8;
+		}
+
+		w = resize_dialog_width;
+		wheight = resize_dialog_height;
 	} else {
 		w = resize_dialog_width;
 		wheight = resize_dialog_height;

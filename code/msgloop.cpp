@@ -193,6 +193,13 @@ void Windows_Message_Handler(void)
 	Video_Present_If_Dirty();
 
 #if defined(__EMSCRIPTEN__)
+	/*
+	 * A page resizes its canvas whenever it likes, and matching the frame to it replaces
+	 * every drawing surface the engine owns. This is the one pump that the movie player and
+	 * the dialog loops do not come through, which is what makes it the place to do it.
+	 */
+	Video_Service_Display();
+
 	Browser_Yield_If_Due();
 #endif
 }

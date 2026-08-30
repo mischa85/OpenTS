@@ -47,6 +47,7 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "win32compat.h"
+#include "win32gdi.h"
 #else
 #include <commctrl.h>
 #endif
@@ -134,6 +135,33 @@ BOOL CALLBACK ODAddWindowToList(HWND window, ArrayList<HWND> * list);
 BOOL CALLBACK SetUserData2(HWND window, LPARAM lparam);
 BOOL CALLBACK InitializeCtrl(HWND window, LPARAM lparam);
 void ODDrawCharRemap(Surface & dst_surf, const char *text, int max_chars, Rect const & rect, char const *font_name, COLORREF color, char flags, int char_spacing);
+
+
+/*
+ * Where a surface's device context comes from. On Windows it is the surface's own GDI
+ * context, which the software blitter is kept off for as long as it is held. A page has no
+ * GDI, so the shim in win32gdi.cpp supplies one that draws through the engine's own fonts
+ * and nothing has to be kept off anything.
+ */
+static HDC OD_Surface_DC(Surface & surface)
+{
+#if defined(__EMSCRIPTEN__)
+	return(Win32_GDI_Surface_DC(surface));
+#else
+	return(((DSurface &)surface).GetDC());
+#endif
+}
+
+
+static void OD_Release_Surface_DC(Surface & surface, HDC hdc)
+{
+#if defined(__EMSCRIPTEN__)
+	(void)surface;
+	DeleteDC(hdc);
+#else
+	((DSurface &)surface).ReleaseDC(hdc);
+#endif
+}
 
 
 ///////////////////////////////////
@@ -323,10 +351,9 @@ static LRESULT CALLBACK ComboDropWinCtrlProc_Internal(HWND hWnd, UINT Msg, WPARA
 	WinData * data = NULL;
 	WinData * master_data = NULL;
 
+	// The window is not in ODWinData until CreateWindowEx returns, so a creation message
+	// legitimately finds nothing here.
 	ODWinData.getPointer(hWnd, &data);
-	if (data == NULL) {
-		DebugString("ComboBox dropdown windata = NULL\n");
-	}
 
 	if (OwnerComboHandle) {
 		ODWinData.getPointer(OwnerComboHandle, &master_data);
@@ -4941,7 +4968,7 @@ LRESULT CALLBACK GroupBoxCtrlProc(HWND window, UINT message, WPARAM wparam, LPAR
 				AlternateSurface->Unlock();
 			}
 
-			HDC hdc = ((DSurface *)AlternateSurface)->GetDC();
+			HDC hdc = OD_Surface_DC(*AlternateSurface);
 			SelectObject(hdc, ODFontPtr);
 			SetTextColor(hdc, ODColorText);
 			SetBkMode(hdc, TRANSPARENT);
@@ -4958,7 +4985,7 @@ LRESULT CALLBACK GroupBoxCtrlProc(HWND window, UINT message, WPARAM wparam, LPAR
 			int y = rect.top + text_size.cy / 2;
 			TextOut(hdc, rect.left + 10, rect.top, text, strlen(text));
 
-			((DSurface *)AlternateSurface)->ReleaseDC(hdc);
+			OD_Release_Surface_DC(*AlternateSurface, hdc);
 
 			while (locks > 0) {
 				((DSurface *)AlternateSurface)->Lock();
@@ -5688,7 +5715,7 @@ int ODDrawTextBG(Surface & surface, LPCSTR string, LPRECT rect, HGDIOBJ font, CO
 		surface.Unlock();
 	}
 
-	HDC hdc = ((DSurface &)surface).GetDC();
+	HDC hdc = OD_Surface_DC(surface);
 
 	SelectObject(hdc, font);
 	SetTextColor(hdc, color);
@@ -5698,7 +5725,7 @@ int ODDrawTextBG(Surface & surface, LPCSTR string, LPRECT rect, HGDIOBJ font, CO
 	GetTextExtentPoint32(hdc, string, strlen(string), &char_size);
 	DrawText(hdc, string, strlen(string), rect, format);
 
-	((DSurface &)surface).ReleaseDC(hdc);
+	OD_Release_Surface_DC(surface, hdc);
 
 	while (locks > 0) {
 		((DSurface &)surface).Lock();
@@ -6127,7 +6154,7 @@ bool ODGetFontMetrics(char const * font_name, FontMetrics * metrics)
 /// <summary>
 /// Draws a line of text onto a surface.
 /// This routine borrows a device context from the surface, unlocking it as often as it
-/// must beforehand, and lets Windows put the text out aligned within the rectangle given.
+/// must beforehand, and puts the text out aligned within the rectangle given.
 /// Nothing is drawn while the game does not hold the focus.
 /// </summary>
 /// <param name="len">The number of characters of the text to draw.</param>
@@ -6153,7 +6180,7 @@ int OD_Draw_Text(COLORREF color, HFONT font, Rect const & rect, const char * tex
 
 	SIZE text_size;
 
-	HDC hDC = destsurf->GetDC();
+	HDC hDC = OD_Surface_DC(*destsurf);
 	if (hDC) {
 
 		if (font) {
@@ -6185,7 +6212,7 @@ int OD_Draw_Text(COLORREF color, HFONT font, Rect const & rect, const char * tex
 		}
 
 		TextOut(hDC, x_offset, y_offset, text, len);
-		destsurf->ReleaseDC(hDC);
+		OD_Release_Surface_DC(*destsurf, hDC);
 	} else {
 		text_size.cx = 0;
 	}

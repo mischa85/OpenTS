@@ -67,10 +67,18 @@ void Main_Options_Dialog(void)
 	LONG in_rc;
 
 	while (true) {
-		do {
-			main_rc = -1;
-			main_handle = OwnerDraw::Begin_Dialog(IDD_OPT_MAIN, Main_Options_Dialog_Proc);
-		} while (main_handle == 0);
+		main_rc = -1;
+		main_handle = OwnerDraw::Begin_Dialog(IDD_OPT_MAIN, Main_Options_Dialog_Proc);
+
+		/*
+		 * Nothing about a dialog that could not be created changes between one attempt and
+		 * the next, so a failure ends the options screen rather than being retried.
+		 */
+		if (main_handle == 0) {
+			GameActive = old_game_active;
+			return;
+		}
+
 		SetWindowLong(main_handle, DWL_USER, (LONG)&main_rc);
 
 		OwnerDraw::Move_Dialog(main_handle, -1, (HiddenSurface->Get_Height() - 400) / 2 + 147);
@@ -92,11 +100,13 @@ void Main_Options_Dialog(void)
 
 			case IDC_OPTMAIN_DISPLAY: {
 				while (true) {
-					do {
-						TempOptions = Options;
-						in_rc = -1;
-						in_handle = OwnerDraw::Begin_Dialog(IDD_OPT_DISPLAY, Display_Options_Dialog_Proc);
-					} while (in_handle == 0);
+					TempOptions = Options;
+					in_rc = -1;
+					in_handle = OwnerDraw::Begin_Dialog(IDD_OPT_DISPLAY, Display_Options_Dialog_Proc);
+					if (in_handle == 0) {
+						break;
+					}
+
 					SetWindowLong(in_handle, DWL_USER, (LONG)&in_rc);
 					OwnerDraw::Display_Dialog(in_handle);
 
