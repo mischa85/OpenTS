@@ -482,6 +482,16 @@ EM_JS(void, ISO_Store_Forget, (char const * slot), {
 
 
 /*
+** Is a block cache worth keeping at all? A host reading the discs off local storage says so,
+** and for one of those the cache is a second copy of something already at hand: it costs the
+** browser's storage quota and saves nothing.
+*/
+EM_JS(int, ISO_Store_Wanted, (void), {
+	return (typeof Module !== "undefined" && Module.opentsLocalDiscs) ? 0 : 1;
+});
+
+
+/*
 **	------------------------------------------------------------------------------------
 **	The look-ahead pool. A span is one request left in flight, and then the bytes it
 **	delivered. Starting one is not a wait and never suspends, so the engine goes straight
@@ -1392,7 +1402,7 @@ bool ISOHttpSourceClass::Store_Ready(void)
 	if (StoreState == STORE_READY) return(true);
 	if (StoreState == STORE_OFF) return(false);
 
-	if (Signature.empty() || Slot.empty()) {
+	if (Signature.empty() || Slot.empty() || ISO_Store_Wanted() == 0) {
 		StoreState = STORE_OFF;
 		_StoreState = 2;
 		return(false);
