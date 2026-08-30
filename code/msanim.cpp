@@ -602,6 +602,12 @@ MSVQAnim::MSVQAnim(char const * name, Surface * surface, MS_ANIM_LIST * vector, 
 	if (name != NULL && surface != NULL) {
 		Movie = Movie_Create(name, surface, Rect(0, 0, 0, 0), Rect(0, 0, 0, 0), int(Options.SoundVolume * 255.0), false);
 		if (Movie != NULL) {
+			/*
+			**	A menu lays its items out against this rectangle and draws them at their own
+			**	size, and the still picture that replaces the movie is drawn into it unscaled
+			**	too. So a menu backdrop keeps this size whatever the movie stretching option
+			**	says; only the full screen movie player honors that option.
+			*/
 			Movie->InitialRect = Rect((surface->Get_Width() - 640) / 2, (surface->Get_Height() - 400) / 2, 640, 400);
 			Movie->StretchRect = Rect((HiddenSurface->Get_Width() - 640) / 2, (HiddenSurface->Get_Height() - 400) / 2, 640, 400);
 		}

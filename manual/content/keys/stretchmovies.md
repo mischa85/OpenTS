@@ -7,8 +7,8 @@ when_omitted:
   value: "no"
 ---
 
-The flag reaches the full screen movie player alone, and only where that player's caller also asks for stretching. A movie played into a fixed rectangle — the sidebar's, for one — never consults the flag and keeps that rectangle either way.
+The flag reaches the full screen movie player alone, and only where that player's caller also asks for stretching. A movie played into a fixed rectangle — the sidebar's, and the one a graphical menu plays its backdrop into — never consults the flag and keeps that rectangle either way, because the artwork drawn over such a movie is placed against that rectangle at its own size.
 
-The read turns the flag off again on a display that cannot stretch while blitting, so on such a display the stored setting never takes effect and the display options screen shows the check box disabled and clear.
+A stretched movie grows by whichever of the two ratios it fits inside and is centered, so a display wider or taller than the movie's own shape leaves a margin rather than pushing the picture off the edge. The flag takes effect on every display; there is no display that refuses it.
 
 The display options screen carries the same switch and stores it as the screen is accepted; leaving the options screen behind it writes the setting back to `sun.ini`.

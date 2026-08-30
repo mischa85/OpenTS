@@ -127,12 +127,6 @@ class DSurface : public XSurface
 		virtual bool Can_Blit(void) const;
 
 		/*
-		 * The movie player scales to the full screen only when this is true. Surfaces
-		 * stretch in software now, so it always is.
-		 */
-		static bool AllowStretchBlits;
-
-		/*
 		 * The bit layout that the primary surface packs its color guns into. The
 		 * surfaces are always 565, so it never changes.
 		 */

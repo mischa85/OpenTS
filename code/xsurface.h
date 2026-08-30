@@ -137,6 +137,7 @@ class XSurface : public Surface
 		*/
 		static bool Blit_Trans(Surface & dest, Rect const & destrect, Surface const & source, Rect const & sourcerect);
 		static bool Blit_Plain(Surface & dest, Rect const & destrect, Surface const & source, Rect const & sourcerect);
+		static bool Blit_Scaled(Surface & dest, Rect const & destrect, Surface const & source, Rect const & sourcerect, bool trans);
 
 	protected:
 		/*
