@@ -31,17 +31,25 @@
 #if defined(__EMSCRIPTEN__)
 
 #include "_keyboar.h"
+#include "_rect.h"
+#include "_tactica.h"
 #include "dbgprint.h"
+#include "globals.h"
 #include "keyboard.h"
 #include "misc.h"
+#include "movies.h"
+#include "tactical.h"
 #include "video.h"
 #include "vidscale.h"
 #include "win.h"
 #include "wwmouse.h"
 
+#include "facing.hh"
+
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
+#include <cmath>
 #include <cstring>
 
 
@@ -67,6 +75,10 @@ struct BrowserEvent
 	short Y;
 	bool IsMouse;
 	bool IsRelease;
+
+	// Was this synthesised from a tap? A tap is the only thing a finger can offer a movie,
+	// and what a movie reads is not a button.
+	bool IsTap;
 };
 
 static BrowserEvent _Events[EVENT_QUEUE_SIZE];
@@ -410,6 +422,7 @@ static EM_BOOL Key_Callback(int type, EmscriptenKeyboardEvent const * event, voi
 	queued.Y = 0;
 	queued.IsMouse = false;
 	queued.IsRelease = release;
+	queued.IsTap = false;
 	Queue_Event(queued);
 
 	// Tab, the function keys, and the arrows all scroll or navigate the page unless the
@@ -452,6 +465,7 @@ static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void
 	queued.Y = (short)_MouseY;
 	queued.IsMouse = true;
 	queued.IsRelease = release;
+	queued.IsTap = false;
 	Queue_Event(queued);
 
 	// A double click reaches the engine as a second press and release of the same button,
@@ -459,6 +473,437 @@ static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void
 	if (type == EMSCRIPTEN_EVENT_DBLCLICK) {
 		queued.IsRelease = true;
 		Queue_Event(queued);
+	}
+
+	return(EM_TRUE);
+}
+
+
+/*
+ * -----------------------------------------------------------------------------------------
+ * Touch.
+ *
+ * A page reports a finger as a touch and, for a tap that does not move, follows it with a
+ * synthesised mouse click. A drag gets no mouse events at all, so without what follows the
+ * map cannot be moved and nothing can be band selected by finger. Each gesture is recognised
+ * here and handed to the engine as the input it already understands:
+ *
+ *   tap                     left press and release, which is select and order both
+ *   tap during a movie      escape, which is the only thing the movie player reads
+ *   drag                    the map panned one for one under the finger
+ *   press, then drag        left press held, which is the engine's own rubber band
+ *   two finger tap          right press and release, which cancels and deselects
+ *   two finger drag         the map panned, whatever the first finger was doing
+ *
+ * The callbacks run while the engine may be suspended part way through a frame, so like the
+ * mouse ones they only write scalars and queue events; Browser_Service applies them.
+ * -----------------------------------------------------------------------------------------
+ */
+
+// How far a finger may travel and still be a tap, and how long it may rest before a press
+// becomes a rubber band rather than a pan. Both are in CSS pixels and milliseconds, which is
+// what a finger is measured in whatever a display carries per pixel.
+static const double TOUCH_SLOP = 10.0;
+static const double TOUCH_HOLD = 350.0;
+
+enum BrowserGesture {
+	GESTURE_NONE,		// Nothing is on the glass.
+	GESTURE_UNDECIDED,	// One finger is down and has neither travelled nor rested.
+	GESTURE_PAN,
+	GESTURE_BAND,
+	GESTURE_MULTI,
+	GESTURE_SPENT,		// The gesture is over, but a finger is still down.
+};
+
+static BrowserGesture _Gesture = GESTURE_NONE;
+static long _GestureID = 0;
+static double _GestureTime = 0.0;
+static double _GestureStartX = 0.0;
+static double _GestureStartY = 0.0;
+static double _GestureLastX = 0.0;
+static double _GestureLastY = 0.0;
+static bool _GestureOnTactical = false;
+
+static double _MultiTime = 0.0;
+static double _MultiStartX = 0.0;
+static double _MultiStartY = 0.0;
+static double _MultiLastX = 0.0;
+static double _MultiLastY = 0.0;
+static bool _MultiMoved = false;
+
+// What the finger has asked the map to travel and the engine has yet to be told about. It is
+// carried as a fraction because a slow drag moves less than a whole pixel between two events
+// and dropping the remainder would leave the map behind the finger.
+static double _PanPendingX = 0.0;
+static double _PanPendingY = 0.0;
+
+// Set when a gesture ends, so that the position the finger left behind is taken off whatever
+// edge it was near. Nothing hovers on a touch screen, and the engine reads a position resting
+// against an edge as a standing request to keep scrolling.
+static bool _TouchParkPending = false;
+
+
+/// <summary>
+/// Scales a distance measured across the canvas into one measured across the game's frame.
+/// </summary>
+static void Canvas_Delta_To_Game(double cssdx, double cssdy, double & dx, double & dy)
+{
+	double ratio = emscripten_get_device_pixel_ratio();
+
+	dx = cssdx * ratio;
+	dy = cssdy * ratio;
+
+	VideoScaleInfo const & scale = Video_Get_Scale_Info();
+	if (scale.DestWidth > 0 && scale.DestHeight > 0) {
+		dx = dx * (double)scale.GameWidth / (double)scale.DestWidth;
+		dy = dy * (double)scale.GameHeight / (double)scale.DestHeight;
+	}
+}
+
+
+/// <summary>
+/// Is the tactical map on screen and in a state that a gesture may move it?
+/// </summary>
+static bool Touch_Tactical_Ready(void)
+{
+	return(TacticalMap != nullptr && TacticalActive && ScenarioActive && GameActive && !Movie_Is_Playing());
+}
+
+
+/// <summary>
+/// Queues a synthesised button press and release at a position in the frame.
+/// </summary>
+/// <param name="tap">Is this a tap, which stands for escape while a movie has the screen?</param>
+static void Queue_Touch_Click(unsigned short key, int x, int y, bool tap)
+{
+	BrowserEvent queued;
+	queued.Key = key;
+	queued.X = (short)x;
+	queued.Y = (short)y;
+	queued.IsMouse = true;
+	queued.IsRelease = false;
+	queued.IsTap = tap;
+	Queue_Event(queued);
+
+	queued.IsRelease = true;
+	Queue_Event(queued);
+}
+
+
+/// <summary>
+/// Moves the map by what the finger has travelled since the last pass.
+/// </summary>
+/// <remarks>
+/// The map follows the finger rather than leading it, which is the way every other surface a
+/// finger drags behaves. There is no inertia: a pan that carries on after the finger has gone
+/// is a pan the player cannot stop over a unit, and the engine's own coast scroll already
+/// occupies the other idiom.
+/// </remarks>
+static void Touch_Service_Pan(void)
+{
+	if (_PanPendingX == 0.0 && _PanPendingY == 0.0) {
+		return;
+	}
+
+	if (!Touch_Tactical_Ready()) {
+		_PanPendingX = 0.0;
+		_PanPendingY = 0.0;
+		return;
+	}
+
+	int stepx = (int)_PanPendingX;
+	int stepy = (int)_PanPendingY;
+
+	_PanPendingX -= (double)stepx;
+	_PanPendingY -= (double)stepy;
+
+	if (stepx > 0) {
+		TacticalMap->Scroll_Map(FACING_W, stepx);
+	} else if (stepx < 0) {
+		TacticalMap->Scroll_Map(FACING_E, -stepx);
+	}
+
+	if (stepy > 0) {
+		TacticalMap->Scroll_Map(FACING_N, stepy);
+	} else if (stepy < 0) {
+		TacticalMap->Scroll_Map(FACING_S, -stepy);
+	}
+}
+
+
+/// <summary>
+/// Puts the reported position back in the middle of the tactical view once a gesture is over.
+/// </summary>
+static void Touch_Service_Park(void)
+{
+	if (!_TouchParkPending) {
+		return;
+	}
+
+	_TouchParkPending = false;
+
+	if (TacticalRect.Width > 2 && TacticalRect.Height > 2) {
+		_MouseX = TacticalRect.X + TacticalRect.Width / 2;
+		_MouseY = TacticalRect.Y + TacticalRect.Height / 2;
+	}
+}
+
+
+/// <summary>
+/// Commits an undecided one finger gesture to a rubber band once the finger has rested.
+/// </summary>
+/// <remarks>
+/// This is read here rather than in the callback because a finger that rests reports nothing
+/// at all; the timer has to be looked at by something that runs anyway.
+/// </remarks>
+static void Touch_Service_Hold(void)
+{
+	if (_Gesture != GESTURE_UNDECIDED || !_GestureOnTactical) {
+		return;
+	}
+
+	if ((emscripten_get_now() - _GestureTime) < TOUCH_HOLD) {
+		return;
+	}
+
+	if (!Touch_Tactical_Ready()) {
+		return;
+	}
+
+	_Gesture = GESTURE_BAND;
+
+	int x;
+	int y;
+	Canvas_Point_To_Game(_GestureStartX, _GestureStartY, x, y);
+	_MouseX = x;
+	_MouseY = y;
+
+	_KeyDown[VK_LBUTTON] = 1;
+
+	BrowserEvent queued;
+	queued.Key = VK_LBUTTON;
+	queued.X = (short)x;
+	queued.Y = (short)y;
+	queued.IsMouse = true;
+	queued.IsRelease = false;
+	queued.IsTap = false;
+	Queue_Event(queued);
+}
+
+
+/// <summary>
+/// Ends a rubber band that a finger was holding.
+/// </summary>
+static void Touch_End_Band(double cssx, double cssy)
+{
+	int x;
+	int y;
+	Canvas_Point_To_Game(cssx, cssy, x, y);
+	_MouseX = x;
+	_MouseY = y;
+
+	_KeyDown[VK_LBUTTON] = 0;
+
+	BrowserEvent queued;
+	queued.Key = VK_LBUTTON;
+	queued.X = (short)x;
+	queued.Y = (short)y;
+	queued.IsMouse = true;
+	queued.IsRelease = true;
+	queued.IsTap = false;
+	Queue_Event(queued);
+}
+
+
+/// <summary>
+/// Is this position over the tactical view rather than over the sidebar or the tab bar?
+/// </summary>
+static bool Touch_On_Tactical(double cssx, double cssy)
+{
+	int x;
+	int y;
+	Canvas_Point_To_Game(cssx, cssy, x, y);
+
+	return(x >= TacticalRect.X && x < TacticalRect.X + TacticalRect.Width
+		&& y >= TacticalRect.Y && y < TacticalRect.Y + TacticalRect.Height);
+}
+
+
+static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void *)
+{
+	double now = emscripten_get_now();
+
+	/*
+	 * A browser names every finger it knows about on every event, the ones that have just
+	 * left included, so what has to be counted is the fingers still on the glass. The first
+	 * two of them decide the gesture; a third is ignored rather than being allowed to change
+	 * what is already under way.
+	 */
+	bool ending = (type == EMSCRIPTEN_EVENT_TOUCHEND || type == EMSCRIPTEN_EVENT_TOUCHCANCEL);
+
+	int count = 0;
+	EmscriptenTouchPoint const * points[2] = { nullptr, nullptr };
+
+	for (int index = 0; index < event->numTouches; index++) {
+		EmscriptenTouchPoint const * point = &event->touches[index];
+
+		if (ending && point->isChanged != 0) {
+			continue;
+		}
+
+		if (count < 2) {
+			points[count] = point;
+		}
+		count++;
+	}
+
+	if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+
+		if (count >= 2) {
+
+			// A second finger takes the gesture over. Whatever one finger was doing is
+			// finished off first, so a rubber band that was open is not left held.
+			if (_Gesture == GESTURE_BAND) {
+				Touch_End_Band(_GestureLastX, _GestureLastY);
+			}
+
+			_Gesture = GESTURE_MULTI;
+			_MultiTime = now;
+			_MultiStartX = (points[0]->targetX + points[1]->targetX) / 2.0;
+			_MultiStartY = (points[0]->targetY + points[1]->targetY) / 2.0;
+			_MultiLastX = _MultiStartX;
+			_MultiLastY = _MultiStartY;
+			_MultiMoved = false;
+			return(EM_TRUE);
+		}
+
+		if (points[0] != nullptr) {
+			_Gesture = GESTURE_UNDECIDED;
+			_GestureID = points[0]->identifier;
+			_GestureTime = now;
+			_GestureStartX = points[0]->targetX;
+			_GestureStartY = points[0]->targetY;
+			_GestureLastX = _GestureStartX;
+			_GestureLastY = _GestureStartY;
+			_GestureOnTactical = Touch_On_Tactical(_GestureStartX, _GestureStartY) && Touch_Tactical_Ready();
+			_PanPendingX = 0.0;
+			_PanPendingY = 0.0;
+		}
+		return(EM_TRUE);
+	}
+
+	if (type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+
+		if (_Gesture == GESTURE_MULTI) {
+			if (count >= 2) {
+				double cx = (points[0]->targetX + points[1]->targetX) / 2.0;
+				double cy = (points[0]->targetY + points[1]->targetY) / 2.0;
+
+				if (fabs(cx - _MultiStartX) > TOUCH_SLOP || fabs(cy - _MultiStartY) > TOUCH_SLOP) {
+					_MultiMoved = true;
+				}
+
+				double dx;
+				double dy;
+				Canvas_Delta_To_Game(cx - _MultiLastX, cy - _MultiLastY, dx, dy);
+				_PanPendingX += dx;
+				_PanPendingY += dy;
+
+				_MultiLastX = cx;
+				_MultiLastY = cy;
+			}
+			return(EM_TRUE);
+		}
+
+		EmscriptenTouchPoint const * finger = nullptr;
+		for (int index = 0; index < event->numTouches; index++) {
+			if (event->touches[index].identifier == _GestureID) {
+				finger = &event->touches[index];
+				break;
+			}
+		}
+		if (finger == nullptr) {
+			return(EM_TRUE);
+		}
+
+		double x = finger->targetX;
+		double y = finger->targetY;
+
+		/*
+		 * A finger that is already travelling is panning before the hold can claim it, which
+		 * is what keeps a pan that started slowly from costing the player their selection.
+		 */
+		if (_Gesture == GESTURE_UNDECIDED) {
+			double travel = fabs(x - _GestureStartX) + fabs(y - _GestureStartY);
+			if (travel > TOUCH_SLOP) {
+				_Gesture = _GestureOnTactical ? GESTURE_PAN : GESTURE_SPENT;
+			}
+		}
+
+		if (_Gesture == GESTURE_PAN) {
+			double dx;
+			double dy;
+			Canvas_Delta_To_Game(x - _GestureLastX, y - _GestureLastY, dx, dy);
+			_PanPendingX += dx;
+			_PanPendingY += dy;
+		}
+
+		if (_Gesture == GESTURE_BAND) {
+			int gx;
+			int gy;
+			Canvas_Point_To_Game(x, y, gx, gy);
+			_MouseX = gx;
+			_MouseY = gy;
+		}
+
+		_GestureLastX = x;
+		_GestureLastY = y;
+		return(EM_TRUE);
+	}
+
+	if (type == EMSCRIPTEN_EVENT_TOUCHEND) {
+
+		if (_Gesture == GESTURE_MULTI && count < 2) {
+
+			// Two fingers that neither travelled nor lingered are the right button.
+			if (!_MultiMoved && (now - _MultiTime) < TOUCH_HOLD) {
+				int x;
+				int y;
+				Canvas_Point_To_Game(_MultiStartX, _MultiStartY, x, y);
+				_MouseX = x;
+				_MouseY = y;
+				Queue_Touch_Click(VK_RBUTTON, x, y, false);
+			}
+			_Gesture = GESTURE_SPENT;
+
+		} else if (_Gesture == GESTURE_BAND) {
+			Touch_End_Band(_GestureLastX, _GestureLastY);
+			_Gesture = GESTURE_SPENT;
+
+		} else if (_Gesture == GESTURE_UNDECIDED) {
+			int x;
+			int y;
+			Canvas_Point_To_Game(_GestureStartX, _GestureStartY, x, y);
+			_MouseX = x;
+			_MouseY = y;
+			Queue_Touch_Click(VK_LBUTTON, x, y, true);
+			_Gesture = GESTURE_SPENT;
+
+		} else if (_Gesture == GESTURE_PAN) {
+			_Gesture = GESTURE_SPENT;
+		}
+	}
+
+	if (type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
+		if (_Gesture == GESTURE_BAND) {
+			Touch_End_Band(_GestureLastX, _GestureLastY);
+		}
+		_Gesture = GESTURE_SPENT;
+	}
+
+	if (ending && count == 0) {
+		_Gesture = GESTURE_NONE;
+		_TouchParkPending = true;
 	}
 
 	return(EM_TRUE);
@@ -568,6 +1013,20 @@ void Browser_Service(void)
 		BrowserEvent const event = _Events[_EventHead];
 		_EventHead = (_EventHead + 1) % EVENT_QUEUE_SIZE;
 
+		/*
+		 * A tap is a click everywhere except over a movie, where the only thing the player
+		 * can ask for is that it stop and the only thing the movie player reads is escape.
+		 * The escape goes to the keyboard buffer alone and never to the key state, so it
+		 * cannot reach the window messages and open the options dialog behind the movie. A
+		 * movie started with its break disallowed still ignores it.
+		 */
+		if (event.IsTap && Movie_Is_Playing()) {
+			if (Keyboard != nullptr) {
+				Keyboard->Post_Key_Event(VK_ESCAPE, event.IsRelease);
+			}
+			continue;
+		}
+
 		if (_EventHook != nullptr && _EventHook(event.Key, event.X, event.Y, event.IsMouse, event.IsRelease)) {
 			continue;
 		}
@@ -580,6 +1039,10 @@ void Browser_Service(void)
 			}
 		}
 	}
+
+	Touch_Service_Hold();
+	Touch_Service_Pan();
+	Touch_Service_Park();
 }
 
 
@@ -856,6 +1319,16 @@ bool Browser_Init(void)
 	emscripten_set_mousedown_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 	emscripten_set_mouseup_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 	emscripten_set_dblclick_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
+
+	/*
+	 * Touch is taken from the canvas for the same reason the mouse is, and every event is
+	 * claimed: a page that is still allowed its own idea of what a drag means will scroll,
+	 * zoom, or start selecting text underneath the gesture.
+	 */
+	emscripten_set_touchstart_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Touch_Callback);
+	emscripten_set_touchmove_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Touch_Callback);
+	emscripten_set_touchend_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Touch_Callback);
+	emscripten_set_touchcancel_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Touch_Callback);
 
 	emscripten_set_mouseleave_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Boundary_Callback);
 	emscripten_set_mouseenter_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Boundary_Callback);

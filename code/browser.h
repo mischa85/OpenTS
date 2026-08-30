@@ -50,6 +50,10 @@ bool Browser_Init(void);
 // Picks up whatever the page has changed since the last pass -- the canvas size, the
 // visibility, and the input events that arrived while the engine was elsewhere -- and
 // delivers it to the engine. Cheap enough to call from every wait the engine has.
+//
+// The touch gestures are carried here too, so this has to be reached regularly rather than
+// only when something arrives: a finger resting still reports nothing at all, and the press
+// that opens a rubber band is measured against a clock this reads.
 void Browser_Service(void);
 
 // Taps the events Browser_Service drains, before they reach the engine's keyboard buffer.
