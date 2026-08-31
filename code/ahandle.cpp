@@ -21,6 +21,7 @@
 #include "vqaplayp.h"
 
 #include <cassert>
+#include <mutex>
 
 /// use of this is a bug..
 #ifndef DSBCAPS_GETCURRENTPOSITION2
@@ -28,6 +29,19 @@
 #endif
 
 Ahandle _handles[Ahandle::MAX_HANDLES];
+
+// The lock for each handle, kept outside it because Open_Audio_Handler clears the handle
+// with memset when it takes one, which a live lock object would not survive. It is
+// recursive because Start_Audio_Handler and AudioCallback both fill the buffer while
+// holding it, and the fill callback returns through Load_Audio_Handler, which takes it
+// again.
+static std::recursive_mutex _handle_locks[Ahandle::MAX_HANDLES];
+
+
+static std::recursive_mutex & Lock_Of(Ahandle const * handle)
+{
+	return(_handle_locks[handle - _handles]);
+}
 
 bool _restore_primary = false;
 WAVEFORMATEX _restore_format;
@@ -107,30 +121,32 @@ unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *co
 	DWORD				play_cursor;		//Position that direct sound is reading from
 	DWORD				write_cursor;		//Position in buffer that we can write to
 
-	EnterCriticalSection(&audio->CriticalSection);
+	long r;
 
-	long r = vqap->RepeatedBuffers;
-	long l = audio->LastChunkPosition;
-	long m = audio->ChunksMovedToAudioBuffer;
+	{
+		std::lock_guard<std::recursive_mutex> guard(Lock_Of(audio));
 
-	totalbytes = config->HMIBufSize * m;
+		r = vqap->RepeatedBuffers;
+		long l = audio->LastChunkPosition;
+		long m = audio->ChunksMovedToAudioBuffer;
 
-	if (audio->SecondaryBufferPtr &&
-		audio->SecondaryBufferPtr->GetCurrentPosition (&play_cursor, &write_cursor) == S_OK) {
-		if (l) {
-			totalbytes += play_cursor;
-		} else {
-			if (play_cursor >= (s / 2)) {
-				totalbytes += play_cursor - (s / 2);
+		totalbytes = config->HMIBufSize * m;
+
+		if (audio->SecondaryBufferPtr &&
+			audio->SecondaryBufferPtr->GetCurrentPosition (&play_cursor, &write_cursor) == S_OK) {
+			if (l) {
+				totalbytes += play_cursor;
 			} else {
-				if (totalbytes > 0) {
-					totalbytes += play_cursor + (s / 2);
+				if (play_cursor >= (s / 2)) {
+					totalbytes += play_cursor - (s / 2);
+				} else {
+					if (totalbytes > 0) {
+						totalbytes += play_cursor + (s / 2);
+					}
 				}
 			}
 		}
 	}
-
-	LeaveCriticalSection(&audio->CriticalSection);
 
 	dma_diff = totalbytes - config->HMIBufSize * r;
 	if (dma_diff > totalbytes) {
@@ -217,8 +233,6 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 		memset(handle, 0, sizeof(*handle));
 		handle->Used = TRUE;
 		handle->Volume = config->Volume;
-
-		InitializeCriticalSection(&handle->CriticalSection);
 
 		if (config->AudioRate != -1) {
 			handle->SampleRate = config->AudioRate;
@@ -337,8 +351,6 @@ long __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 			DebugString("Audio.Unlock_Mutex()\n");
 			Audio.Unlock_Mutex();
 		}
-		DebugString("Deleting the critical section object\n");
-		DeleteCriticalSection(&handle->CriticalSection);
 	}
 
 	DebugString("VQ audio handler closed OK\n");
@@ -356,7 +368,7 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 		return(Play_Audio_Handler(vqap));
 	}
 
-	EnterCriticalSection(&audio->CriticalSection);
+	std::lock_guard<std::recursive_mutex> guard(Lock_Of(audio));
 
 	assert(audio->SecondaryBufferPtr == NULL);
 
@@ -398,7 +410,6 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	Audio.Unlock_Mutex();
 
 	if (audio->SecondaryBufferPtr == NULL) {
-		LeaveCriticalSection(&audio->CriticalSection);
 		return(VQAERR_AUDIO);
 	}
 
@@ -416,7 +427,6 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	audio->SecondaryBufferPtr->SetVolume(Convert_HMI_To_Direct_Sound_Volume(audio->Volume & 255));
 
 	HRESULT return_code = audio->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
-	LeaveCriticalSection(&audio->CriticalSection);
 	return(return_code == DS_OK ? VQAERR_NONE : VQAERR_AUDIO);
 }
 
@@ -426,9 +436,9 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
 	if (buffer != NULL && nbytes != 0) {
-		EnterCriticalSection(&handle->CriticalSection);
+		std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
+
 		if (handle->AudioBufInUse[handle->AudioBufReadIndex] == TRUE) {
-			LeaveCriticalSection(&handle->CriticalSection);
 			return(VQAERR_AUDIO);
 		}
 		int readindex = handle->AudioBufReadIndex;
@@ -441,7 +451,6 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
 			index = 0;
 		}
 		handle->AudioBufReadIndex = index;
-		LeaveCriticalSection(&handle->CriticalSection);
 		return(VQAERR_NONE);
 	}
 	return(VQAERR_AUDIO);
@@ -452,14 +461,12 @@ long __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
-	EnterCriticalSection(&handle->CriticalSection);
+	std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
 
 	if (handle->Used == true && handle->SecondaryBufferPtr != NULL) {
 		handle->SecondaryBufferPtr->Stop();
 	}
 	handle->Flags |= AHANDLEF_IS_PAUSED;
-
-	LeaveCriticalSection(&handle->CriticalSection);
 
 	return(VQAERR_NONE);
 }
@@ -474,7 +481,7 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 		return(VQAERR_AUDIO);
 	}
 
-	EnterCriticalSection(&handle->CriticalSection);
+	std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
 
 	rc = handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
 	if (rc == S_OK) {
@@ -485,7 +492,6 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 	} else {
 		rc = VQAERR_AUDIO;
 	}
-	LeaveCriticalSection(&handle->CriticalSection);
 
 	return(rc);
 }
@@ -497,7 +503,8 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 
 	if (handle->SecondaryBufferPtr != NULL) {
 
-		EnterCriticalSection(&handle->CriticalSection);
+		std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
+
 		handle->SecondaryBufferPtr->Stop();
 		handle->SecondaryBufferPtr->Release();
 		handle->SecondaryBufferPtr = NULL;
@@ -506,8 +513,6 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 		for (int i = 0; i < Ahandle::MAX_BUFFERS; i++) {
 			handle->AudioBufInUse[i] = false;
 		}
-
-		LeaveCriticalSection(&handle->CriticalSection);
 	}
 	return(VQAERR_NONE);
 }
@@ -554,17 +559,19 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, 
 		return;
 	}
 
-	EnterCriticalSection(&audio->CriticalSection);
+	// Taken and released by hand: every exit drops the re-entrancy count after releasing
+	// the lock, so a callback arriving in between fails the count test instead of waiting.
+	Lock_Of(audio).lock();
 
 	if (!audio->SecondaryBufferPtr || audio->TimerHandle != uTimerID)  {
-		LeaveCriticalSection(&audio->CriticalSection);
+		Lock_Of(audio).unlock();
 		InterlockedDecrement(&audio->SuspendAudioCallback);
 		return;
 	}
 
 	return_code = audio->SecondaryBufferPtr->GetStatus(&status);
 	if (!(status & DSBSTATUS_PLAYING) && !(status & DSBSTATUS_LOOPING)) {
-		LeaveCriticalSection(&audio->CriticalSection);
+		Lock_Of(audio).unlock();
 		InterlockedDecrement(&audio->SuspendAudioCallback);
 		return;
 	}
@@ -619,7 +626,7 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, 
 			audio->SecondaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
 		}
 	}
-	LeaveCriticalSection(&audio->CriticalSection);
+	Lock_Of(audio).unlock();
 	InterlockedDecrement(&audio->SuspendAudioCallback);
 }
 
@@ -730,12 +737,10 @@ void Pause_All_Audio_Handler(void)
 		Ahandle *handle = &_handles[i];
 		if (handle->Used == true && handle->SecondaryBufferPtr != NULL) {
 
-			EnterCriticalSection(&handle->CriticalSection);
+			std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
 
 			handle->SecondaryBufferPtr->Stop();
 			handle->Flags |= AHANDLEF_IS_PAUSED;
-
-			LeaveCriticalSection(&handle->CriticalSection);
 
 		}
 	}
@@ -748,12 +753,10 @@ void Resume_All_Audio_Handler(void)
 		Ahandle *handle = &_handles[i];
 		if (handle->Used == true && handle->SecondaryBufferPtr != NULL) {
 
-			EnterCriticalSection(&handle->CriticalSection);
+			std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
 
 			handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
 			handle->Flags &= ~AHANDLEF_IS_PAUSED;
-
-			LeaveCriticalSection(&handle->CriticalSection);
 
 		}
 	}

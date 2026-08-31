@@ -72,7 +72,6 @@ struct Ahandle {
 	unsigned int ChunksMovedToAudioBuffer;
 	unsigned int LastChunkPosition;
 	unsigned int EndLastAudioChunk;
-	CRITICAL_SECTION CriticalSection;
 	LONG SuspendAudioCallback;
 };
 
