@@ -15452,7 +15452,7 @@ PlayIntro:
     value_type: boolean
     status: generated
     _provenance:
-      default_candidate: 'yes'
+      default_candidate: null
       declared_in: Startup
       member: Special
       source: code/startup.cpp

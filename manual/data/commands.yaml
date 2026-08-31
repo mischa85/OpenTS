@@ -1786,6 +1786,30 @@ launch_options:
   _provenance:
     source: code/init.cpp
     guard: null
+- id: launch:scenario
+  route_id: scenario
+  kind: launch
+  title: Forced scenario
+  description: Starts the named scenario at once, in place of the menus that would otherwise pick one.
+    The name is the scenario's file name as the battle control file spells it, such as GDI1A.MAP.
+  audience: developer
+  availability: *id001
+  syntax: -SCENARIO=<name>
+  _provenance:
+    source: code/init.cpp
+    guard: null
+- id: launch:campaign
+  route_id: campaign
+  kind: launch
+  title: Forced campaign
+  description: Names the battle that a forced scenario is played as part of, as the battle control file
+    names it, such as GDI1. Without it the scenario is played on its own.
+  audience: developer
+  availability: *id001
+  syntax: -CAMPAIGN=<name>
+  _provenance:
+    source: code/init.cpp
+    guard: null
 - id: launch:multiplayer-debug
   route_id: multiplayer-debug
   kind: launch

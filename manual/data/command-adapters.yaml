@@ -297,6 +297,14 @@ fixed_exclusions:
   - site: { file: code/mainloop.cpp, function: Keyboard_Process, expression: KN_RLSE_BIT, guard: _DEBUG }
     reason: Filters key-release events before Debug_Key; it is not a control.
 
+  - site: { file: code/browser.cpp, function: Key_Callback, expression: VK_NONE, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Sentinel for a page key code that the virtual-key table does not map.
+  - sites:
+      - { file: code/browser.cpp, function: Key_Callback, expression: VK_RETURN, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/browser.cpp, function: Key_Callback, expression: VK_BACK, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/browser.cpp, function: Key_Callback, expression: VK_TAB, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/browser.cpp, function: Key_Callback, expression: VK_ESCAPE, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Supplies the ASCII character for the named key events a page reports without one.
   - sites:
       - { file: code/conquer.cpp, function: KN_To_Facing, expression: KN_LEFT }
       - { file: code/conquer.cpp, function: KN_To_Facing, expression: KN_RIGHT }
@@ -361,14 +369,14 @@ fixed_exclusions:
       - { file: code/keyboard.cpp, function: WWKeyboardClass::Is_Mouse_Key, expression: VK_RBUTTON }
     reason: Keyboard-backend classification of mouse virtual keys.
   - sites:
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_SHIFT }
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_CONTROL }
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_MENU }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_SHIFT, guard: "else(defined(__EMSCRIPTEN__))" }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_CONTROL, guard: "else(defined(__EMSCRIPTEN__))" }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Put_Key_Message, expression: VK_MENU, guard: "else(defined(__EMSCRIPTEN__))" }
     reason: Keyboard-backend modifier-state encoding, not separate controls.
   - sites:
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_LBUTTON }
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_RBUTTON }
-      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_LBUTTON+VK_RBUTTON }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_LBUTTON, guard: "else(defined(__EMSCRIPTEN__))" }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_RBUTTON, guard: "else(defined(__EMSCRIPTEN__))" }
+      - { file: code/keyboard.cpp, function: WWKeyboardClass::Down, expression: VK_LBUTTON+VK_RBUTTON, guard: "else(defined(__EMSCRIPTEN__))" }
     reason: Keyboard-backend normalization for the Windows swapped-button setting.
   - site: { file: code/keyboard.cpp, function: WWKeyboardClass::Message_Handler, expression: VK_SCROLL }
     reason: Synchronizes the backend Scroll Lock state; it does not dispatch a game command.
@@ -426,6 +434,33 @@ fixed_exclusions:
       - { file: code/wdtsel.cpp, function: Selection::Pick_Territory, expression: KN_NONE }
       - { file: code/wdtsel.cpp, function: Selection::Pick_Territory, expression: KN_LMOUSE }
     reason: World Domination Tour territory-screen polling and hit-testing.
+  - sites:
+      - { file: code/win32ctrl.cpp, function: Edit_Proc, expression: VK_LEFT, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32ctrl.cpp, function: Edit_Proc, expression: VK_RIGHT, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32ctrl.cpp, function: Edit_Proc, expression: VK_HOME, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32ctrl.cpp, function: Edit_Proc, expression: VK_END, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32ctrl.cpp, function: Edit_Proc, expression: VK_DELETE, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Caret movement and deletion inside the stock edit control, not a top-level command.
+  - sites:
+      - { file: code/win32user.cpp, function: IsDialogMessageA, expression: VK_TAB, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: IsDialogMessageA, expression: VK_RETURN, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: IsDialogMessageA, expression: VK_ESCAPE, guard: "defined(__EMSCRIPTEN__)" }
+    reason: The dialog keyboard navigation Windows performs for itself; the shim supplies focus traversal and the IDOK and IDCANCEL defaults.
+  - sites:
+      - { file: code/win32user.cpp, function: Mouse_Button_Flags, expression: VK_LBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Mouse_Button_Flags, expression: VK_RBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Mouse_Button_Flags, expression: VK_MBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Reads button state into the MK_ flags a mouse message carries.
+  - sites:
+      - { file: code/win32user.cpp, function: Consume_Browser_Event, expression: VK_LBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Consume_Browser_Event, expression: VK_RBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Consume_Browser_Event, expression: VK_MBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Selects the window message a page mouse event becomes; the window it reaches owns the action.
+  - sites:
+      - { file: code/win32user.cpp, function: Service_Keyboard, expression: VK_LBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Service_Keyboard, expression: VK_RBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/win32user.cpp, function: Service_Keyboard, expression: VK_MBUTTON, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Keeps the mouse-button virtual keys out of the key messages this state scan queues.
   - site: { file: code/winstub.cpp, function: Create_Main_Window, expression: VK_M }
     reason: Registers a Windows hotkey that has no WM_HOTKEY handler in the current source tree.
 
