@@ -44,9 +44,12 @@ static void Cpu_Id(int regs[4], int leaf)
 	__cpuid(regs, leaf);
 }
 #else
+#if defined(__i386__) || defined(__x86_64__)
 #include <cpuid.h>
 #include <x86intrin.h>
+#endif
 
+#if defined(__i386__) || defined(__x86_64__)
 static void Cpu_Id(int regs[4], int leaf)
 {
 	unsigned int eax = 0;
@@ -60,6 +63,7 @@ static void Cpu_Id(int regs[4], int leaf)
 	regs[2] = (int)ecx;
 	regs[3] = (int)edx;
 }
+#endif
 #endif
 
 extern "C" {
@@ -87,6 +91,16 @@ char VendorID[20] = "Not available";
 /// <returns>bool; Is MMX technology available?</returns>
 bool __cdecl Detect_MMX_Availability(void)
 {
+#if !defined(_M_IX86) && !defined(_M_X64) && !defined(__i386__) && !defined(__x86_64__)
+	/*
+	 * A processor with no CPUID to ask reports itself as a capable one: everything the
+	 * detection gates on is present on any machine that can run the native port at all.
+	 */
+	std::memcpy(VendorID, "Native Host ", 13);
+	CPUType = 6;
+	UseMMX = 1;
+	return(true);
+#else
 	int regs[4];
 
 	/*
@@ -126,6 +140,7 @@ bool __cdecl Detect_MMX_Availability(void)
 
 	UseMMX = 1;
 	return(true);
+#endif
 }
 
 
@@ -137,6 +152,11 @@ bool __cdecl Detect_MMX_Availability(void)
 /// <returns>bool; Does the processor have CMOV?</returns>
 bool __cdecl Detect_CMOV_Availability(void)
 {
+#if !defined(_M_IX86) && !defined(_M_X64) && !defined(__i386__) && !defined(__x86_64__)
+	HasCMOV = 1;
+	UseCMOV = 1;
+	return(true);
+#else
 	if (CPUType < 5) {
 		UseCMOV = 0;
 		HasCMOV = 0;
@@ -158,6 +178,7 @@ bool __cdecl Detect_CMOV_Availability(void)
 	HasCMOV = 1;
 	UseCMOV = (CPUType > 5) ? 1 : 0;
 	return(true);
+#endif
 }
 
 
@@ -169,10 +190,18 @@ bool __cdecl Detect_CMOV_Availability(void)
 /// <returns>unsigned int; The low half of the clock value.</returns>
 unsigned int __cdecl Get_CPU_Clock(unsigned int & high)
 {
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
 	unsigned long long const stamp = __rdtsc();
 
 	high = (unsigned int)(stamp >> 32);
 	return((unsigned int)stamp);
+#else
+	LARGE_INTEGER count;
+
+	QueryPerformanceCounter(&count);
+	high = (unsigned int)((unsigned long long)count.QuadPart >> 32);
+	return((unsigned int)count.QuadPart);
+#endif
 }
 
 
