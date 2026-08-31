@@ -42,7 +42,10 @@ LPDIRECTSOUND Audio_Create_Sound_Object(void)
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
 #else
+#include <atomic>
 #include <chrono>
+#include <mutex>
+#include <thread>
 #endif
 
 #include <algorithm>
@@ -62,6 +65,25 @@ static double Audio_Clock_Ms(void)
 		std::chrono::steady_clock::now().time_since_epoch()).count());
 #endif
 }
+
+
+#if !defined(__EMSCRIPTEN__)
+
+/*
+** On Windows the sound maintenance ran on a multimedia timer thread, so the device never
+** starved while the game thread was busy inside a long frame. A page has no thread to
+** give, but a native host does: the feeder keeps the device supplied through those
+** frames, and one lock makes the backend safe against it. The lock is recursive because
+** the service pass reads the backend's own public cursors.
+*/
+static std::recursive_mutex BackendMutex;
+static std::thread Feeder;
+static std::atomic<bool> FeederRunning(false);
+#define AUDIO_BACKEND_GUARD() std::lock_guard<std::recursive_mutex> _guard(BackendMutex)
+
+#else
+#define AUDIO_BACKEND_GUARD() ((void)0)
+#endif
 
 
 /*
@@ -373,6 +395,8 @@ void Service_Device(AudioBackendStream * stream)
 
 bool Audio_Backend_Init(void)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (Device != nullptr) {
 		return(true);
 	}
@@ -418,12 +442,32 @@ bool Audio_Backend_Init(void)
 		devicename != nullptr ? devicename : "<unnamed>",
 		Running ? "running" : "waiting for the reader to interact with the page");
 
+#if !defined(__EMSCRIPTEN__)
+	if (!FeederRunning.exchange(true)) {
+		Feeder = std::thread([]() {
+			while (FeederRunning.load()) {
+				Audio_Backend_Service();
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			}
+		});
+	}
+#endif
+
 	return(true);
 }
 
 
 void Audio_Backend_Shutdown(void)
 {
+#if !defined(__EMSCRIPTEN__)
+	// The feeder is joined before the lock is taken, or it would be waited on while it
+	// waits on the lock.
+	if (FeederRunning.exchange(false) && Feeder.joinable()) {
+		Feeder.join();
+	}
+#endif
+	AUDIO_BACKEND_GUARD();
+
 	/*
 	** Streams outlive the device. Their sources and buffers die with the context, so each
 	** one is told it no longer has any, and it goes on keeping its cursor from the clock
@@ -452,12 +496,16 @@ void Audio_Backend_Shutdown(void)
 
 bool Audio_Backend_Is_Running(void)
 {
+	AUDIO_BACKEND_GUARD();
+
 	return(Running);
 }
 
 
 void Audio_Backend_Resume(void)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (Device == nullptr) {
 		return;
 	}
@@ -468,6 +516,8 @@ void Audio_Backend_Resume(void)
 
 void Audio_Backend_Service(void)
 {
+	AUDIO_BACKEND_GUARD();
+
 	/*
 	** A page will not start audio until the reader has interacted with it, and there is no
 	** event that says the refusal has been lifted. The state is polled instead, slowly
@@ -515,6 +565,8 @@ void Audio_Backend_Service(void)
 
 AudioBackendStream * Audio_Backend_Open_Stream(int ringbytes, int rate, int bits, int channels)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (ringbytes <= 0 || rate <= 0) {
 		return(nullptr);
 	}
@@ -592,6 +644,8 @@ AudioBackendStream * Audio_Backend_Open_Stream(int ringbytes, int rate, int bits
 
 void Audio_Backend_Close_Stream(AudioBackendStream * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return;
 	}
@@ -619,18 +673,24 @@ void Audio_Backend_Close_Stream(AudioBackendStream * stream)
 
 unsigned char * Audio_Backend_Ring(AudioBackendStream * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	return((stream != nullptr) ? stream->Ring : nullptr);
 }
 
 
 int Audio_Backend_Ring_Size(AudioBackendStream const * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	return((stream != nullptr) ? stream->RingSize : 0);
 }
 
 
 void Audio_Backend_Start(AudioBackendStream * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr || stream->Playing) {
 		return;
 	}
@@ -644,6 +704,8 @@ void Audio_Backend_Start(AudioBackendStream * stream)
 
 void Audio_Backend_Stop(AudioBackendStream * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr || !stream->Playing) {
 		return;
 	}
@@ -659,12 +721,16 @@ void Audio_Backend_Stop(AudioBackendStream * stream)
 
 bool Audio_Backend_Is_Playing(AudioBackendStream const * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	return(stream != nullptr && stream->Playing);
 }
 
 
 void Audio_Backend_Seek(AudioBackendStream * stream, int offset)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return;
 	}
@@ -680,6 +746,8 @@ void Audio_Backend_Seek(AudioBackendStream * stream, int offset)
 
 int Audio_Backend_Play_Cursor(AudioBackendStream const * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return(0);
 	}
@@ -690,6 +758,8 @@ int Audio_Backend_Play_Cursor(AudioBackendStream const * stream)
 
 int Audio_Backend_Write_Cursor(AudioBackendStream const * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return(0);
 	}
@@ -700,6 +770,8 @@ int Audio_Backend_Write_Cursor(AudioBackendStream const * stream)
 
 int Audio_Backend_Lookahead(AudioBackendStream const * stream)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return(0);
 	}
@@ -710,6 +782,8 @@ int Audio_Backend_Lookahead(AudioBackendStream const * stream)
 
 void Audio_Backend_Set_Gain(AudioBackendStream * stream, float gain)
 {
+	AUDIO_BACKEND_GUARD();
+
 	if (stream == nullptr) {
 		return;
 	}
