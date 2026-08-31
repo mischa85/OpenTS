@@ -59,7 +59,6 @@
 #include "always.h"
 
 #include "lzo1x.h"
-#include <assert.h>
 
 #if !defined(LZO1X) && !defined(LZO1Y)
 #  define LZO1X
@@ -85,12 +84,13 @@
 /// </summary>
 /// <param name="in">Pointer to the compressed data to expand.</param>
 /// <param name="in_len">Length of the compressed data, in bytes.</param>
-/// <param name="out">Buffer that the expanded data is written into.</param>
+/// <param name="out">Buffer that the expanded data is written into. On entry, out_len
+/// carries its capacity in bytes.</param>
 /// <param name="out_len">Set to the number of bytes that were expanded into the buffer.</param>
 /// <returns>Returns with LZO_E_OK if the block expanded cleanly, otherwise one of the
 /// LZO_E_ error codes.</returns>
-/// <remarks>Be sure that the destination buffer is big enough to hold the expanded data,
-/// since this routine performs no bounds checking upon it.</remarks>
+/// <remarks>A malformed block comes back as an error rather than undefined behavior, so a
+/// corrupt save file can be refused instead of crashing the game.</remarks>
 int lzo1x_decompress     ( const lzo_byte * in, lzo_uint  in_len,
                                  lzo_byte * out, lzo_uint * out_len,
                                  lzo_voidp )
@@ -100,31 +100,42 @@ int lzo1x_decompress     ( const lzo_byte * in, lzo_uint  in_len,
 	lzo_uint t;
 	const lzo_byte *m_pos;
 	const lzo_byte * const ip_end = in + in_len;
+	lzo_byte * const op_end = out + *out_len;
+
+#define NEED_IP(x)	if ((lzo_uint)(ip_end - ip) < (lzo_uint)(x)) goto input_overrun
+#define NEED_OP(x)	if ((lzo_uint)(op_end - op) < (lzo_uint)(x)) goto output_overrun
+#define TEST_LB()	if (m_pos < out || m_pos >= op) goto lookbehind_overrun
 
 	*out_len = 0;
 
 	op = out;
 	ip = in;
 
+	NEED_IP(1);
 	if (*ip > 17) {
 		t = *ip++ - 17;
+		NEED_OP(t); NEED_IP(t + 1);
 		goto first_literal_run;
 	}
 
 	for (;;) {
 //	while (TEST_IP) {
+		NEED_IP(1);
 		t = *ip++;
 		if (t >= 16)
 			goto match;
 		/* a literal run */
 		if (t == 0) {
 			t = 15;
+			NEED_IP(1);
 			while (*ip == 0) {
 				t += 255, ip++;
+				NEED_IP(1);
 			}
 			t += *ip++;
 		}
 		/* copy literals */
+		NEED_OP(t + 3); NEED_IP(t + 4);
 		*op++ = *ip++; *op++ = *ip++; *op++ = *ip++;
 first_literal_run:
 		do *op++ = *ip++; while (--t > 0);
@@ -141,7 +152,9 @@ first_literal_run:
 		m_pos = op - 1 - 0x400;
 #endif
 		m_pos -= t >> 2;
+		NEED_IP(1);
 		m_pos -= *ip++ << 2;
+		TEST_LB(); NEED_OP(3);
 		*op++ = *m_pos++;
 		*op++ = *m_pos++;
 		*op++ = *m_pos;
@@ -155,7 +168,9 @@ first_literal_run:
 			if (t < 16) {						/* a M1 match */
 				m_pos = op - 1;
 				m_pos -= t >> 2;
+				NEED_IP(1);
 				m_pos -= *ip++ << 2;
+				TEST_LB(); NEED_OP(2);
 				*op++ = *m_pos++;
 				*op++ = *m_pos;
 //				*op++ = *m_pos++;
@@ -165,45 +180,57 @@ match:
 					m_pos = op - 1;
 #if defined(LZO1X)
 					m_pos -= (t >> 2) & 7;
+					NEED_IP(1);
 					m_pos -= *ip++ << 3;
 					t = (t >> 5) - 1;
 #elif defined(LZO1Y)
 					m_pos -= (t >> 2) & 3;
+					NEED_IP(1);
 					m_pos -= *ip++ << 2;
 					t = (t >> 4) - 3;
 #endif
+					TEST_LB();
 				} else {
 					if (t >= 32) {			/* a M3 match */
 						t &= 31;
 						if (t == 0) {
 							t = 31;
+							NEED_IP(1);
 							while (*ip == 0) {
 								t += 255, ip++;
+								NEED_IP(1);
 							}
 							t += *ip++;
 						}
 						m_pos = op - 1;
+						NEED_IP(2);
 						m_pos -= *ip++ >> 2;
 						m_pos -= *ip++ << 6;
+						TEST_LB();
 					} else {						/* a M4 match */
 						m_pos = op;
 						m_pos -= (t & 8) << 11;
 						t &= 7;
 						if (t == 0) {
 							t = 7;
+							NEED_IP(1);
 							while (*ip == 0) {
 								t += 255, ip++;
+								NEED_IP(1);
 							}
 							t += *ip++;
 						}
+						NEED_IP(2);
 						m_pos -= *ip++ >> 2;
 						m_pos -= *ip++ << 6;
 						if (m_pos == op) {
 							goto eof_found;
 						}
 						m_pos -= 0x4000;
+						TEST_LB();
 					}
 				}
+				NEED_OP(t + 2);
 				*op++ = *m_pos++; *op++ = *m_pos++;
 				do *op++ = *m_pos++; while (--t > 0);
 			}
@@ -213,6 +240,7 @@ match_done:
 			if (t == 0)
 				break;
 			/* copy literals */
+			NEED_OP(t); NEED_IP(t + 1);
 			do *op++ = *ip++; while (--t > 0);
 			t = *ip++;
 		}
@@ -225,9 +253,27 @@ match_done:
 	//return (ip == ip_end ? LZO_E_EOF_NOT_FOUND : LZO_E_ERROR);
 
 eof_found:
-	assert(t == 1);
 	*out_len = op - out;
+	if (t != 1) {
+		return(LZO_E_ERROR);
+	}
 	return (ip == ip_end ? LZO_E_OK : LZO_E_ERROR);
+
+input_overrun:
+	*out_len = op - out;
+	return(LZO_E_INPUT_OVERRUN);
+
+output_overrun:
+	*out_len = op - out;
+	return(LZO_E_OUTPUT_OVERRUN);
+
+lookbehind_overrun:
+	*out_len = op - out;
+	return(LZO_E_LOOKBEHIND_OVERRUN);
+
+#undef NEED_IP
+#undef NEED_OP
+#undef TEST_LB
 }
 
 

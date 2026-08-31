@@ -644,7 +644,9 @@ static bool Put_All(IStream *stream, int save_net)
 static bool Get_All(IStream *stream, bool save_net)
 {
 	Clear_Scenario();
-	Scen->Load(stream);
+	if (FAILED(Scen->Load(stream))) {
+		return(false);
+	}
 	Disable_Addon(ADDON_ANY);
 	Set_Required_Addon(Scen->RequiredAddOn);
 	if (!Addon_Installed(Scen->RequiredAddOn)) {

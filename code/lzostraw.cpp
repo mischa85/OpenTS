@@ -164,9 +164,13 @@ int LZOStraw::Get(void * destbuf, int slen)
 				delete [] staging_buffer;
  				break;
 			}
-			unsigned int length = sizeof(Buffer);
-			lzo1x_decompress ((unsigned char*)staging_buffer, BlockHeader.CompCount, (unsigned char*)Buffer, &length, NULL);
+			unsigned int length = (unsigned int)(BlockSize + SafetyMargin);
+			int result = lzo1x_decompress ((unsigned char*)staging_buffer, BlockHeader.CompCount, (unsigned char*)Buffer, &length, NULL);
 			delete [] staging_buffer;
+			// A block that does not expand cleanly ends the straw early as a short read.
+			if (result != LZO_E_OK || length != BlockHeader.UncompCount) {
+				break;
+			}
 			Counter = BlockHeader.UncompCount;
 		} else {
 			BlockHeader.UncompCount = (unsigned short)BASECLASS::Get(Buffer, BlockSize);

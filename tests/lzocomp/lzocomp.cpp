@@ -16,6 +16,7 @@
 #include <cstring>
 #include <vector>
 
+#include "lzo.h"
 #include "lzopipe.h"
 #include "lzostraw.h"
 
@@ -136,6 +137,65 @@ void Check_Roundtrip(int shape, int size, unsigned int seed)
 	}
 }
 
+// Feeds garbage straight into the decompressor. Whatever the bytes say, the call has to
+// come back with a verdict instead of running off either buffer.
+void Check_Garbage(unsigned int seed)
+{
+	unsigned char garbage[4096];
+	unsigned char expanded[2048];
+
+	Seed = seed;
+	for (unsigned char & byte : garbage) {
+		byte = (unsigned char)Next_Random();
+	}
+
+	unsigned int length = sizeof(expanded);
+	int result = lzo1x_decompress(garbage, sizeof(garbage), expanded, &length, NULL);
+
+	if (length > sizeof(expanded)) {
+		printf("FAIL garbage seed %08x: %u bytes reported into a %u byte buffer\n",
+			seed, length, (unsigned int)sizeof(expanded));
+		Failures++;
+	}
+	(void)result;
+}
+
+
+// Damages a valid compressed stream and expands it again. The damage must surface as a
+// short read, never as a crash or an overrun.
+void Check_Corrupted(int size, unsigned int seed)
+{
+	std::vector<unsigned char> source;
+	Fill_Source(source, 2, size, seed);
+
+	CapturePipe captured;
+	{
+		LZOPipe compressor(LZOPipe::COMPRESS);
+		compressor.Put_To(captured);
+		compressor.Put(source.data(), size);
+		compressor.End();
+	}
+
+	Seed = seed ^ 0xBEEF;
+	for (int hit = 0; hit < 32 && !captured.Data.empty(); hit++) {
+		captured.Data[Next_Random() % captured.Data.size()] ^= (unsigned char)(1 + Next_Random() % 255);
+	}
+
+	MemoryStraw stored(captured.Data.data(), (int)captured.Data.size());
+	LZOStraw expander(LZOStraw::DECOMPRESS);
+	expander.Get_From(stored);
+
+	std::vector<unsigned char> expanded((size_t)size, 0);
+	int got = 0;
+	while (got < size) {
+		int step = expander.Get(&expanded[(size_t)got], size - got);
+		if (step <= 0) {
+			break;
+		}
+		got += step;
+	}
+}
+
 }	// namespace
 
 
@@ -147,6 +207,11 @@ int main(void)
 		for (int size : sizes) {
 			Check_Roundtrip(shape, size, 0x1234u + (unsigned int)shape);
 		}
+	}
+
+	for (unsigned int seed = 0; seed < 64; seed++) {
+		Check_Garbage(0xC0FFEEu + seed);
+		Check_Corrupted(40000, 0x5EED0000u + seed);
 	}
 
 	if (Failures > 0) {

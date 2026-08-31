@@ -172,9 +172,12 @@ int LZOPipe::Put(void const * source, int slen)
 				**	through the pipe.
 				*/
 				if (Counter == BlockHeader.CompCount) {
-					unsigned int length = sizeof (Buffer2);
-					lzo1x_decompress ((unsigned char*)Buffer, BlockHeader.CompCount, (unsigned char*)Buffer2, &length, NULL);
-					total += BASECLASS::Put(Buffer2, BlockHeader.UncompCount);
+					unsigned int length = (unsigned int)(BlockSize + SafetyMargin);
+					// A block that does not expand cleanly is dropped.
+					if (lzo1x_decompress ((unsigned char*)Buffer, BlockHeader.CompCount, (unsigned char*)Buffer2, &length, NULL) == LZO_E_OK
+						&& length == BlockHeader.UncompCount) {
+						total += BASECLASS::Put(Buffer2, BlockHeader.UncompCount);
+					}
 					Counter = 0;
 					BlockHeader.CompCount = 0xFFFF;
 				}

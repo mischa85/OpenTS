@@ -2898,7 +2898,7 @@ void ScenarioClass::Save(IStream * stream) const
 /// The elapsed mission clock is halted across the read for the same reason it is halted
 /// across the write, so that it does not advance over the value coming back in.
 /// </summary>
-void ScenarioClass::Load(IStream * stream)
+HRESULT ScenarioClass::Load(IStream * stream)
 {
 	ElapsedTimer.Stop();
 
@@ -2908,6 +2908,7 @@ void ScenarioClass::Load(IStream * stream)
 
 	ElapsedTimer.Start();
 	DebugString("Scenario Load: ElapsedTimer = %d\n", (int)ElapsedTimer);
+	return(savestream.Result());
 }
 
 

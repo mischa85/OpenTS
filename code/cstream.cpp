@@ -256,6 +256,13 @@ HRESULT CStreamClass::Read(void *pv, ULONG cb, ULONG *pcbRead)
 			return(E_FAIL);
 		}
 
+		// The sizes come off the disk, so a corrupt file must not be allowed to
+		// direct reads or writes beyond the work buffers.
+		if (BlockHead.CompSize == 0 || BlockHead.CompSize > BUFFER_SIZE
+			|| BlockHead.UncompSize == 0 || BlockHead.UncompSize > BUFFER_SIZE) {
+			return(E_FAIL);
+		}
+
 		hr = StreamPtr->Read(StreamBuffer, BlockHead.CompSize, &read);
 		if (FAILED(hr)) {
 			return(hr);
@@ -268,7 +275,10 @@ HRESULT CStreamClass::Read(void *pv, ULONG cb, ULONG *pcbRead)
 		lzo_byte *out = (lzo_byte *)DataBuffer;
 		lzo_byte *in = (lzo_byte *)StreamBuffer;
 		unsigned int out_len = BUFFER_SIZE;
-		lzo1x_decompress(in, inlen, out, &out_len, 0);
+		if (lzo1x_decompress(in, inlen, out, &out_len, 0) != LZO_E_OK
+			|| out_len != BlockHead.UncompSize) {
+			return(E_FAIL);
+		}
 		CurOffset = BlockHead.UncompSize;
 	}
 
