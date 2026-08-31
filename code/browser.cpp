@@ -564,9 +564,16 @@ static void Canvas_Delta_To_Game(double cssdx, double cssdy, double & dx, double
 /// <summary>
 /// Is the tactical map on screen and in a state that a gesture may move it?
 /// </summary>
+/// <remarks>
+/// A pan and a band select reach the map directly rather than through the messages the
+/// engine drops while it is driving, so what suppresses a mouse has to be asked here. That
+/// is IgnoreInput, which a scripted sequence and an open in game dialog both raise and which
+/// ScrollClass reads for the same purpose.
+/// </remarks>
 static bool Touch_Tactical_Ready(void)
 {
-	return(TacticalMap != nullptr && TacticalActive && ScenarioActive && GameActive && !Movie_Is_Playing());
+	return(TacticalMap != nullptr && TacticalActive && ScenarioActive && GameActive
+		&& !Movie_Is_Playing() && !IgnoreInput);
 }
 
 
@@ -641,6 +648,16 @@ static void Touch_Service_Park(void)
 	}
 
 	_TouchParkPending = false;
+
+	/*
+	 * Only the tactical view reads a resting position that way, and TacticalRect still holds
+	 * the size it starts up at wherever that view has never been laid out. Parking off the
+	 * battlefield would therefore throw the position a tap has just established at a corner
+	 * of a shell screen, which is where the menus stopped answering a finger.
+	 */
+	if (!Touch_Tactical_Ready()) {
+		return;
+	}
 
 	if (TacticalRect.Width > 2 && TacticalRect.Height > 2) {
 		_MouseX = TacticalRect.X + TacticalRect.Width / 2;
