@@ -305,6 +305,12 @@ fixed_exclusions:
       - { file: code/browser.cpp, function: Key_Callback, expression: VK_TAB, guard: "defined(__EMSCRIPTEN__)" }
       - { file: code/browser.cpp, function: Key_Callback, expression: VK_ESCAPE, guard: "defined(__EMSCRIPTEN__)" }
     reason: Supplies the ASCII character for the named key events a page reports without one.
+  - site: { file: code/browser.cpp, function: Fetch_Text_Character, expression: VK_NONE, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Sentinel for a typed character that no key on this layout produces.
+  - sites:
+      - { file: code/browser.cpp, function: Virtual_Key_For_Character, expression: VK_A, guard: "defined(__EMSCRIPTEN__)" }
+      - { file: code/browser.cpp, function: Virtual_Key_For_Character, expression: VK_0, guard: "defined(__EMSCRIPTEN__)" }
+    reason: Names the key a character is carried on when a software keyboard reports no key event; it binds nothing.
   - sites:
       - { file: code/conquer.cpp, function: KN_To_Facing, expression: KN_LEFT }
       - { file: code/conquer.cpp, function: KN_To_Facing, expression: KN_RIGHT }

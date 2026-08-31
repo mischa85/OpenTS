@@ -114,6 +114,19 @@ char Browser_Key_To_ASCII(unsigned short key);
 int Browser_Mouse_X(void);
 int Browser_Mouse_Y(void);
 
+// Is a pointer resting where the position above says? A mouse leaves one wherever it stops,
+// so anything driven by hovering rather than by a click may read that position. A finger
+// leaves nothing behind, and the position it last reported is a leftover rather than
+// somewhere the player is pointing.
+bool Browser_Mouse_Is_Hovering(void);
+
+// Asks the page for somewhere to type. A device whose only keyboard is drawn on its screen
+// will not show it unless something that takes text holds the focus, so the engine says when
+// it is waiting on typed text and the page raises and dismisses its keyboard accordingly.
+// What is typed reaches the engine through the ordinary key queue either way.
+void Browser_Begin_Text_Input(void);
+void Browser_End_Text_Input(void);
+
 // The mouse the engine drives on a page. It is a WWMouseClass that reads its position
 // from the canvas rather than from an operating system that has one.
 Mouse * Browser_Create_Mouse(HWND window);

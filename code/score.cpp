@@ -51,6 +51,7 @@
 #include "_palette.h"
 #include "_surface.h"
 #include "_timer.h"
+#include "browser.h"
 #include "conquer.h"
 #include "convert.h"
 #include "data.h"
@@ -900,6 +901,15 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 	int key = 0;
 	int index = 0;
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Nothing but Return ends this, and a device whose keyboard is drawn on its screen shows
+	 * one only while something that takes text has the focus. Saying so here is what keeps the
+	 * hall of fame from being where a touch-only game stops for good.
+	 */
+	Browser_Begin_Text_Input();
+#endif
+
 	do {
 
 		Timing();
@@ -973,6 +983,10 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 		Call_Back_Delay(1);
 
 	} while (key != KN_RETURN);
+
+#if defined(__EMSCRIPTEN__)
+	Browser_End_Text_Input();
+#endif
 }
 
 

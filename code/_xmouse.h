@@ -45,3 +45,4 @@ inline void Set_Mouse_Cursor(Point2D const & hotspot, ShapeSet const * cursor, i
 inline int Get_Mouse_X(void) {return(MouseCursor->Get_Mouse_X());}
 inline int Get_Mouse_Y(void) {return(MouseCursor->Get_Mouse_Y());}
 inline Point2D Get_Mouse_Point(void) {return(MouseCursor->Get_Mouse_Point());}
+inline bool Mouse_Is_Hovering(void) {return(MouseCursor == NULL || MouseCursor->Is_Hovering());}

@@ -76,9 +76,9 @@ struct BrowserEvent
 	bool IsMouse;
 	bool IsRelease;
 
-	// Was this synthesised from a tap? A tap is the only thing a finger can offer a movie,
+	// Was this synthesised from a finger? A tap is the only thing a finger can offer a movie,
 	// and what a movie reads is not a button.
-	bool IsTap;
+	bool IsTouch;
 };
 
 static BrowserEvent _Events[EVENT_QUEUE_SIZE];
@@ -118,6 +118,15 @@ static int _MouseY = 0;
  * it comes back or the page loses the keyboard, which is what the engine's own model expects.
  */
 static bool _MouseOutside = false;
+
+/*
+ * Is that position one a pointer is resting at? A mouse leaves one wherever it stops and a
+ * finger leaves nothing at all, so this follows whichever of the two reported last. The engine
+ * reads it wherever it would otherwise take a leftover position for a hover: the edge scroll,
+ * the tooltip, and the placement cursor that follows the pointer about. Nothing has reported
+ * one until something does, and the corner the position starts at is an edge like any other.
+ */
+static bool _MouseHovering = false;
 
 static unsigned short _Modifiers = 0;
 static unsigned char _KeyDown[256];
@@ -422,7 +431,7 @@ static EM_BOOL Key_Callback(int type, EmscriptenKeyboardEvent const * event, voi
 	queued.Y = 0;
 	queued.IsMouse = false;
 	queued.IsRelease = release;
-	queued.IsTap = false;
+	queued.IsTouch = false;
 	Queue_Event(queued);
 
 	// Tab, the function keys, and the arrows all scroll or navigate the page unless the
@@ -434,6 +443,10 @@ static EM_BOOL Key_Callback(int type, EmscriptenKeyboardEvent const * event, voi
 static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void *)
 {
 	Note_Modifiers(event->shiftKey != 0, event->ctrlKey != 0, event->altKey != 0);
+
+	// A mouse is resting wherever it stopped, so a hover the last finger took away comes back
+	// the moment one is moved. Both are on the same tablet, and each says what it is.
+	_MouseHovering = true;
 
 	Canvas_Point_To_Game(event->targetX, event->targetY, _MouseX, _MouseY);
 
@@ -465,7 +478,7 @@ static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void
 	queued.Y = (short)_MouseY;
 	queued.IsMouse = true;
 	queued.IsRelease = release;
-	queued.IsTap = false;
+	queued.IsTouch = false;
 	Queue_Event(queued);
 
 	// A double click reaches the engine as a second press and release of the same button,
@@ -481,37 +494,306 @@ static EM_BOOL Mouse_Callback(int type, EmscriptenMouseEvent const * event, void
 
 /*
  * -----------------------------------------------------------------------------------------
+ * The wheel.
+ *
+ * A wheel is not a button, so it has no place in the event queue above: the engine reads it
+ * as a window message alone, and scrolls the sidebar's build list a step for each one. The
+ * page reports what a wheel or a trackpad has travelled rather than how many notches it
+ * turned, so what arrives is accumulated here and a message is posted for each notch's worth.
+ * A trackpad reports a stream of small deltas where a wheel reports one large one, and
+ * passing those straight through would fly the list past whatever the player was reaching for.
+ * -----------------------------------------------------------------------------------------
+ */
+
+/*
+ * What one notch has travelled, and what a browser reporting lines or pages means by one of
+ * those. Which of the three it reports is its own and the device's business, and a wheel's
+ * notch is a hundred pixels or three lines depending on which, so both come to exactly one
+ * notch here and a whole turn of the wheel leaves nothing over.
+ */
+static const double WHEEL_NOTCH = 100.0;
+static const double WHEEL_LINE = WHEEL_NOTCH / 3.0;
+static const double WHEEL_PAGE = WHEEL_NOTCH * 3.0;
+
+// What a Windows message calls one notch. Only the sign of it is read, but the message says
+// what it always said.
+static const int WHEEL_MESSAGE_DELTA = 120;
+
+static double _WheelPending = 0.0;
+
+
+static EM_BOOL Wheel_Callback(int, EmscriptenWheelEvent const * event, void *)
+{
+	Note_Modifiers(event->mouse.shiftKey != 0, event->mouse.ctrlKey != 0, event->mouse.altKey != 0);
+
+	// Only a pointing device has a wheel, so one has reported itself along with the scroll.
+	_MouseHovering = true;
+
+	Canvas_Point_To_Game(event->mouse.targetX, event->mouse.targetY, _MouseX, _MouseY);
+
+	double travel = event->deltaY;
+	switch (event->deltaMode) {
+		case DOM_DELTA_LINE:	travel *= WHEEL_LINE;	break;
+		case DOM_DELTA_PAGE:	travel *= WHEEL_PAGE;	break;
+		default:										break;
+	}
+
+	// A turn back the other way starts afresh. What was left over was too little to move
+	// anything, and it is not what the player is asking for now.
+	if ((travel > 0.0 && _WheelPending < 0.0) || (travel < 0.0 && _WheelPending > 0.0)) {
+		_WheelPending = 0.0;
+	}
+
+	_WheelPending += travel;
+	return(EM_TRUE);
+}
+
+
+/// <summary>
+/// Posts a window message for each notch the wheel has travelled since the last pass.
+/// </summary>
+/// <remarks>
+/// The message carries a position measured from the corner of the screen rather than from the
+/// window, which is what msgroute.cpp expects of this one message, and it is posted to the
+/// main window so that the routing there hands it to whichever window covers that spot.
+/// </remarks>
+static void Service_Wheel(void)
+{
+	if (MainWindow == NULL) {
+		_WheelPending = 0.0;
+		return;
+	}
+
+	while (_WheelPending >= WHEEL_NOTCH || _WheelPending <= -WHEEL_NOTCH) {
+
+		bool away = (_WheelPending > 0.0);
+		_WheelPending += away ? -WHEEL_NOTCH : WHEEL_NOTCH;
+
+		/*
+		 * A page counts a scroll away from the player as positive and a window message counts
+		 * it as negative, which is the sign the sidebar reads to decide which way to go.
+		 */
+		short delta = (short)(away ? -WHEEL_MESSAGE_DELTA : WHEEL_MESSAGE_DELTA);
+
+		POINT screen;
+		screen.x = _MouseX;
+		screen.y = _MouseY;
+		Game_Point_To_Window(screen);
+
+		PostMessage(MainWindow, WM_MOUSEWHEEL, MAKEWPARAM(0, (unsigned short)delta),
+			MAKELPARAM((short)screen.x, (short)screen.y));
+	}
+}
+
+
+/*
+ * -----------------------------------------------------------------------------------------
+ * Typed text.
+ *
+ * A device whose only keyboard is drawn on its screen shows it for one reason: something that
+ * takes text holds the focus. The engine has waits that typed text alone ends -- the hall of
+ * fame name is one, and it runs until Return arrives -- so those say while they are waiting
+ * and an off-picture element is focused for as long as they do.
+ *
+ * The element takes no part in what is typed. Keys reach the engine by bubbling to the window
+ * listener as they always have, and the element is only ever the reason a keyboard is on the
+ * screen at all. The exception is a key that arrives without a keydown worth the name, which
+ * is what a software keyboard does while it is correcting or composing; those are read off
+ * the element's own input event, and Browser_Service picks them up in engine context rather
+ * than the page handing them over from a callback.
+ * -----------------------------------------------------------------------------------------
+ */
+
+static bool _TextInputWanted = false;
+
+
+/// <summary>
+/// Puts the focus on the element a keyboard is raised for, building it the first time.
+/// </summary>
+static void Focus_Text_Input(void)
+{
+	EM_ASM({
+		var el = document.getElementById("opents-text");
+
+		if (!el) {
+			el = document.createElement("input");
+			el.id = "opents-text";
+			el.type = "text";
+			el.opentsQueue = [];
+			el.setAttribute("autocomplete", "off");
+			el.setAttribute("autocorrect", "off");
+			el.setAttribute("autocapitalize", "off");
+			el.setAttribute("spellcheck", "false");
+			el.setAttribute("enterkeyhint", "done");
+			el.setAttribute("aria-hidden", "true");
+
+			/* Out of the picture but not out of the layout: nothing raises a keyboard for an
+			   element it cannot focus, and it cannot focus one that is not displayed. */
+			el.setAttribute("style", "position:fixed;left:0;top:0;width:1px;height:1px;" +
+				"opacity:0;border:0;padding:0;margin:0;background:transparent;" +
+				"color:transparent;caret-color:transparent;z-index:-1;");
+
+			el.addEventListener("input", function (e) {
+				var text = el.value;
+				el.value = "";
+				if (e.inputType === "deleteContentBackward") {
+					el.opentsQueue.push(8);
+				} else if (e.inputType === "insertLineBreak") {
+					el.opentsQueue.push(13);
+				} else {
+					for (var index = 0; index < text.length; index++) {
+						el.opentsQueue.push(text.charCodeAt(index));
+					}
+				}
+			});
+
+			document.body.appendChild(el);
+		}
+
+		el.value = "";
+		try {
+			el.focus({ preventScroll: true });
+		} catch (e) {
+			el.focus();
+		}
+	});
+}
+
+
+/// <summary>
+/// Takes the next character the page has that no key event carried.
+/// </summary>
+/// <returns>The character, or zero when there is none waiting.</returns>
+static int Fetch_Text_Character(void)
+{
+	return(EM_ASM_INT({
+		var el = document.getElementById("opents-text");
+		if (!el || !el.opentsQueue || el.opentsQueue.length === 0) {
+			return 0;
+		}
+		return el.opentsQueue.shift() | 0;
+	}));
+}
+
+
+/// <summary>
+/// Names the key a character is delivered on.
+/// </summary>
+/// <remarks>
+/// To_ASCII answers out of a table written as the key went down, so a character with no key
+/// of its own has to borrow one. The borrowed key is the one that produces the character on a
+/// US layout, which is what keeps a hotkey reading the same thing the player typed.
+/// </remarks>
+/// <returns>The virtual key, or VK_NONE for a character no key here produces.</returns>
+static unsigned short Virtual_Key_For_Character(int character)
+{
+	if (character >= 'a' && character <= 'z') return((unsigned short)(VK_A + (character - 'a')));
+	if (character >= 'A' && character <= 'Z') return((unsigned short)(VK_A + (character - 'A')));
+	if (character >= '0' && character <= '9') return((unsigned short)(VK_0 + (character - '0')));
+
+	switch (character) {
+		case ' ':	return(VK_SPACE);
+		case '\r':	return(VK_RETURN);
+		case '\n':	return(VK_RETURN);
+		case '\b':	return(VK_BACK);
+		case '\t':	return(VK_TAB);
+		case 27:	return(VK_ESCAPE);
+		case '-':	return(VK_NONE_BD);
+		case '=':	return(VK_NONE_BB);
+		case '[':	return(VK_NONE_DB);
+		case ']':	return(VK_NONE_DD);
+		case '\\':	return(VK_NONE_DC);
+		case ';':	return(VK_NONE_BA);
+		case '\'':	return(VK_NONE_DE);
+		case '`':	return(VK_NONE_C0);
+		case ',':	return(VK_NONE_BC);
+		case '.':	return(VK_NONE_BE);
+		case '/':	return(VK_NONE_BF);
+		default:	break;
+	}
+
+	return(VK_NONE);
+}
+
+
+/// <summary>
+/// Hands the engine whatever the page's own keyboard typed without a key event.
+/// </summary>
+static void Service_Text_Input(void)
+{
+	if (!_TextInputWanted) {
+		return;
+	}
+
+	for (int character = Fetch_Text_Character(); character != 0; character = Fetch_Text_Character()) {
+
+		unsigned short key = Virtual_Key_For_Character(character);
+		if (key == VK_NONE) {
+			continue;
+		}
+
+		// Recorded under both shift states, because the key is only a carrier here and the
+		// modifiers the page last reported are stamped onto it on the way into the buffer.
+		_Ascii[key & 0xFF] = (char)character;
+		_ShiftedAscii[key & 0xFF] = (char)character;
+
+		BrowserEvent queued;
+		queued.Key = key;
+		queued.X = 0;
+		queued.Y = 0;
+		queued.IsMouse = false;
+		queued.IsRelease = false;
+		queued.IsTouch = false;
+		Queue_Event(queued);
+
+		queued.IsRelease = true;
+		Queue_Event(queued);
+	}
+}
+
+
+/*
+ * -----------------------------------------------------------------------------------------
  * Touch.
  *
  * A page reports a finger as a touch and, for a tap that does not move, follows it with a
  * synthesised mouse click. A drag gets no mouse events at all, so without what follows the
- * map cannot be moved and nothing can be band selected by finger. Each gesture is recognised
- * here and handed to the engine as the input it already understands:
+ * map cannot be moved and nothing can be band selected by finger. Two rules decide every
+ * gesture, and what they produce is the input the engine already understands:
  *
- *   tap                     left press and release, which is select and order both
- *   tap during a movie      escape, which is the only thing the movie player reads
- *   drag                    the map panned one for one under the finger
- *   press, then drag        left press held, which is the engine's own rubber band
- *   two finger tap          right press and release, which cancels and deselects
- *   two finger drag         the map panned, whatever the first finger was doing
+ *   one finger is the left button
+ *     tap                   press and release where the finger landed
+ *     hold                  the right button instead, which is the engine's cascading cancel
+ *     drag                  the button held and carried, which the map reads as a rubber band
+ *   two fingers are the view
+ *     drag                  the map panned one for one under them
+ *     tap                   the right button as well, kept because a tablet player knows it
+ *
+ * Where the finger is decides nothing. The engine already knows what a button means over the
+ * tactical view, the sidebar, the tab bar and a shell screen, and touch must neither permit
+ * what a mouse is forbidden nor forbid what it is allowed; only the pan is carried out here
+ * rather than handed over, because it reaches the map directly. A tap during a movie is the
+ * exception the movie player forces: what it reads is not a button.
+ *
+ * Nothing a finger does leaves a hover behind. Browser_Mouse_Is_Hovering is how the engine is
+ * told so, because a pointer resting somewhere is a thing only a mouse has.
  *
  * The callbacks run while the engine may be suspended part way through a frame, so like the
  * mouse ones they only write scalars and queue events; Browser_Service applies them.
  * -----------------------------------------------------------------------------------------
  */
 
-// How far a finger may travel and still be a tap, and how long it may rest before a press
-// becomes a rubber band rather than a pan. Both are in CSS pixels and milliseconds, which is
-// what a finger is measured in whatever a display carries per pixel.
+// How far a finger may travel and still be resting, and how long it may rest before it is the
+// right button rather than a tap. Both are in CSS pixels and milliseconds, which is what a
+// finger is measured in whatever a display carries per pixel.
 static const double TOUCH_SLOP = 10.0;
-static const double TOUCH_HOLD = 350.0;
+static const double TOUCH_HOLD = 450.0;
 
 enum BrowserGesture {
 	GESTURE_NONE,		// Nothing is on the glass.
-	GESTURE_UNDECIDED,	// One finger is down and has neither travelled nor rested.
-	GESTURE_PAN,
-	GESTURE_BAND,
-	GESTURE_MULTI,
+	GESTURE_UNDECIDED,	// One finger is down and has neither travelled nor rested long enough.
+	GESTURE_DRAG,		// One finger is holding the left button and carrying it.
+	GESTURE_MULTI,		// Two fingers are moving the view.
 	GESTURE_SPENT,		// The gesture is over, but a finger is still down.
 };
 
@@ -522,7 +804,6 @@ static double _GestureStartX = 0.0;
 static double _GestureStartY = 0.0;
 static double _GestureLastX = 0.0;
 static double _GestureLastY = 0.0;
-static bool _GestureOnTactical = false;
 
 static double _MultiTime = 0.0;
 static double _MultiStartX = 0.0;
@@ -537,10 +818,6 @@ static bool _MultiMoved = false;
 static double _PanPendingX = 0.0;
 static double _PanPendingY = 0.0;
 
-// Set when a gesture ends, so that the position the finger left behind is taken off whatever
-// edge it was near. Nothing hovers on a touch screen, and the engine reads a position resting
-// against an edge as a standing request to keep scrolling.
-static bool _TouchParkPending = false;
 
 
 /// <summary>
@@ -565,10 +842,10 @@ static void Canvas_Delta_To_Game(double cssdx, double cssdy, double & dx, double
 /// Is the tactical map on screen and in a state that a gesture may move it?
 /// </summary>
 /// <remarks>
-/// A pan and a band select reach the map directly rather than through the messages the
-/// engine drops while it is driving, so what suppresses a mouse has to be asked here. That
-/// is IgnoreInput, which a scripted sequence and an open in game dialog both raise and which
-/// ScrollClass reads for the same purpose.
+/// A pan reaches the map directly rather than through the messages the engine drops while it
+/// is driving, so what suppresses a mouse has to be asked here. That is IgnoreInput, which a
+/// scripted sequence and an open in game dialog both raise and which ScrollClass reads for
+/// the same purpose. Every other gesture is handed over as a button and gated by the engine.
 /// </remarks>
 static bool Touch_Tactical_Ready(void)
 {
@@ -578,22 +855,28 @@ static bool Touch_Tactical_Ready(void)
 
 
 /// <summary>
-/// Queues a synthesised button press and release at a position in the frame.
+/// Queues a synthesised button event at a position in the frame.
 /// </summary>
-/// <param name="tap">Is this a tap, which stands for escape while a movie has the screen?</param>
-static void Queue_Touch_Click(unsigned short key, int x, int y, bool tap)
+static void Queue_Touch_Button(unsigned short key, int x, int y, bool release)
 {
 	BrowserEvent queued;
 	queued.Key = key;
 	queued.X = (short)x;
 	queued.Y = (short)y;
 	queued.IsMouse = true;
-	queued.IsRelease = false;
-	queued.IsTap = tap;
+	queued.IsRelease = release;
+	queued.IsTouch = true;
 	Queue_Event(queued);
+}
 
-	queued.IsRelease = true;
-	Queue_Event(queued);
+
+/// <summary>
+/// Queues a synthesised button press and release at a position in the frame.
+/// </summary>
+static void Queue_Touch_Click(unsigned short key, int x, int y)
+{
+	Queue_Touch_Button(key, x, y, false);
+	Queue_Touch_Button(key, x, y, true);
 }
 
 
@@ -639,43 +922,17 @@ static void Touch_Service_Pan(void)
 
 
 /// <summary>
-/// Puts the reported position back in the middle of the tactical view once a gesture is over.
-/// </summary>
-static void Touch_Service_Park(void)
-{
-	if (!_TouchParkPending) {
-		return;
-	}
-
-	_TouchParkPending = false;
-
-	/*
-	 * Only the tactical view reads a resting position that way, and TacticalRect still holds
-	 * the size it starts up at wherever that view has never been laid out. Parking off the
-	 * battlefield would therefore throw the position a tap has just established at a corner
-	 * of a shell screen, which is where the menus stopped answering a finger.
-	 */
-	if (!Touch_Tactical_Ready()) {
-		return;
-	}
-
-	if (TacticalRect.Width > 2 && TacticalRect.Height > 2) {
-		_MouseX = TacticalRect.X + TacticalRect.Width / 2;
-		_MouseY = TacticalRect.Y + TacticalRect.Height / 2;
-	}
-}
-
-
-/// <summary>
-/// Commits an undecided one finger gesture to a rubber band once the finger has rested.
+/// Turns a finger that has rested without travelling into the right button.
 /// </summary>
 /// <remarks>
 /// This is read here rather than in the callback because a finger that rests reports nothing
-/// at all; the timer has to be looked at by something that runs anyway.
+/// at all; the timer has to be looked at by something that runs anyway. The button is sent
+/// while the finger is still down, so what it cancels goes away under the finger rather than
+/// after it has been lifted.
 /// </remarks>
 static void Touch_Service_Hold(void)
 {
-	if (_Gesture != GESTURE_UNDECIDED || !_GestureOnTactical) {
+	if (_Gesture != GESTURE_UNDECIDED) {
 		return;
 	}
 
@@ -683,12 +940,26 @@ static void Touch_Service_Hold(void)
 		return;
 	}
 
-	if (!Touch_Tactical_Ready()) {
-		return;
-	}
+	int x;
+	int y;
+	Canvas_Point_To_Game(_GestureStartX, _GestureStartY, x, y);
+	_MouseX = x;
+	_MouseY = y;
 
-	_Gesture = GESTURE_BAND;
+	Queue_Touch_Click(VK_RBUTTON, x, y);
+	_Gesture = GESTURE_SPENT;
+}
 
+
+/// <summary>
+/// Presses the left button where the finger landed and starts carrying it.
+/// </summary>
+/// <remarks>
+/// The press is placed where the finger came down rather than where it has reached, because
+/// that is the corner a rubber band is anchored at and the control a drag started on.
+/// </remarks>
+static void Touch_Begin_Drag(void)
+{
 	int x;
 	int y;
 	Canvas_Point_To_Game(_GestureStartX, _GestureStartY, x, y);
@@ -696,22 +967,16 @@ static void Touch_Service_Hold(void)
 	_MouseY = y;
 
 	_KeyDown[VK_LBUTTON] = 1;
+	Queue_Touch_Button(VK_LBUTTON, x, y, false);
 
-	BrowserEvent queued;
-	queued.Key = VK_LBUTTON;
-	queued.X = (short)x;
-	queued.Y = (short)y;
-	queued.IsMouse = true;
-	queued.IsRelease = false;
-	queued.IsTap = false;
-	Queue_Event(queued);
+	_Gesture = GESTURE_DRAG;
 }
 
 
 /// <summary>
-/// Ends a rubber band that a finger was holding.
+/// Releases the left button a finger was carrying.
 /// </summary>
-static void Touch_End_Band(double cssx, double cssy)
+static void Touch_End_Drag(double cssx, double cssy)
 {
 	int x;
 	int y;
@@ -720,35 +985,25 @@ static void Touch_End_Band(double cssx, double cssy)
 	_MouseY = y;
 
 	_KeyDown[VK_LBUTTON] = 0;
-
-	BrowserEvent queued;
-	queued.Key = VK_LBUTTON;
-	queued.X = (short)x;
-	queued.Y = (short)y;
-	queued.IsMouse = true;
-	queued.IsRelease = true;
-	queued.IsTap = false;
-	Queue_Event(queued);
-}
-
-
-/// <summary>
-/// Is this position over the tactical view rather than over the sidebar or the tab bar?
-/// </summary>
-static bool Touch_On_Tactical(double cssx, double cssy)
-{
-	int x;
-	int y;
-	Canvas_Point_To_Game(cssx, cssy, x, y);
-
-	return(x >= TacticalRect.X && x < TacticalRect.X + TacticalRect.Width
-		&& y >= TacticalRect.Y && y < TacticalRect.Y + TacticalRect.Height);
+	Queue_Touch_Button(VK_LBUTTON, x, y, true);
 }
 
 
 static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void *)
 {
 	double now = emscripten_get_now();
+
+	// Whatever the gesture turns out to be, a finger is on the glass and nothing is resting
+	// anywhere. Only a mouse event puts the hover back.
+	_MouseHovering = false;
+
+	/*
+	 * A page will not raise its own keyboard for anything but a gesture, so the request the
+	 * engine made is renewed here, where there is one to spend.
+	 */
+	if (type == EMSCRIPTEN_EVENT_TOUCHSTART && _TextInputWanted) {
+		Focus_Text_Input();
+	}
 
 	/*
 	 * A browser names every finger it knows about on every event, the ones that have just
@@ -779,9 +1034,9 @@ static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void
 		if (count >= 2) {
 
 			// A second finger takes the gesture over. Whatever one finger was doing is
-			// finished off first, so a rubber band that was open is not left held.
-			if (_Gesture == GESTURE_BAND) {
-				Touch_End_Band(_GestureLastX, _GestureLastY);
+			// finished off first, so a button that was held is not left down.
+			if (_Gesture == GESTURE_DRAG) {
+				Touch_End_Drag(_GestureLastX, _GestureLastY);
 			}
 
 			_Gesture = GESTURE_MULTI;
@@ -802,7 +1057,6 @@ static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void
 			_GestureStartY = points[0]->targetY;
 			_GestureLastX = _GestureStartX;
 			_GestureLastY = _GestureStartY;
-			_GestureOnTactical = Touch_On_Tactical(_GestureStartX, _GestureStartY) && Touch_Tactical_Ready();
 			_PanPendingX = 0.0;
 			_PanPendingY = 0.0;
 		}
@@ -847,25 +1101,18 @@ static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void
 		double y = finger->targetY;
 
 		/*
-		 * A finger that is already travelling is panning before the hold can claim it, which
-		 * is what keeps a pan that started slowly from costing the player their selection.
+		 * A finger that travels before it has rested is carrying the left button, wherever it
+		 * came down. What that draws is the engine's business: a rubber band over the tactical
+		 * view, a slider in a dialog, and nothing at all over a cameo.
 		 */
 		if (_Gesture == GESTURE_UNDECIDED) {
 			double travel = fabs(x - _GestureStartX) + fabs(y - _GestureStartY);
 			if (travel > TOUCH_SLOP) {
-				_Gesture = _GestureOnTactical ? GESTURE_PAN : GESTURE_SPENT;
+				Touch_Begin_Drag();
 			}
 		}
 
-		if (_Gesture == GESTURE_PAN) {
-			double dx;
-			double dy;
-			Canvas_Delta_To_Game(x - _GestureLastX, y - _GestureLastY, dx, dy);
-			_PanPendingX += dx;
-			_PanPendingY += dy;
-		}
-
-		if (_Gesture == GESTURE_BAND) {
+		if (_Gesture == GESTURE_DRAG) {
 			int gx;
 			int gy;
 			Canvas_Point_To_Game(x, y, gx, gy);
@@ -882,19 +1129,19 @@ static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void
 
 		if (_Gesture == GESTURE_MULTI && count < 2) {
 
-			// Two fingers that neither travelled nor lingered are the right button.
+			// Two fingers that neither travelled nor lingered are the right button as well.
 			if (!_MultiMoved && (now - _MultiTime) < TOUCH_HOLD) {
 				int x;
 				int y;
 				Canvas_Point_To_Game(_MultiStartX, _MultiStartY, x, y);
 				_MouseX = x;
 				_MouseY = y;
-				Queue_Touch_Click(VK_RBUTTON, x, y, false);
+				Queue_Touch_Click(VK_RBUTTON, x, y);
 			}
 			_Gesture = GESTURE_SPENT;
 
-		} else if (_Gesture == GESTURE_BAND) {
-			Touch_End_Band(_GestureLastX, _GestureLastY);
+		} else if (_Gesture == GESTURE_DRAG) {
+			Touch_End_Drag(_GestureLastX, _GestureLastY);
 			_Gesture = GESTURE_SPENT;
 
 		} else if (_Gesture == GESTURE_UNDECIDED) {
@@ -903,24 +1150,20 @@ static EM_BOOL Touch_Callback(int type, EmscriptenTouchEvent const * event, void
 			Canvas_Point_To_Game(_GestureStartX, _GestureStartY, x, y);
 			_MouseX = x;
 			_MouseY = y;
-			Queue_Touch_Click(VK_LBUTTON, x, y, true);
-			_Gesture = GESTURE_SPENT;
-
-		} else if (_Gesture == GESTURE_PAN) {
+			Queue_Touch_Click(VK_LBUTTON, x, y);
 			_Gesture = GESTURE_SPENT;
 		}
 	}
 
 	if (type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
-		if (_Gesture == GESTURE_BAND) {
-			Touch_End_Band(_GestureLastX, _GestureLastY);
+		if (_Gesture == GESTURE_DRAG) {
+			Touch_End_Drag(_GestureLastX, _GestureLastY);
 		}
 		_Gesture = GESTURE_SPENT;
 	}
 
 	if (ending && count == 0) {
 		_Gesture = GESTURE_NONE;
-		_TouchParkPending = true;
 	}
 
 	return(EM_TRUE);
@@ -949,6 +1192,7 @@ static EM_BOOL Mouse_Boundary_Callback(int type, EmscriptenMouseEvent const * ev
 {
 	if (type == EMSCRIPTEN_EVENT_MOUSEENTER) {
 		_MouseOutside = false;
+		_MouseHovering = true;
 		return(EM_FALSE);
 	}
 
@@ -1026,18 +1270,20 @@ void Browser_Service(void)
 	 */
 	GameInFocus = !_Hidden;
 
+	Service_Text_Input();
+
 	while (_EventHead != _EventTail) {
 		BrowserEvent const event = _Events[_EventHead];
 		_EventHead = (_EventHead + 1) % EVENT_QUEUE_SIZE;
 
 		/*
-		 * A tap is a click everywhere except over a movie, where the only thing the player
+		 * A finger is a button everywhere except over a movie, where the only thing the player
 		 * can ask for is that it stop and the only thing the movie player reads is escape.
 		 * The escape goes to the keyboard buffer alone and never to the key state, so it
 		 * cannot reach the window messages and open the options dialog behind the movie. A
 		 * movie started with its break disallowed still ignores it.
 		 */
-		if (event.IsTap && Movie_Is_Playing()) {
+		if (event.IsTouch && Movie_Is_Playing()) {
 			if (Keyboard != nullptr) {
 				Keyboard->Post_Key_Event(VK_ESCAPE, event.IsRelease);
 			}
@@ -1057,9 +1303,10 @@ void Browser_Service(void)
 		}
 	}
 
+	Service_Wheel();
+
 	Touch_Service_Hold();
 	Touch_Service_Pan();
-	Touch_Service_Park();
 }
 
 
@@ -1245,6 +1492,44 @@ int Browser_Mouse_Y(void)
 }
 
 
+bool Browser_Mouse_Is_Hovering(void)
+{
+	return(_MouseHovering);
+}
+
+
+/// <summary>
+/// Says that the engine is waiting on typed text.
+/// </summary>
+void Browser_Begin_Text_Input(void)
+{
+	_TextInputWanted = true;
+	Focus_Text_Input();
+}
+
+
+/// <summary>
+/// Says that the engine has stopped waiting on typed text.
+/// </summary>
+void Browser_End_Text_Input(void)
+{
+	if (!_TextInputWanted) {
+		return;
+	}
+
+	_TextInputWanted = false;
+
+	EM_ASM({
+		var el = document.getElementById("opents-text");
+		if (el) {
+			el.value = "";
+			el.opentsQueue = [];
+			el.blur();
+		}
+	});
+}
+
+
 /*
 ** The mouse the engine drives on a page. Everything WWMouseClass does apart from finding
 ** the cursor works unchanged, and finding the cursor is the one thing a page cannot be
@@ -1258,6 +1543,7 @@ class BrowserMouseClass : public WWMouseClass
 		virtual int Get_Mouse_X(void) const override {return(Browser_Mouse_X());}
 		virtual int Get_Mouse_Y(void) const override {return(Browser_Mouse_Y());}
 		virtual Point2D Get_Mouse_Point(void) const override {return(Point2D(Browser_Mouse_X(), Browser_Mouse_Y()));}
+		virtual bool Is_Hovering(void) const override {return(Browser_Mouse_Is_Hovering());}
 };
 
 
@@ -1336,6 +1622,10 @@ bool Browser_Init(void)
 	emscripten_set_mousedown_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 	emscripten_set_mouseup_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
 	emscripten_set_dblclick_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Mouse_Callback);
+
+	// The wheel is claimed for the same reason the touches below are: a page left to its own
+	// devices scrolls itself, and what the player is turning it over is the game.
+	emscripten_set_wheel_callback(CANVAS_SELECTOR, nullptr, EM_TRUE, Wheel_Callback);
 
 	/*
 	 * Touch is taken from the canvas for the same reason the mouse is, and every event is

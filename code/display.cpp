@@ -1751,6 +1751,17 @@ int DisplayClass::TacticalClass::Action(unsigned flags, KeyNumType & key)
 		y = Keyboard->MouseQY;
 		pixel = Point2D(x, y);
 	} else {
+
+		/*
+		**	Every other event reads a position that no event established, which means something
+		**	for as long as a pointer is resting there. Without one the last position is a
+		**	leftover, and following it would move the placement cursor somewhere the player
+		**	never pointed at.
+		*/
+		if (!Mouse_Is_Hovering()) {
+			return(GadgetClass::Action(0, key));
+		}
+
 		x = Get_Mouse_X();
 		y = Get_Mouse_Y();
 		pixel = Get_Mouse_Point();
@@ -2257,6 +2268,23 @@ void DisplayClass::Mouse_Left_Release(Coord const & coord, Cell const & cell, Ob
 
 	if (PendingObjectPtr) {
 
+		Cell place = cell;
+
+		/*
+		**	Whether the structure may be placed is worked out as the cursor moves, and where it
+		**	is placed comes from the click. A pointer resting on the map keeps those the same
+		**	position; with nothing resting there, the first click is what moves the cursor, so
+		**	it only positions the structure and the next one commits what is now on show.
+		*/
+		if (!Mouse_Is_Hovering()) {
+			Cell previous = ZoneCell;
+			Set_Cursor_Pos(cell);
+			if (ZoneCell != previous) {
+				return;
+			}
+			place = ZoneCell;
+		}
+
 		if (PendingObject->RTTI == RTTI_BUILDINGTYPE) {
 			ProximityCheck = Passes_Proximity_Check(PendingObject, PendingHouse, CursorSize, ZoneCell+ZoneOffset);
 		}
@@ -2272,7 +2300,7 @@ void DisplayClass::Mouse_Left_Release(Coord const & coord, Cell const & cell, Ob
 		**	Try to place the pending object onto the map.
 		*/
 		if (ProximityCheck && ShroudCheck) {
-			OutList.push_back(EventClass(PlayerPtr->HeapID, EventClass::PLACE, PendingObjectPtr->RTTI, cell + ZoneOffset));
+			OutList.push_back(EventClass(PlayerPtr->HeapID, EventClass::PLACE, PendingObjectPtr->RTTI, place + ZoneOffset));
 		} else {
 			Speak(VOX_DEPLOY);
 		}

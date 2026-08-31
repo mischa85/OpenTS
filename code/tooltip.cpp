@@ -15,6 +15,7 @@
 
 #include "tooltip.h"
 
+#include "_xmouse.h"
 #include "data.h"
 #include "dbgprint.h"
 #include "vidscale.h"
@@ -116,7 +117,12 @@ void ToolTipManager::Message_Handler(MSG * msg)
 					KillTimer(Window, TOOLTIP_EVENT);
 					if (CurrentToolTip != NULL) {
 						Reset_Current();
-					} else {
+					} else if (Mouse_Is_Hovering()) {
+
+						/*
+						 * A tooltip is what resting somewhere asks for, so there has to be a
+						 * pointer resting there. The position a finger left behind is not one.
+						 */
 						GetCursorPos((LPPOINT)&LastMousePos);
 						Screen_Point_To_Game((POINT &)LastMousePos);
 						CurrentToolTip = Find_From_Pos((Point2D &)LastMousePos);

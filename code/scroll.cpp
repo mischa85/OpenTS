@@ -542,7 +542,13 @@ void ScrollClass::Scroll_AI(void)
 				Map.Scroll_Coast(point);
 			}
 			return;
-		} else {
+		} else if (Mouse_Is_Hovering()) {
+
+			/*
+			 * Both of these read a position no event established, which is only somewhere the
+			 * player is pointing while a pointer is resting there. A position a finger left
+			 * behind is not, and an edge scroll driven by one runs away with the map.
+			 */
 			Cell			cell;						/// cell click happened over
 			Coord			coord;						/// coord click happened over
 			ObjectClass *	object /*= 0*/;				// what object is in the cell
