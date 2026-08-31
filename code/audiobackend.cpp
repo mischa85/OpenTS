@@ -404,7 +404,20 @@ bool Audio_Backend_Init(void)
 
 	Running = !StateReadable || (Audio_Web_Context_State() == 1);
 
-	DebugString("Audio backend: OpenAL device opened, output is %s\n", Running ? "running" : "waiting for the reader to interact with the page");
+	// The name says where the sound actually goes.
+	char const * devicename = nullptr;
+#ifdef ALC_ALL_DEVICES_SPECIFIER
+	if (alcIsExtensionPresent(Device, "ALC_ENUMERATE_ALL_EXT")) {
+		devicename = alcGetString(Device, ALC_ALL_DEVICES_SPECIFIER);
+	}
+#endif
+	if (devicename == nullptr || devicename[0] == '\0') {
+		devicename = alcGetString(Device, ALC_DEVICE_SPECIFIER);
+	}
+
+	DebugString("Audio backend: OpenAL opened \"%s\", output is %s\n",
+		devicename != nullptr ? devicename : "<unnamed>",
+		Running ? "running" : "waiting for the reader to interact with the page");
 
 	return(true);
 }
