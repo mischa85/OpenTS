@@ -26,10 +26,17 @@
 
 #include "docfile.h"
 
+#include "cstream.h"
+
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
+
+// The compressing stream is game code with these two symbols supplied by units this
+// harness does not build.
+ULONG COMRefCount = 0;
+IID const IID_ILinkStream = {0x0D5CD78E,0x6470,0x11D2,{0x9B,0x74,0x00,0x10,0x4B,0x97,0x2F,0xE8}};
 
 
 static int Failures = 0;
@@ -825,11 +832,122 @@ static void Test_Against_OLE(void)
 #endif
 
 
+/*
+** The compressed stream a save's CONTENTS travels through. The content sizes straddle the
+** compressor's block size, because the final block of a stream is usually partial and its
+** header must carry the partial size for the reader to stop where the data does.
+*/
+static void Test_Compress_Stream(void)
+{
+	std::string const path = Scratch_Path("cstream.sav");
+
+	int const sizes[] = { 37, 65536, 65537, 200001 };
+
+	for (int size : sizes) {
+		char label[128];
+
+		std::vector<unsigned char> source((size_t)size);
+		unsigned int seed = 0x1234u + (unsigned int)size;
+		for (unsigned char & byte : source) {
+			seed = seed * 1103515245u + 12345u;
+			byte = (unsigned char)(seed >> 8);
+		}
+
+		IStorage * storage = nullptr;
+		if (FAILED(DocFile_Create(path.c_str(), STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE, &storage))) {
+			Check("compress stream: container created", false);
+			return;
+		}
+
+		IStream * content = nullptr;
+		if (FAILED(storage->CreateStream(L"CONTENTS", STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE, 0, 0, &content))) {
+			Check("compress stream: stream created", false);
+			storage->Release();
+			return;
+		}
+
+		CStreamClass * writer = new CStreamClass;
+		writer->AddRef();
+		writer->Link_Stream(content);
+
+		int const chunks[] = { 7, 6000, 65536, 123, 40000 };
+		int offset = 0;
+		int step = 0;
+		bool wrote = true;
+		while (offset < size) {
+			int piece = chunks[step++ % (sizeof(chunks) / sizeof(chunks[0]))];
+			if (piece > size - offset) {
+				piece = size - offset;
+			}
+			ULONG accepted = 0;
+			if (FAILED(writer->Write(&source[(size_t)offset], piece, &accepted))) {
+				wrote = false;
+				break;
+			}
+			offset += piece;
+		}
+
+		sprintf(label, "compress stream: %d bytes written", size);
+		Check(label, wrote);
+
+		writer->Unlink_Stream(NULL);
+		writer->Release();
+		content->Release();
+		storage->Release();
+
+		storage = nullptr;
+		if (FAILED(DocFile_Open(path.c_str(), STGM_SHARE_DENY_WRITE, &storage))) {
+			Check("compress stream: container reopened", false);
+			return;
+		}
+
+		content = nullptr;
+		if (FAILED(storage->OpenStream(L"CONTENTS", 0, STGM_SHARE_EXCLUSIVE, 0, &content))) {
+			Check("compress stream: stream reopened", false);
+			storage->Release();
+			return;
+		}
+
+		CStreamClass * reader = new CStreamClass;
+		reader->AddRef();
+		reader->Link_Stream(content);
+
+		std::vector<unsigned char> expanded((size_t)size, 0);
+		int const takes[] = { 1, 4, 641, 25000, 65536 };
+		offset = 0;
+		step = 0;
+		bool read = true;
+		while (offset < size) {
+			int piece = takes[step++ % (sizeof(takes) / sizeof(takes[0]))];
+			if (piece > size - offset) {
+				piece = size - offset;
+			}
+			ULONG got = 0;
+			if (FAILED(reader->Read(&expanded[(size_t)offset], piece, &got))) {
+				read = false;
+				break;
+			}
+			offset += piece;
+		}
+
+		sprintf(label, "compress stream: %d bytes read back", size);
+		Check(label, read);
+
+		sprintf(label, "compress stream: %d bytes match", size);
+		Check(label, read && memcmp(source.data(), expanded.data(), (size_t)size) == 0);
+
+		reader->Release();
+		content->Release();
+		storage->Release();
+	}
+}
+
+
 static void Clean_Up(void)
 {
 	char const * const leftovers[] = {
 		"roundtrip.sav", "rewrite.sav", "rules.sav", "untouched.sav", "foreign.sav", "plain.dat",
-		"version.sav", "ours.sav", "theirs.sav"
+		"version.sav", "ours.sav", "theirs.sav", "cstream.sav"
 	};
 
 	for (char const * name : leftovers) {
@@ -857,6 +975,7 @@ int main(int argc, char ** argv)
 	Test_Foreign_Container();
 	Test_Not_A_Storage();
 	Test_Version_Strings();
+	Test_Compress_Stream();
 #if !defined(__EMSCRIPTEN__)
 	CoInitialize(NULL);
 	Test_Against_OLE();

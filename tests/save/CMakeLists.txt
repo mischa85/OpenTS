@@ -4,6 +4,9 @@
 # place that interchange can actually be established.
 set(SAVE_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/savetest.cpp"
+    "${CMAKE_SOURCE_DIR}/code/cstream.cpp"
+    "${CMAKE_SOURCE_DIR}/code/lzo1x_c.cpp"
+    "${CMAKE_SOURCE_DIR}/code/lzo1x_d.cpp"
 )
 if(WIN32)
     list(APPEND SAVE_TEST_SOURCES "${CMAKE_SOURCE_DIR}/code/docfile.cpp")
