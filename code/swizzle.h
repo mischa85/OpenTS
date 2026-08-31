@@ -72,6 +72,7 @@ class SwizzleManagerClass
 
 		void Resolve(void);
 		void Discard(void);
+		void Abandon(void);
 
 	private:
 		/*

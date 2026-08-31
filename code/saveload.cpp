@@ -1206,6 +1206,9 @@ bool Load_Game(const char *file_name)
 	link->Unlink_Stream(NULL);
 
 	if (!res) {
+		// The slots read back so far still hold swizzle IDs rather than addresses,
+		// and the next teardown of the half-loaded objects would chase them.
+		Swizzler.Abandon();
 		return(false);
 	}
 

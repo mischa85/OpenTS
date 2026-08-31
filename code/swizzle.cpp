@@ -191,3 +191,19 @@ void SwizzleManagerClass::Discard(void)
 	RequestTable.clear();
 	PointerTable.clear();
 }
+
+
+/// <summary>
+/// Gives up on a load that failed partway through.
+/// Every slot with a request outstanding still holds a swizzle ID rather than an address,
+/// and the half-loaded objects are about to be torn down, so the slots are cleared to
+/// NULL first for the destructors to find.
+/// </summary>
+void SwizzleManagerClass::Abandon(void)
+{
+	for (SwizzleRequestClass const & request : RequestTable) {
+		*(uintptr_t *)request.Pointer = 0;
+	}
+
+	Discard();
+}
