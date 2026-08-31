@@ -107,5 +107,5 @@ subsystems are touched:
 | 2. Foundation | done — CTest green on macOS arm64 and x86_64; Linux expected but unverified |
 | 3. Codecs | done — merged from tinix0/translate-assembly-to-cpp and win64-port; golden parity tests green on macOS |
 | 4. Object model and saves | done — gunnarbeutner/wasm-port's COM registry, CFBF docfile, and PE resource layers adopted; com/save/resources tests green natively |
-| 5. Platform backend | in progress — the SDL host runs the engine natively on macOS arm64: it boots from real game data, reaches the animated shell menu, and renders through bgfx/Metal with the shell scaled to the window; audio output and Linux are still open |
-| 6. Dialog layer | in progress — the Win32 substitute's window manager carries the shell natively; the dialog-template interpreter is still missing, on this target as on the WebAssembly one |
+| 5. Platform backend | in progress — the SDL host runs the engine natively on macOS arm64: it boots from freeware game data into a campaign mission, with mouse positions mapped through the frame scaling and rendering through bgfx/Metal; audio output and Linux are still open |
+| 6. Dialog layer | in progress — the Win32 substitute's window manager and dialog templates carry the shell and the owner-draw dialogs natively; the campaign flow runs through them into the game proper |
