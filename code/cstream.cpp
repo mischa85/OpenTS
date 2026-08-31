@@ -28,7 +28,7 @@ CStreamClass::CStreamClass(void) :
 	IsWriting(false),
 	CurOffset(0),
 	DataBuffer(new unsigned char[BUFFER_SIZE]),
-	StreamBuffer(new unsigned char[BUFFER_SIZE]),
+	StreamBuffer(new unsigned char[COMP_BUFFER_SIZE]),
 	// The dictionary holds pointer-wide entries, so its byte size follows the target.
 	LZODictionary(new unsigned char[LZO1X_MEM_COMPRESS])
 {
@@ -258,7 +258,7 @@ HRESULT CStreamClass::Read(void *pv, ULONG cb, ULONG *pcbRead)
 
 		// The sizes come off the disk, so a corrupt file must not be allowed to
 		// direct reads or writes beyond the work buffers.
-		if (BlockHead.CompSize == 0 || BlockHead.CompSize > BUFFER_SIZE
+		if (BlockHead.CompSize == 0 || BlockHead.CompSize > COMP_BUFFER_SIZE
 			|| BlockHead.UncompSize == 0 || BlockHead.UncompSize > BUFFER_SIZE) {
 			return(E_FAIL);
 		}
