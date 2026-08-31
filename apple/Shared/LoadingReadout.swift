@@ -36,13 +36,11 @@ enum LoadingReadout {
 	}
 
 	/// The sentence under that line. A network run has a minutes long stretch with nothing
-	/// on screen and no way for the player to tell it from a stall, so it is said outright
-	/// what is happening. A local set explains itself by being instant.
+	/// on screen and no way for the player to tell it from a stall, so it says how long and
+	/// that it happens once. A local set explains itself by being instant.
 	static var explanation: String {
 		DiscLibrary.shared.discs.contains(where: \.isRemote)
-			? "The discs are being read over the network. A first launch fetches what the "
-			+ "game needs before its menu can appear, which takes a few minutes; a later "
-			+ "one reuses what this one keeps."
+			? "This takes a few minutes the first time. After that it's quick."
 			: ""
 	}
 
