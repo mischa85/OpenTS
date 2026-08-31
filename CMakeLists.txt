@@ -172,6 +172,8 @@ if(NOT WIN32 AND NOT EMSCRIPTEN)
     set_source_files_properties("${CMAKE_SOURCE_DIR}/code/bgfxbackend.cpp" PROPERTIES
         INCLUDE_DIRECTORIES
             "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
+        COMPILE_DEFINITIONS
+            "BX_CONFIG_DEBUG=$<IF:$<CONFIG:Debug>,1,0>"
     )
 
     # The language resources, compiled from the same script the Visual Studio build turns

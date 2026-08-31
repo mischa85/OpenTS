@@ -157,6 +157,8 @@ set(BGFX_ROOT "${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bgfx")
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" PROPERTIES
     INCLUDE_DIRECTORIES
         "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
+    COMPILE_DEFINITIONS
+        "BX_CONFIG_DEBUG=$<IF:$<CONFIG:Debug>,1,$<BOOL:${BX_CONFIG_DEBUG}>>"
     COMPILE_OPTIONS "/Zc:preprocessor"
 )
 
@@ -165,6 +167,7 @@ target_compile_definitions(OpenTS PRIVATE
     WIN32
     _WINDOWS
     _MBCS
+    NOMINMAX
 
     # Compiles Blowfish into the binary instead of reaching it through the COM object in
     # blowfish.dll. It decides the layout of BlowfishEngine, so every translation unit has
