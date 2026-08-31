@@ -141,6 +141,13 @@ test('repository Markdown checker rejects missing targets and fragments', () => 
 		result = run();
 		assert.equal(result.status, 1);
 		assert.match(result.stderr, /missing fragment #missing-heading/);
+
+		// A heading's punctuation leaves the space on either side of it behind, and GitHub
+		// turns each of those spaces into a hyphen of its own.
+		writeFileSync(resolve(fixture, 'README.md'), '# Fixture\n\n[Part](details.md#part-a--the-seam)\n');
+		writeFileSync(resolve(fixture, 'details.md'), '# Part A — the seam\n');
+		result = run();
+		assert.equal(result.status, 0, result.stderr);
 	} finally {
 		rmSync(fixture, { recursive: true, force: true });
 	}

@@ -63,7 +63,7 @@ function githubSlug(value) {
 		.toLowerCase()
 		.trim()
 		.replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, '')
-		.replace(/\s+/g, '-');
+		.replace(/\s/g, '-');
 }
 
 const anchorsByFile = new Map();
