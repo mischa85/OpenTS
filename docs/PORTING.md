@@ -86,6 +86,22 @@ neighbor, base64 decoding trusted the BSD `BIG_ENDIAN` macro that is defined on
 little-endian hosts too, the SHA-1 digest was declared as five `long` words, and the
 mixfile name hash uppercased caller strings in place, string literals included.
 
+## File layer
+
+`code/filesystem.h` owns opening a file. It exists because a name the engine
+opens may be an ordinary host file or an entry inside a mounted disc image,
+and choosing between them belongs to the file layer rather than to a caller or
+to any operating system's API. `RawFileClass` opens through it directly;
+`code/hostfile.h` answers where a name lives on a POSIX host, including the
+case-insensitive match and the browser target's persistent overlay.
+
+The Win32 substitute's file entry points — `CreateFileA` through
+`FindFirstFileA` — are adapters over that layer rather than a second
+implementation of it, so an engine path and a substitute path resolve a name
+identically. The Windows build has the host backend alone: disc mounting is
+the native port's answer to data that never left the CD, and a Windows install
+has the drive.
+
 ## Known LP64 breaks
 
 The short list of genuine 64-bit breaks found by audit, fixed as their
