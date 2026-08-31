@@ -35,20 +35,24 @@
 
 #pragma once
 
+#include "filesystem.h"
 #include "wwfile.h"
 
 #include <cerrno>
 #include <climits>
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
+
+// RawFileClass itself opens through filesystem.h and needs none of this. It stays because
+// much of the tree reaches the Win32 declarations through this header and nowhere else;
+// giving those files an include of their own is a mechanical change of its own.
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include "win32compat.h"
 #endif
 
-#define NULL_HANDLE INVALID_HANDLE_VALUE
-#define HANDLE_TYPE HANDLE
 #ifndef WWERROR
 #define WWERROR	-1
 #endif
@@ -99,7 +103,9 @@ class RawFileClass : public FileClass
 		virtual bool Set_Date_Time(unsigned int datetime);
 		virtual void Error(int error, int canretry = false, char const * filename=NULL) override;
 		void Bias(int start, int length=-1);
-		HANDLE_TYPE Get_File_Handle(void) { return(Handle); };
+
+		/// <summary>The last write time, in the units FileStatusType states, or zero.</summary>
+		unsigned long long Get_Write_Time(void);
 
 		/*
 		**	These bias values enable a sub-portion of a file to appear as if it
@@ -121,10 +127,9 @@ class RawFileClass : public FileClass
 
 	private:
 
-		/*
-		**	This is the low level DOS handle. A -1 indicates an empty condition.
-		*/
-		HANDLE_TYPE Handle;
+		// The open file, or nothing when this object holds none. filesystem.h owns whether
+		// the bytes are on the host or inside a mounted disc image.
+		std::unique_ptr<FileStreamClass> Stream;
 
 		/*
 		**	This points to the filename as a NULL terminated string. It may point to either a
@@ -199,7 +204,6 @@ inline RawFileClass::RawFileClass(void) :
 	Rights(READ),
 	BiasStart(0),
 	BiasLength(-1),
-	Handle(INVALID_HANDLE_VALUE),
 	Filename(0),
 	Date(0),
 	Time(0),
@@ -225,5 +229,5 @@ inline RawFileClass::RawFileClass(void) :
  *=============================================================================================*/
 inline bool RawFileClass::Is_Open(void) const
 {
-	return(Handle != INVALID_HANDLE_VALUE);
+	return(Stream != nullptr);
 }

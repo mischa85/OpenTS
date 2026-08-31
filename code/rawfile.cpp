@@ -51,22 +51,10 @@
 
 #include "rawfile.h"
 
-#include "iso9660.h"
-
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#ifdef _WIN32
-#include <direct.h>
-#else
-#include "crtcompat.h"
-#endif
-#ifdef _WIN32
-#include <share.h>
-#else
-#include "crtcompat.h"
-#endif
 
 
 /***********************************************************************************************
@@ -145,7 +133,6 @@ RawFileClass::RawFileClass(char const * filename) :
 	Rights(0),
 	BiasStart(0),
 	BiasLength(-1),
-	Handle(NULL_HANDLE),
 	Filename(filename),
 	Date(0),
 	Time(0),
@@ -280,20 +267,17 @@ int RawFileClass::Open(int rights)
 				break;
 
 			case READ:
-				Handle = CreateFile(Filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-											NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+				Stream = Open_File_Stream(Filename, FILE_ACCESS_READ, FILE_OPEN_EXISTING, true);
 				break;
 
 			case WRITE:
-				Handle = CreateFile(Filename, GENERIC_WRITE, 0,
-											NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+				Stream = Open_File_Stream(Filename, FILE_ACCESS_WRITE, FILE_CREATE_ALWAYS);
 				break;
 
 			case READ|WRITE:
 				// SKB 5/13/99 use OPEN_ALWAYS instead of CREATE_ALWAYS so that files
 				//             does not get destroyed.
-				Handle = CreateFile(Filename, GENERIC_READ | GENERIC_WRITE, 0,
-											NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+				Stream = Open_File_Stream(Filename, FILE_ACCESS_READ_WRITE, FILE_OPEN_ALWAYS);
 				break;
 		}
 
@@ -309,10 +293,10 @@ int RawFileClass::Open(int rights)
 		**	For the case of the file cannot be found, then allow a retry. All other cases
 		**	are fatal.
 		*/
-		if (Handle == NULL_HANDLE) {
+		if (!Is_Open()) {
 			return(false);
 
-//			Error(GetLastError(), false, Filename);
+//			Error(File_Layer_Error(), false, Filename);
 //			continue;
 		}
 		break;
@@ -364,24 +348,7 @@ bool RawFileClass::Is_Available(int forced)
 	**	CD-ROM, this routine will return a failure condition. In all but the missing file
 	**	condition, go through the normal error recover channels.
 	*/
-	for (;;) {
-		Handle = CreateFile(Filename, GENERIC_READ, FILE_SHARE_READ,
-											NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		if (Handle == NULL_HANDLE) {
-			return(false);
-		}
-		break;
-	}
-
-	/*
-	**	Since the file could be opened, then close it and return that the file exists.
-	*/
-	if (!CloseHandle(Handle)) {
-		Error(GetLastError(), false, Filename);
-	}
-	Handle = NULL_HANDLE;
-
-	return(true);
+	return(File_Entry_Exists(Filename));
 }
 
 
@@ -406,19 +373,7 @@ void RawFileClass::Close(void)
 	**	isn't considered an error condition.
 	*/
 	if (Is_Open()) {
-
-		/*
-		**	Try to close the file. If there was an error (who knows what that could be), then
-		**	call the error routine.
-		*/
-		if (!CloseHandle(Handle)) {
-			Error(GetLastError(), false, Filename);
-		}
-
-		/*
-		**	At this point the file must have been closed. Mark the file as empty and return.
-		*/
-		Handle = NULL_HANDLE;
+		Stream.reset();
 	}
 }
 
@@ -476,27 +431,27 @@ int RawFileClass::Read(void * buffer, int size)
 
 	int total = 0;
 	while (size > 0) {
-		bytesread = 0;
+		unsigned int got = 0;
 
-		if (!ReadFile(Handle, buffer, size, &(DWORD &)bytesread, NULL)) {
-			buffer = (char *)buffer + bytesread;
-			size -= bytesread;
-			total += bytesread;
+		if (!Stream->Read(buffer, (unsigned int)size, got)) {
+			buffer = (char *)buffer + got;
+			size -= (int)got;
+			total += (int)got;
 
 			/*
 			**	A read that declined has not failed, so retrying it here would only ask
 			**	again for bytes that are on their way. What was read is reported short and
 			**	the caller, which said the read may decline, comes back for the rest.
 			*/
-			if (ISODeferredReadClass::Declined_Now()) break;
+			if (Stream->Declined()) break;
 
-			Error(GetLastError(), true, Filename);
+			Error(Stream->Error(), true, Filename);
 			continue;
 		}
-		buffer = (char *)buffer + bytesread;
-		size -= bytesread;
-		total += bytesread;
-		if (bytesread == 0) break;
+		buffer = (char *)buffer + got;
+		size -= (int)got;
+		total += (int)got;
+		if (got == 0) break;
 	}
 	bytesread = total;
 
@@ -544,9 +499,12 @@ int RawFileClass::Write(void const * buffer, int size)
 		opened = true;
 	}
 
-	if (!WriteFile(Handle, buffer, size, &(DWORD &)byteswritten, NULL)) {
-		Error(GetLastError(), false, Filename);
+	unsigned int put = 0;
+
+	if (!Stream->Write(buffer, (unsigned int)size, put)) {
+		Error(Stream->Error(), false, Filename);
 	}
+	byteswritten = (int)put;
 
 	/*
 	**	Fixup the bias length if necessary.
@@ -678,13 +636,15 @@ int RawFileClass::Size(void)
 	*/
 	if (Is_Open()) {
 
-		size = GetFileSize(Handle, NULL);
+		FileStatusType status;
 
 		/*
 		**	If there was in internal error, then call the error function.
 		*/
-		if (size == 0xFFFFFFFF) {
-			Error(GetLastError(), false, Filename);
+		if (Stream->Status(status)) {
+			size = (int)status.Size;
+		} else {
+			Error(Stream->Error(), false, Filename);
 		}
 
 	} else {
@@ -795,8 +755,8 @@ int RawFileClass::Delete(void)
 			return(false);
 		}
 
-		if (!DeleteFile(Filename)) {
-			Error(GetLastError(), false, Filename);
+		if (!Delete_File_Entry(Filename)) {
+			Error(File_Layer_Error(), false, Filename);
 			return(false);
 		}
 		break;
@@ -827,15 +787,18 @@ int RawFileClass::Delete(void)
  *=============================================================================================*/
 unsigned int RawFileClass::Get_Date_Time(void)
 {
-	BY_HANDLE_FILE_INFORMATION info;
+	return(Dos_Date_Time_From_File_Time(Get_Write_Time()));
+}
 
-	if (GetFileInformationByHandle(Handle, &info)) {
-		WORD dosdate;
-		WORD dostime;
-		FileTimeToDosDateTime(&info.ftLastWriteTime, &dosdate, &dostime);
-		return((dosdate << 16) | dostime);
-	}
-	return(0);
+
+// The unpacked write time, for a caller that carries a file time rather than a DOS date.
+unsigned long long RawFileClass::Get_Write_Time(void)
+{
+	FileStatusType status;
+
+	if (!Is_Open() || !Stream->Status(status)) return(0);
+
+	return(status.Write);
 }
 
 
@@ -857,13 +820,10 @@ unsigned int RawFileClass::Get_Date_Time(void)
 bool RawFileClass::Set_Date_Time(unsigned int datetime)
 {
 	if (RawFileClass::Is_Open()) {
-		BY_HANDLE_FILE_INFORMATION info;
+		unsigned long long const filetime = File_Time_From_Dos_Date_Time(datetime);
 
-		if (GetFileInformationByHandle(Handle, &info)) {
-			FILETIME filetime;
-			if (DosDateTimeToFileTime((WORD)(datetime >> 16), (WORD)(datetime & 0x0FFFF), &filetime)) {
-				return(SetFileTime(Handle, &info.ftCreationTime, &filetime, &filetime) != 0);
-			}
+		if (filetime != 0) {
+			return(Stream->Set_Times(0, filetime, filetime));
 		}
 	}
 	return(false);
@@ -944,28 +904,33 @@ int RawFileClass::Raw_Seek(int pos, int dir)
 		return(0);
 	}
 
+	FileOriginType origin = FILE_ORIGIN_CURRENT;
+
 	switch (dir) {
 		case SEEK_SET:
-			dir = FILE_BEGIN;
+			origin = FILE_ORIGIN_BEGIN;
 			break;
 
 		case SEEK_CUR:
-			dir = FILE_CURRENT;
+			origin = FILE_ORIGIN_CURRENT;
 			break;
 
 		case SEEK_END:
-			dir = FILE_END;
+			origin = FILE_ORIGIN_END;
 			break;
 	}
-	pos = SetFilePointer(Handle, pos, NULL, dir);
+
+	long long moved = 0;
 
 	/*
 	**	If there was an error in the seek, then bail with an error condition.
 	*/
-	if (pos == 0xFFFFFFFF) {
-		Error(GetLastError(), false, Filename);
+	if (!Stream->Seek(pos, origin, moved)) {
+		Error(Stream->Error(), false, Filename);
 		return(0);
 	}
+
+	pos = (int)moved;
 
 	/*
 	**	Return with the new position of the file. This will range between zero and the number of

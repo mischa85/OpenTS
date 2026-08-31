@@ -426,17 +426,13 @@ void Send_Statistics_Packet(void)
 	RawFileClass file;
 	file.Set_Name(path_to_exe);
 	file.Open();
-#if defined(_WIN32) || defined(__EMSCRIPTEN__)
-	HANDLE handle = file.Get_File_Handle();
+	unsigned long long const written = file.Get_Write_Time();
 
-	if (handle != INVALID_HANDLE_VALUE) {
-		if (GetFileTime (handle, NULL, NULL, &write_time)){
-			write_time.dwLowDateTime = htonl (write_time.dwLowDateTime);
-			write_time.dwHighDateTime = htonl (write_time.dwHighDateTime);
-			stats.Add_Field (FIELD_GAME_BUILD_DATE, (void*)&write_time, sizeof (write_time));
-		}
+	if (written != 0) {
+		write_time.dwLowDateTime = htonl ((unsigned long)(written & 0xFFFFFFFFULL));
+		write_time.dwHighDateTime = htonl ((unsigned long)(written >> 32));
+		stats.Add_Field (FIELD_GAME_BUILD_DATE, (void*)&write_time, sizeof (write_time));
 	}
-#endif
 
 	/*
 	**	Build the player specific statistics
