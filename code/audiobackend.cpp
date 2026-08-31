@@ -354,17 +354,15 @@ void Service_Device(AudioBackendStream * stream)
 
 	/*
 	** A source that ran dry stops itself. Starting it again picks the queue back up where
-	** it stalled, which is audibly a gap but keeps the cursor moving. Starting one that
-	** still holds finished buffers would replay them, so the restart waits until a later
-	** pass has taken them back.
+	** it stalled, which is audibly a gap but keeps the cursor moving. Nothing finished can
+	** be replayed by this: on a stopped source every queued buffer reads as processed, so
+	** the pass above has already taken back all of them, and whatever this pass queued
+	** again is data the cursor has not passed.
 	*/
-	ALint remaining = 0;
-	alGetSourcei(stream->Source, AL_BUFFERS_PROCESSED, &remaining);
-
 	ALint state = 0;
 	alGetSourcei(stream->Source, AL_SOURCE_STATE, &state);
 
-	if (state != AL_PLAYING && remaining == 0 && stream->PendingCount > 0) {
+	if (state != AL_PLAYING && stream->PendingCount > 0) {
 		DebugString("Audio backend: stream %p underran and restarted\n", (void *)stream);
 		alSourcePlay(stream->Source);
 	}
