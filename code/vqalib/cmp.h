@@ -33,7 +33,7 @@ typedef _VQA_SOS_COMPRESS_INFO VQASOS;
 
 
 extern "C" {
-unsigned long __cdecl VQA_LCW_Uncompress(char const *source, char *dest, unsigned long length);
+unsigned int __cdecl VQA_LCW_Uncompress(char const *source, char *dest, unsigned int length);
 }
 
 //#define VQA_LCW_Uncompress LCW_Uncompress
@@ -44,7 +44,7 @@ long __cdecl AudioUnzap(void *source, void *dest, long);
 
 extern "C" {
 void __cdecl VQA_sosCODECInitStream(_VQA_SOS_COMPRESS_INFO *);
-void __cdecl VQA_sosCODECDecompressData(void *src, void *dst, unsigned short wBitSize, unsigned short wChannels, unsigned long dwUnCompSize, _VQA_SOS_COMPRESS_INFO *sosinfo);
+void __cdecl VQA_sosCODECDecompressData(void *src, void *dst, unsigned short wBitSize, unsigned short wChannels, unsigned int dwUnCompSize, _VQA_SOS_COMPRESS_INFO *sosinfo);
 }
 
 //#define VQA_sosCODECDecompressData sosCODECDecompressData

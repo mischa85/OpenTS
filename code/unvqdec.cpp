@@ -52,7 +52,7 @@ namespace {
 /// <param name="entries">Total block count, which is where the high plane starts.</param>
 /// <param name="block">Which block to read.</param>
 /// <returns>unsigned int; The codebook index.</returns>
-inline unsigned int Block_Index(unsigned char const * pointers, unsigned long entries, unsigned long block)
+inline unsigned int Block_Index(unsigned char const * pointers, unsigned int entries, unsigned int block)
 {
 	return(((unsigned int)pointers[entries + block] << 8) | (unsigned int)pointers[block]);
 }
@@ -120,23 +120,23 @@ inline unsigned int Quad8(unsigned int colour)
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ1_C1_TABLE(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const pitch = bufwidth * 2;
-	unsigned long const rowoffset = pitch * 4;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const pitch = bufwidth * 2;
+	unsigned int const rowoffset = pitch * 4;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 
@@ -175,23 +175,23 @@ void __cdecl ASM_UnVQ1_C1_TABLE(unsigned char * codebook, unsigned char * pointe
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ1_C1_TABLE_ALT(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const pitch = bufwidth * 2;
-	unsigned long const rowoffset = pitch * 4;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const pitch = bufwidth * 2;
+	unsigned int const rowoffset = pitch * 4;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 
@@ -229,22 +229,22 @@ void __cdecl ASM_UnVQ1_C1_TABLE_ALT(unsigned char * codebook, unsigned char * po
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ_4x2(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const rowoffset = bufwidth * 2;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const rowoffset = bufwidth * 2;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 
@@ -278,22 +278,22 @@ void __cdecl ASM_UnVQ_4x2(unsigned char * codebook, unsigned char * pointers, un
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const rowoffset = bufwidth * 4;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const rowoffset = bufwidth * 4;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 
@@ -330,22 +330,22 @@ void __cdecl ASM_UnVQ_4x4(unsigned char * codebook, unsigned char * pointers, un
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ_4x4_HALF(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const rowoffset = bufwidth * 2;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const rowoffset = bufwidth * 2;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 
@@ -384,23 +384,23 @@ void __cdecl ASM_UnVQ_4x4_HALF(unsigned char * codebook, unsigned char * pointer
 /// <param name="numrows">Rows of blocks in the frame.</param>
 /// <param name="bufwidth">Destination width in pixels.</param>
 void __cdecl ASM_UnVQ1_C1_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer,
-	unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+	unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	if (blocksperrow == 0) {
 		return;
 	}
 
-	unsigned long const pitch = bufwidth * 2;
-	unsigned long const rowoffset = pitch * 4;
-	unsigned long const entries = numrows * blocksperrow;
+	unsigned int const pitch = bufwidth * 2;
+	unsigned int const rowoffset = pitch * 4;
+	unsigned int const entries = numrows * blocksperrow;
 
 	unsigned char * rowstart = buffer;
-	unsigned long block = 0;
+	unsigned int block = 0;
 
 	do {
 		unsigned char * dest = rowstart;
 
-		for (unsigned long i = 0; i < blocksperrow; i++) {
+		for (unsigned int i = 0; i < blocksperrow; i++) {
 			unsigned int const index = Block_Index(pointers, entries, block);
 			block++;
 

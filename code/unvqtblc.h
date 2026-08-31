@@ -13,8 +13,8 @@ bool Hicolor_Init_Table(int cmode);
 void Hicolor_Clear_Table(void);
 void Hicolor_Translate(void *buffer, int size);
 
-void __cdecl UnVQ2_4x4_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
-void __cdecl UnVQ2_4x2_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
+void __cdecl UnVQ2_4x4_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
+void __cdecl UnVQ2_4x2_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
 
-void __cdecl UnVQ1_4x4_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
-void __cdecl UnVQ1_4x2_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
+void __cdecl UnVQ1_4x4_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
+void __cdecl UnVQ1_4x2_Table(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);

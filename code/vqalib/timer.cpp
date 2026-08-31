@@ -47,7 +47,7 @@
 void VQA_SetTimer(VQAHandleP *vqap, long time)
 {
 	vqap->TickOffset = 0;
-	unsigned long curtime = VQA_GetTime(vqap);
+	unsigned int curtime = VQA_GetTime(vqap);
 	vqap->TickOffset = (time - curtime);
 }
 
@@ -66,7 +66,7 @@ void VQA_StepTimer(VQAHandleP *vqap, long step)
 * SYNOPSIS
 *     Time = VQA_GetTime()
 *
-*     unsigned long VQA_GetTime(void);
+*     unsigned int VQA_GetTime(void);
 *
 * FUNCTION
 *     This routine returns timer ticks computed one of 3 ways:
@@ -115,10 +115,10 @@ void VQA_StepTimer(VQAHandleP *vqap, long step)
 *
 ****************************************************************************/
 
-unsigned long VQA_GetTime(VQAHandleP *vqap)
+unsigned int VQA_GetTime(VQAHandleP *vqap)
 {
-	// MEG 09.25.95 - changed from long to unsigned long
-	unsigned long ticks;
+	// MEG 09.25.95 - changed from long to unsigned int
+	unsigned int ticks;
 
 	/* The elapsed ticks is calculated by the number of samples
 	 * processed times the tick resolution per second divided by the
@@ -131,7 +131,7 @@ unsigned long VQA_GetTime(VQAHandleP *vqap)
 }
 
 
-unsigned long VQA_GetMovieTime(VQAHandle *vqa)
+unsigned int VQA_GetMovieTime(VQAHandle *vqa)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 
@@ -139,9 +139,9 @@ unsigned long VQA_GetMovieTime(VQAHandle *vqa)
 
 	config = &vqap->Config;
 
-	unsigned long rate = config->RefreshRate;
+	unsigned int rate = config->RefreshRate;
 
-	unsigned long ticks;
+	unsigned int ticks;
 
 	/* The elapsed ticks is calculated by the number of samples
 	 * processed times the tick resolution per second divided by the

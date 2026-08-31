@@ -503,7 +503,7 @@ void Decode_Table_16(unsigned char const * source, short * dest, int samples, in
  * reaches it through pointers rather than naming the structure's fields twice.
  */
 struct SosChannel {
-	unsigned long * SampleIndex;
+	unsigned int * SampleIndex;
 	short * CodeBuf;
 	short * Code;
 	long * Predicted;
@@ -574,7 +574,7 @@ void Decode_General(SosChannel const & channel, unsigned char const * source, un
 			/*
 			 * An 8 bit stream carries the top half of the sample, biased to unsigned.
 			 */
-			*dest = (unsigned char)((((unsigned long)sample >> 8) & 0xFF) ^ 0x80);
+			*dest = (unsigned char)((((unsigned int)sample >> 8) & 0xFF) ^ 0x80);
 		}
 
 		dest += deststride;
@@ -648,8 +648,8 @@ void __cdecl sosCODECInitStream(_SOS_COMPRESS_INFO * info)
 /// </summary>
 /// <param name="info">Stream state, source and destination.</param>
 /// <param name="bytes">How many bytes of samples to produce.</param>
-/// <returns>unsigned long; The byte count asked for, or zero if the shape is not handled.</returns>
-unsigned long __cdecl sosCODECDecompressData(_SOS_COMPRESS_INFO * info, unsigned long bytes)
+/// <returns>unsigned int; The byte count asked for, or zero if the shape is not handled.</returns>
+unsigned int __cdecl sosCODECDecompressData(_SOS_COMPRESS_INFO * info, unsigned int bytes)
 {
 	if (info->wBitSize != 16 || info->wChannels != 1) {
 		return(0);
@@ -690,8 +690,8 @@ void __cdecl General_sosCODECInitStream(_SOS_COMPRESS_INFO * info)
 /// </summary>
 /// <param name="info">Stream state, source and destination.</param>
 /// <param name="bytes">How many bytes of samples to produce.</param>
-/// <returns>unsigned long; The byte count asked for.</returns>
-unsigned long __cdecl General_sosCODECDecompressData(_SOS_COMPRESS_INFO * info, unsigned long bytes)
+/// <returns>unsigned int; The byte count asked for.</returns>
+unsigned int __cdecl General_sosCODECDecompressData(_SOS_COMPRESS_INFO * info, unsigned int bytes)
 {
 	info->dwSampleIndex = 0;
 	info->dwSampleIndex2 = 0;
@@ -750,7 +750,7 @@ void __cdecl VQA_sosCODECInitStream(_VQA_SOS_COMPRESS_INFO * info)
 /// <param name="channels">1 or 2.</param>
 /// <param name="bytes">How many bytes of samples to produce.</param>
 /// <param name="info">Stream state carried between calls.</param>
-void __cdecl VQA_sosCODECDecompressData(void * src, void * dst, unsigned short bits, unsigned short channels, unsigned long bytes, _VQA_SOS_COMPRESS_INFO * info)
+void __cdecl VQA_sosCODECDecompressData(void * src, void * dst, unsigned short bits, unsigned short channels, unsigned int bytes, _VQA_SOS_COMPRESS_INFO * info)
 {
 	if (bits != 16) {
 		return;

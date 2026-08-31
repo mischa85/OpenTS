@@ -66,7 +66,7 @@ void VQA_DispatchFrameChunks(VQAHandleP *vqap, long frame);
 void VQA_ResetCache(VQAHandleP *vqap);
 long VQA_Configure_Buffer(VQAHandleP *vqap);
 void VQA_SetTimer(VQAHandleP *vqap, long time);
-unsigned long VQA_GetTime(VQAHandleP *vqap);
+unsigned int VQA_GetTime(VQAHandleP *vqap);
 void VQA_StartAudio(VQAHandleP *vqap);
 void VQA_StopAudio(VQAHandleP *vqap);
 long VQA_LoadFrame(VQAHandleP *vqap, long flags);
@@ -88,12 +88,12 @@ long VQA_SeekGroup(VQAHandleP *vqap, long framenum, long groupsize, VQABool prel
 
 long PrimeBuffers(VQAHandle *vqa);
 
-long Load_FINF(VQAHandleP *vqap, unsigned long iffsize);
+long Load_FINF(VQAHandleP *vqap, unsigned int iffsize);
 
 long Load_CINF(VQAHandleP *vqap);
 long Load_PINF(VQAHandleP *vqap);
 long Load_LINF(VQAHandleP *vqap);
-long Load_CLIP(VQAHandleP *vqap, unsigned long iffsize);
+long Load_CLIP(VQAHandleP *vqap, unsigned int iffsize);
 long Load_MFCI(VQAHandleP *vqap);
 long Load_MSCI(VQAHandleP *vqap);
 
@@ -103,8 +103,8 @@ intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buff
 long VQA_LargestLoop(VQAHandleP *vqap, long);
 
 extern void __cdecl UnVQ_Nop(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 /****************************************************************************
 *
@@ -1220,8 +1220,8 @@ long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2)
 *     VQA_Set_DrawBuffer(VQA, Buffer, Width, Height, XPos, YPos)
 *
 *     void VQA_Set_DrawBuffer(VQAHandle *, unsigned char *,
-*                             unsigned long, unsigned long, unsigned long,
-*                             unsigned long);
+*                             unsigned int, unsigned int, unsigned int,
+*                             unsigned int);
 *
 * FUNCTION
 *     Set the draw buffer to the buffer provided by the client.
@@ -1239,7 +1239,7 @@ long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2)
 *
 ****************************************************************************/
 
-long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos)
+long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned int width, unsigned int height, long xpos, long ypos)
 {
 	long origin;
 	VQAHeader *header;
@@ -1475,7 +1475,7 @@ void VQA_Reset(VQAHandle *vqa)
 	vqap->LoopEndFrameMode2 = stop;
 	vqap->LoopEndFrame2 = stop;
 
-	unsigned long audio_flags = audio->Flags & ~(VQAAUDF_ISREPEATING|VQAAUDF_ISENDOFFILE|VQAAUDF_ISDONE|VQAAUDF_ISSTARVED);//~1920;
+	unsigned int audio_flags = audio->Flags & ~(VQAAUDF_ISREPEATING|VQAAUDF_ISENDOFFILE|VQAAUDF_ISDONE|VQAAUDF_ISSTARVED);//~1920;
 
 	vqap->StartTime = 0;
 	audio->Flags = audio_flags;

@@ -97,7 +97,7 @@ typedef struct _VQAHeader {
 	 * expanded size when it is zero, so an old movie that leaves it blank
 	 * still allocates correctly.
 	 */
-	unsigned long MaxCBSize;
+	unsigned int MaxCBSize;
 
 	/*
 	 * Bytes of audio that must be loaded ahead of a seek target to prime the
@@ -105,7 +105,7 @@ typedef struct _VQAHeader {
 	 * how many frames early to start reading. When the movie carries no
 	 * VQAHDF_SNDJUMP flag and this is zero, half a second is assumed.
 	 */
-	unsigned long AudioPreload;
+	unsigned int AudioPreload;
 } VQAHeader;
 
 /* Version type. */

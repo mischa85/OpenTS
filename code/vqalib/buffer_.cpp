@@ -17,7 +17,7 @@
 #include	<string.h>
 #include	"vqamem.h"
 
-extern long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos);
+extern long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned int width, unsigned int height, long xpos, long ypos);
 
 
 _STATIC void VQA_BufferPerpareLoop(VQAHandleP *vqap, long * needs_start_cb, long * needs_end_cb);
@@ -210,7 +210,7 @@ STATIC long AllocBuffers(VQAHandleP *vqap)
 
 	/* Set maximum vector pointers size (from the largest frame). */
 	{
-		unsigned long maxptr;
+		unsigned int maxptr;
 
 		if (header->MaxFramesize == 0) {
 			maxptr = vqap->PtrBufferSize;
@@ -625,10 +625,10 @@ STATIC void FreeBuffers(VQAHandleP *vqap)
 		config->MemoryHandler((VQAHandle *)vqap, VQAMEM_FREE, vqap->CodebookInfo.Data, NULL);
 	}
 
-	unsigned long count;
-	unsigned long tablecount;
-	unsigned long k;
-	unsigned long staticcount;
+	unsigned int count;
+	unsigned int tablecount;
+	unsigned int k;
+	unsigned int staticcount;
 
 	///////////////////////////////////////////////////////////////////////////
 	// free msci data

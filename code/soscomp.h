@@ -35,9 +35,9 @@ enum {
 struct _SOS_COMPRESS_INFO {
 	char       *lpSource;
 	char       *lpDest;
-	unsigned long dwCompSize;
-	unsigned long dwUnCompSize;
-	unsigned long dwSampleIndex;
+	unsigned int dwCompSize;
+	unsigned int dwUnCompSize;
+	unsigned int dwSampleIndex;
 	long          dwPredicted;
 	long          dwDifference;
 	short         wCodeBuf;
@@ -45,7 +45,7 @@ struct _SOS_COMPRESS_INFO {
 	short         wStep;
 	short         wIndex;
 
-	unsigned long dwSampleIndex2;   //added BP for channel 2
+	unsigned int dwSampleIndex2;   //added BP for channel 2
 	long          dwPredicted2;     //added BP for channel 2
 	long          dwDifference2;    //added BP for channel 2
 	short         wCodeBuf2;        //added BP for channel 2
@@ -58,10 +58,10 @@ struct _SOS_COMPRESS_INFO {
 
 /* compressed file type header */
 struct _SOS_COMPRESS_HEADER {
-	unsigned long dwType;              // type of compression
-	unsigned long dwCompressedSize;    // compressed file size
-	unsigned long dwUnCompressedSize;  // uncompressed file size
-	unsigned long dwSourceBitSize;     // original bit size
+	unsigned int dwType;              // type of compression
+	unsigned int dwCompressedSize;    // compressed file size
+	unsigned int dwUnCompressedSize;  // uncompressed file size
+	unsigned int dwSourceBitSize;     // original bit size
 	char          szName[16];          // file type, for error checking
 	};
 
@@ -69,6 +69,6 @@ struct _SOS_COMPRESS_HEADER {
 extern "C" {
 	void __cdecl sosCODECInitStream(_SOS_COMPRESS_INFO *);
 	void __cdecl General_sosCODECInitStream(_SOS_COMPRESS_INFO *);
-	unsigned long __cdecl sosCODECDecompressData(_SOS_COMPRESS_INFO *, unsigned long);
-	unsigned long __cdecl General_sosCODECDecompressData(_SOS_COMPRESS_INFO *, unsigned long);
+	unsigned int __cdecl sosCODECDecompressData(_SOS_COMPRESS_INFO *, unsigned int);
+	unsigned int __cdecl General_sosCODECDecompressData(_SOS_COMPRESS_INFO *, unsigned int);
 }

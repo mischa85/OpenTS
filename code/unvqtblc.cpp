@@ -119,7 +119,7 @@ static inline void memset32(void * D, unsigned int val, unsigned int n)
  */
 
 
-void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	assert(HicolorTable != 0);
 	assert(codebook != 0);
@@ -306,7 +306,7 @@ void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 }
 
 
-void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	assert(HicolorTable != 0);
 	assert(codebook != 0);
@@ -489,7 +489,7 @@ void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 #define __int16 short
 #define __int32 long
 
-void __cdecl UnVQ1_4x4_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+void __cdecl UnVQ1_4x4_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	assert(codebook != 0);
 	assert(pointers != 0);
@@ -500,18 +500,18 @@ void __cdecl UnVQ1_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 
 	bufwidth = 2 * bufwidth;
 	unsigned int total = numrows * bufwidth;
-	unsigned long step = 8 * blocksperrow;
+	unsigned int step = 8 * blocksperrow;
 	unsigned char * data_end = buffer + (total * 4);
 	unsigned char * row_end = buffer + step;
 	unsigned char * row_ptr = buffer;
 	unsigned short * src = (unsigned short *)pointers;
 
-	unsigned long i;
-	unsigned long j;
+	unsigned int i;
+	unsigned int j;
 	unsigned short index;
-	unsigned long type;
+	unsigned int type;
 
-	unsigned long row_step = bufwidth << 2;
+	unsigned int row_step = bufwidth << 2;
 
 	while (buffer < data_end) {
 		type = (*src & 0xE000);
@@ -576,7 +576,7 @@ void __cdecl UnVQ1_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 }
 
 
-void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth)
 {
 	assert(codebook != 0);
 	assert(pointers != 0);
@@ -591,9 +591,9 @@ void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 	unsigned char * row_ptr = buffer;
 	unsigned short * src = (unsigned short *)pointers;
 
-	unsigned long i;
+	unsigned int i;
 	unsigned short index;
-	unsigned long type;
+	unsigned int type;
 	unsigned int cb_idx;
 	unsigned int scatter_count;
 	unsigned int code;

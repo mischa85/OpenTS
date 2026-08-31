@@ -108,8 +108,8 @@ extern char ReqTag[];
  * size - Size of chunk.
  */
 typedef struct _ChunkHeader {
-	unsigned long id;
-	unsigned long size;
+	unsigned int id;
+	unsigned int size;
 } ChunkHeader;
 
 
@@ -126,8 +126,8 @@ typedef struct _ZAPHeader {
 } ZAPHeader;
 
 typedef struct _VQAClipper {
-	unsigned long Width;
-	unsigned long Height;
+	unsigned int Width;
+	unsigned int Height;
 } VQAClipper;
 
 
@@ -149,8 +149,8 @@ typedef struct _VQACBNode {
 	unsigned char     *Buffer;
 	struct _VQACBNode *Next;
 	struct _VQACBNode *Prev;
-	unsigned long     Flags;
-	unsigned long     CBOffset;
+	unsigned int     Flags;
+	unsigned int     CBOffset;
 	int               CodebookSize;
 } VQACBNode;
 
@@ -188,8 +188,8 @@ typedef struct _VQAFrameNode {
 	unsigned char        *Palette;
 	struct _VQAFrameNode *Next;
 	struct _VQAFrameNode *Prev;
-	unsigned long        Flags;
-	unsigned long        PrevFlags;
+	unsigned int        Flags;
+	unsigned int        PrevFlags;
 	long                 FrameNum;
 	long                 PtrOffset;
 	long                 PalOffset;
@@ -289,7 +289,7 @@ typedef struct _VQALoader {
  */
 typedef struct _VQADrawer {
 	VQAFrameNode  *CurFrame;
-	unsigned long Flags;
+	unsigned int Flags;
 //	DisplayInfo   *Display;
 	unsigned char *ImageBuf;
 	long          ImageWidth;
@@ -381,25 +381,25 @@ typedef struct _VQAFlipper {
  */
 typedef struct _VQAAudio {
 	unsigned char      *Buffer;
-	unsigned long      AudBufPos;
+	unsigned int      AudBufPos;
 	bool               *IsLoaded;
 	short              *BlockRepeats;
-	unsigned long      NumAudBlocks;
-	unsigned long      Block1;
-	unsigned long      Block2;
+	unsigned int      NumAudBlocks;
+	unsigned int      Block1;
+	unsigned int      Block2;
 	unsigned char      *TempBuf;
-	unsigned long      BufferOffset;
-	unsigned long      TempBufLen;
-	unsigned long      TempBufSize;
+	unsigned int      BufferOffset;
+	unsigned int      TempBufLen;
+	unsigned int      TempBufSize;
 	void              *HMIBuffer;
-	unsigned long      Flags;
-	unsigned long      PlayPosition;
-	unsigned long      BufferPosition;
+	unsigned int      Flags;
+	unsigned int      PlayPosition;
+	unsigned int      BufferPosition;
 
 	/// Unused
 	int                field_3C;
 
-	unsigned long      BytesPerSec;
+	unsigned int      BytesPerSec;
 	VQASOS             ADPCM_Info;
 } VQAAudio;
 
@@ -457,7 +457,7 @@ struct VQA_Array_Data {
 struct VQALoopInfo {
 	struct HEADER {
 		unsigned short Count;
-		unsigned long Flags;
+		unsigned int Flags;
 		unsigned short Pad;
 	};
 	HEADER Header;
@@ -476,7 +476,7 @@ struct VQALoopInfo {
 struct VQAPaletteInfo {
 	struct HEADER {
 		unsigned short Count;
-		unsigned long Flags;
+		unsigned int Flags;
 		unsigned short Pad;
 	};
 	HEADER Header;
@@ -506,8 +506,8 @@ struct VQACodebookInfo {
 
 struct VQAMFCInfo {
 	struct HEADER {
-		unsigned long StaticCount;
-		unsigned long Count;
+		unsigned int StaticCount;
+		unsigned int Count;
 
 		/// Unused
 		int     field_8;
@@ -522,13 +522,13 @@ struct VQAMFCInfo {
 		 */
 		int     KeyFrame;
 
-		unsigned long ChunkID;
+		unsigned int ChunkID;
 		char    Pad[0x10];
 	};
 	DATA *StaticData;
 
 	struct TABLE {
-		unsigned long ChunkID;
+		unsigned int ChunkID;
 
 		/*
 		 * The period of this chunk type, in frames. It divides the frame buffer
@@ -548,7 +548,7 @@ struct VQAMFCInfo {
 	TABLE *Table;
 
 	struct DATA2 {
-		unsigned long Count;
+		unsigned int Count;
 
 		/*
 		 * The ring buffer write cursor. It picks the slot the next chunk of this
@@ -558,7 +558,7 @@ struct VQAMFCInfo {
 
 		struct DATA {
 			char    *Buffer;
-			unsigned long Size;
+			unsigned int Size;
 			long Frame;
 		};
 		DATA *Data;
@@ -568,7 +568,7 @@ struct VQAMFCInfo {
 
 struct VQAMSCInfo {
 	struct HEADER {
-		unsigned long Count;
+		unsigned int Count;
 
 		/// Unused
 		int     field_4;
@@ -576,7 +576,7 @@ struct VQAMSCInfo {
 	HEADER Header;
 
 	struct TABLE {
-		unsigned long ChunkID;
+		unsigned int ChunkID;
 
 		/*
 		 * The size in bytes of one entry's buffer. Note that this sits one slot
@@ -591,7 +591,7 @@ struct VQAMSCInfo {
 	TABLE *Table;
 
 	struct DATA2 {
-		unsigned long Count;
+		unsigned int Count;
 
 		/*
 		 * The ring buffer write cursor. It picks the slot the next chunk of this
@@ -601,7 +601,7 @@ struct VQAMSCInfo {
 
 		struct DATA {
 			char    *Buffer;
-			unsigned long Size;
+			unsigned int Size;
 			long Frame;
 		};
 		DATA *Data;
@@ -704,8 +704,8 @@ typedef struct _VQAHandleP {
 	/// Unused
 	int				field_14C;
 
-	unsigned long	Flags;
-	unsigned long	AltBufferFlags;
+	unsigned int	Flags;
+	unsigned int	AltBufferFlags;
 	void *			AltImageBuf;
 	int				AltImageWidth;
 	int				AltImageHeight;
@@ -766,8 +766,8 @@ long User_Update(VQAHandle *vqa);
 /* Timer system. */
 void VQA_SetTimer(VQAHandleP *vqap, long time);
 void VQA_StepTimer(VQAHandleP *vqap, long step);
-unsigned long VQA_GetTime(VQAHandleP *vqap);
-unsigned long VQA_GetMovieTime(VQAHandle *vqa);
+unsigned int VQA_GetTime(VQAHandleP *vqap);
+unsigned int VQA_GetMovieTime(VQAHandle *vqa);
 
 /* Audio system. */
 #if(VQAAUDIO_ON)

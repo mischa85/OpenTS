@@ -160,7 +160,7 @@ class VQAClass;
  typedef struct _VQAHandle VQAHandle;
 
 // UnVQ functions must be this type
-typedef void  (__cdecl *UNVQ_FUNC)(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
+typedef void  (__cdecl *UNVQ_FUNC)(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
 
 // Handlers must be this type
 typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
@@ -169,10 +169,10 @@ typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer
 typedef long (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, long framenum);
 
 // timer callback must be this type
-typedef unsigned long (__cdecl *VQA_TC_FUNC)(VQAHandle *vqa);
+typedef unsigned int (__cdecl *VQA_TC_FUNC)(VQAHandle *vqa);
 
 // unused callback must be this type
-typedef unsigned long (__cdecl *VQA_UC_FUNC)(VQAHandle *vqa);
+typedef unsigned int (__cdecl *VQA_UC_FUNC)(VQAHandle *vqa);
 
 /* VQAConfig: Player configuration structure
  *
@@ -290,7 +290,7 @@ typedef struct _VQAConfig {
 	int					field_7C;
 	int					field_80;
 
-	unsigned long		LatencyAdjustment;
+	unsigned int		LatencyAdjustment;
 } VQAConfig;
 
 /* Drawer Configuration flags (DrawFlags) */
@@ -348,7 +348,7 @@ typedef struct _VQAConfig {
  * VQAio - Something meaningful to the IO manager. (See DOCS)
  */
 typedef struct _VQAHandle {
-	unsigned long VQAio;
+	unsigned int VQAio;
 } VQAHandle;
 
 // derives from AMIGA IFF handling https://wiki.amigaos.net/wiki/IFFParse_Library
@@ -408,7 +408,7 @@ long VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, in
 
 long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2);
 
-long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos);
+long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned int width, unsigned int height, long xpos, long ypos);
 long VQA_ResetLastFrameNum(VQAHandle *vqa);
 
 /* Information/statistics access routines. */

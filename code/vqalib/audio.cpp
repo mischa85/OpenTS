@@ -293,13 +293,13 @@ long CopyAudio(VQAHandleP *vqap)
 	VQAConfig *config;
 	VQALoader *loader;
 
-	unsigned long startblock;
-	unsigned long endblock;
-	unsigned long len1,len2;
-	unsigned long i;
+	unsigned int startblock;
+	unsigned int endblock;
+	unsigned int len1,len2;
+	unsigned int i;
 
 	unsigned char *tempbuf;
-	unsigned long tempbuflen;
+	unsigned int tempbuflen;
 
 	/* Dereference commonly used data members for quicker access. */
 	audio = &vqap->Audio;
@@ -413,7 +413,7 @@ long __cdecl VQA_AudioFillCallback(VQAHandleP *vqap)
 	}
 
 	long pos = audio->BufferPosition;
-	unsigned long block = audio->Block1;
+	unsigned int block = audio->Block1;
 
 	if (config->OptionFlags & VQAOPTF_WAITFILL) {
 		long nblock = block + 1;
@@ -488,7 +488,7 @@ long __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, void *buffer)
 {
 	VQAConfig *config;
 	VQAAudio *audio;
-	unsigned long  block;
+	unsigned int  block;
 
 	audio = &vqap->Audio;
 	config = &vqap->Config;

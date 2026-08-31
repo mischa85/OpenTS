@@ -41,72 +41,72 @@
  *-------------------------------------------------------------------------*/
 
 void __cdecl UnVQ2_C1_4x4(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ1_C4_4x4(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C4_4x4(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ1_C4_4x2(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C4_4x2(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C0_4x4_TRANS(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C0_4x4_KEY(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C0_4x4_TRANS_HALF(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C0_4x2_TRANS(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl UnVQ2_C0_4x2_KEY(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 void __cdecl ASM_UnVQ1_C1_TABLE(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl ASM_UnVQ1_C1_TABLE_ALT(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl ASM_UnVQ_4x2(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl ASM_UnVQ_4x4(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl ASM_UnVQ_4x4_HALF(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 void __cdecl ASM_UnVQ1_C1_4x4(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth);
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth);
 
 #ifdef __cplusplus
 }

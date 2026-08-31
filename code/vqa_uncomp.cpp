@@ -79,9 +79,9 @@ inline void Copy_Overlapped(unsigned char * dest, unsigned char const * source, 
 }
 
 
-inline unsigned long Fetch_Word(unsigned char const * & source)
+inline unsigned int Fetch_Word(unsigned char const * & source)
 {
-	unsigned long const value = (unsigned long)source[0] | ((unsigned long)source[1] << 8);
+	unsigned int const value = (unsigned int)source[0] | ((unsigned int)source[1] << 8);
 	source += 2;
 	return(value);
 }
@@ -210,8 +210,8 @@ long __cdecl AudioUnzap(void * source, void * dest, long count)
 /// <param name="source">Compressed data.</param>
 /// <param name="dest">Buffer to decompress into.</param>
 /// <param name="length">Size of the destination buffer.</param>
-/// <returns>unsigned long; The number of bytes written.</returns>
-unsigned long __cdecl VQA_LCW_Uncompress(char const * source, char * dest, unsigned long length)
+/// <returns>unsigned int; The number of bytes written.</returns>
+unsigned int __cdecl VQA_LCW_Uncompress(char const * source, char * dest, unsigned int length)
 {
 	unsigned char const * src = (unsigned char const *)source;
 	unsigned char * const start = (unsigned char *)dest;
@@ -246,7 +246,7 @@ unsigned long __cdecl VQA_LCW_Uncompress(char const * source, char * dest, unsig
 			 * has already been written.
 			 */
 			long count = (long)(code >> 4) + 3;
-			unsigned long const offset = ((unsigned long)(code & 0x0F) << 8) | (unsigned long)*src++;
+			unsigned int const offset = ((unsigned int)(code & 0x0F) << 8) | (unsigned int)*src++;
 
 			if (count > maxlen) {
 				count = maxlen;
@@ -305,7 +305,7 @@ unsigned long __cdecl VQA_LCW_Uncompress(char const * source, char * dest, unsig
 			count = (long)Fetch_Word(src);
 		}
 
-		unsigned long const offset = Fetch_Word(src);
+		unsigned int const offset = Fetch_Word(src);
 		unsigned char const * from = relative ? (dst - offset) : (start + offset);
 
 		if (count > maxlen) {
@@ -316,5 +316,5 @@ unsigned long __cdecl VQA_LCW_Uncompress(char const * source, char * dest, unsig
 		dst += count;
 	}
 
-	return((unsigned long)(dst - start));
+	return((unsigned int)(dst - start));
 }

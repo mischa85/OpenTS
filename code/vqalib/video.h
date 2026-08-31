@@ -95,7 +95,7 @@ void __cdecl WaitVB(short vbibit);
 void __cdecl ClearVRAM(void);
 long __cdecl SetXMode(long mode);
 void __cdecl ClearXMode(void);
-void __cdecl ShowXPage(unsigned long StartOffset);
+void __cdecl ShowXPage(unsigned int StartOffset);
 void __cdecl Xmode_BufferCopy_320x200(void *buff, void *screen);
 void __cdecl Xmode_Blit(void *buffer, void *screen, long imgwidth, long imgheight);
 void __cdecl MCGA_BufferCopy(unsigned char *buffer, unsigned char *dummy);

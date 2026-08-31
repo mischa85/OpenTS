@@ -96,10 +96,10 @@ typedef struct _IFFHandle {
 #define IFFERR_NOMEM -4
 
 /* Macros to make things easier. */
-#define REVERSE_LONG(id) (unsigned long)((((unsigned long)(id)>>24) \
-		&0x000000FFL)|(((unsigned long)(id)>>8) \
-		&0x0000FF00L)|(((unsigned long)(id)<<8) \
-		&0x00FF0000L)|(((unsigned long)(id)<<24)&0xFF000000L))
+#define REVERSE_LONG(id) (unsigned int)((((unsigned int)(id)>>24) \
+		&0x000000FFL)|(((unsigned int)(id)>>8) \
+		&0x0000FF00L)|(((unsigned int)(id)<<8) \
+		&0x00FF0000L)|(((unsigned int)(id)<<24)&0xFF000000L))
 
 #define REVERSE_WORD(id) ((unsigned short)((((unsigned short)(id)<<8) \
 		&0x00FF00)|(((unsigned short)(id)>>8)&0x0FF)))

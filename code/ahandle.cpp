@@ -47,17 +47,17 @@ long __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes);
 void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR);
-_STATIC unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
+_STATIC unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
 _STATIC BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap);
 
-unsigned long __cdecl Timer_Callback_Audio_Handler(VQAHandle *vqa)
+unsigned int __cdecl Timer_Callback_Audio_Handler(VQAHandle *vqa)
 {
 	VQAHandleP    *vqap = (VQAHandleP *)vqa;
 	VQAConfig     *config = &vqap->Config;
 	Ahandle       *handle = &_handles[vqap->AudioHandleIndex];
-	unsigned long d;
-	unsigned long t;
+	unsigned int d;
+	unsigned int t;
 
 	if (handle->Flags & AHANDLEF_IS_PAUSED) {
 #ifdef _DEBUG
@@ -91,7 +91,7 @@ unsigned long __cdecl Timer_Callback_Audio_Handler(VQAHandle *vqa)
 }
 
 
-unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *config)
+unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *config)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 
@@ -99,11 +99,11 @@ unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *c
 	assert(audio != 0);
 	assert(config != 0);
 
-	unsigned long s = audio->SecondaryBufferSize;
+	unsigned int s = audio->SecondaryBufferSize;
 	assert(s > 0);
 
-	unsigned long dma_diff;
-	unsigned long totalbytes;
+	unsigned int dma_diff;
+	unsigned int totalbytes;
 	DWORD				play_cursor;		//Position that direct sound is reading from
 	DWORD				write_cursor;		//Position in buffer that we can write to
 
@@ -718,7 +718,7 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 }
 
 
-unsigned long __cdecl Simple_Timer_Callback_Audio_Handler(VQAHandle *vqa)
+unsigned int __cdecl Simple_Timer_Callback_Audio_Handler(VQAHandle *vqa)
 {
 	return(Get_Game_Time_50());
 }

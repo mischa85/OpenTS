@@ -81,17 +81,17 @@ long PageFlip_MCGABuf(VQAHandle *vqa);
 long DrawFrame_MCGA(VQAHandle *vqa);
 long PageFlip_MCGA(VQAHandle *vqa);
 
-void __cdecl UnVQ_Nop(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
+void __cdecl UnVQ_Nop(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
 long PageFlip_Nop(VQAHandle *vqa);
 
 void VQA_SetTimer(VQAHandleP *vqap, long time);
 void VQA_StepTimer(VQAHandleP *vqap, long step);
-unsigned long VQA_GetTime(VQAHandleP *vqap);
+unsigned int VQA_GetTime(VQAHandleP *vqap);
 _STATIC long VQA_SetCurrentFrameAsLast(VQAHandleP *vqap);
 _STATIC void VQA_SetPreviousFrameNode(VQAHandleP *vqap);
 _STATIC long VQA_CalcFramesSinceDrawn(VQAHandleP *vqap);
 
-_STATIC long VQA_ComputeDesiredFrame(VQAHandleP *vqap, VQAConfig *config, VQADrawer *drawer, VQAFrameNode *frame, unsigned long time);
+_STATIC long VQA_ComputeDesiredFrame(VQAHandleP *vqap, VQAConfig *config, VQADrawer *drawer, VQAFrameNode *frame, unsigned int time);
 
 void VQA_DispatchFrameChunks(VQAHandleP *vqap, long frame);
 
@@ -271,8 +271,8 @@ STATIC long Select_Frame(VQAHandleP *vqap)
 	VQAConfig    *config;
 	VQAFrameNode *curframe;
 	long         desiredframe;
-	// MEG 11.29.95 - changed from long to unsigned long
-	unsigned long curtime;
+	// MEG 11.29.95 - changed from long to unsigned int
+	unsigned int curtime;
 
 	/* Dereference commonly used data members for quicker access. */
 	config = &vqap->Config;
@@ -479,9 +479,9 @@ STATIC long Select_Frame(VQAHandleP *vqap)
 /// <param name="frame">The frame number whose chunks are to be dispatched.</param>
 void VQA_DispatchFrameChunks(VQAHandleP *vqap, long frame)
 {
-	unsigned long chunkid;
-	unsigned long count1;
-	unsigned long count2;
+	unsigned int chunkid;
+	unsigned int count1;
+	unsigned int count2;
 	int i;
 	int j;
 
@@ -528,7 +528,7 @@ void VQA_DispatchFrameChunks(VQAHandleP *vqap, long frame)
 /// </summary>
 /// <param name="time">The playback time to evaluate, in VQA_TIMETICKS.</param>
 /// <returns>Returns with the frame number that should be drawn.</returns>
-long VQA_ComputeDesiredFrame(VQAHandleP *vqap, VQAConfig *config, VQADrawer *drawer, VQAFrameNode *frame, unsigned long time)
+long VQA_ComputeDesiredFrame(VQAHandleP *vqap, VQAConfig *config, VQADrawer *drawer, VQAFrameNode *frame, unsigned int time)
 {
 	VQAHeader *header;
 	long frame_rate;
@@ -1187,7 +1187,7 @@ STATIC long PageFlip_MCGABuf(VQAHandle *vqa)
 *     UnVQ_Nop(Codebook, Pointers, Buffer, BPR, Rows, BufWidth)
 *
 *     void UnVQ_Nop(unsigned char *, unsigned char *, unsigned char *,
-*                   unsigned long, unsigned long, unsigned long);
+*                   unsigned int, unsigned int, unsigned int);
 * FUNCTION
 *
 * INPUTS
@@ -1204,8 +1204,8 @@ STATIC long PageFlip_MCGABuf(VQAHandle *vqa)
 ****************************************************************************/
 
 STATIC void __cdecl UnVQ_Nop(unsigned char *codebook, unsigned char *pointers,
-		unsigned char *buffer, unsigned long blocksperrow,
-		unsigned long numrows, unsigned long bufwidth)
+		unsigned char *buffer, unsigned int blocksperrow,
+		unsigned int numrows, unsigned int bufwidth)
 {
 	/* Suppress compiler warnings */
 	codebook = codebook;
