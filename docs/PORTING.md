@@ -72,6 +72,20 @@ win32compat/crtcompat/docfile/peresource/iso9660 layers came from gunnarbeutner'
 wasm-port branch, widened from the WebAssembly target to every non-Windows target and
 made LP64-clean. The merge history records the authorship.
 
+## Native host
+
+`code/sdlhost.cpp` answers the same host contract `code/browser.h` states for the
+WebAssembly target -- window, input drain, yield trio, cursor -- over SDL2, and supplies
+`main`. `code/hostyield.cpp` is the windowless default the test harnesses link. The
+`OpenTSNative` target (`bin/opents`) builds when SDL2 and Python are found; it is
+experimental and unsupported. Run it from a directory holding the game data.
+
+Runtime fixes the native boot surfaced, all latent in the inherited code: the straw
+chain in the mixfile header reader destroyed its segments in an order that read a dead
+neighbor, base64 decoding trusted the BSD `BIG_ENDIAN` macro that is defined on
+little-endian hosts too, the SHA-1 digest was declared as five `long` words, and the
+mixfile name hash uppercased caller strings in place, string literals included.
+
 ## Known LP64 breaks
 
 The short list of genuine 64-bit breaks found by audit, fixed as their
@@ -93,5 +107,5 @@ subsystems are touched:
 | 2. Foundation | done — CTest green on macOS arm64 and x86_64; Linux expected but unverified |
 | 3. Codecs | done — merged from tinix0/translate-assembly-to-cpp and win64-port; golden parity tests green on macOS |
 | 4. Object model and saves | done — gunnarbeutner/wasm-port's COM registry, CFBF docfile, and PE resource layers adopted; com/save/resources tests green natively |
-| 5. Platform backend | in progress — the win32compat family builds natively; the window manager, input, audio, and networking still need a native host |
-| 6. Dialog layer | in progress — runs against win32compat's window manager on the WebAssembly target; needs the native host |
+| 5. Platform backend | in progress — the SDL host runs the engine natively on macOS arm64: it boots from real game data, reaches the animated shell menu, and renders through bgfx/Metal; audio output, shell scaling, and Linux are still open |
+| 6. Dialog layer | in progress — the Win32 substitute's window manager carries the shell natively; the dialog-template interpreter is still missing, on this target as on the WebAssembly one |

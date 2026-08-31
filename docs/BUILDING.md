@@ -32,10 +32,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The engine executable and `Language.dll` remain Windows-only until enough
-subsystems are ported. The `cpudetect` harness reads CPUID, so it only builds
-when the target processor is x86. A green test run is not a support claim for
-the engine.
+When SDL2 and Python 3 are found, the same configuration also builds the
+experimental native engine, `bin/opents`, wrapped in an SDL host. It boots from
+a directory holding the game data and is unsupported; [Porting](PORTING.md)
+records its state. The `cpudetect` harness reads CPUID, so it only builds when
+the target processor is x86. A green test run is not a support claim for the
+engine.
 
 Install Visual Studio 2022 with the **Desktop development with C++** workload,
 a Windows SDK, CMake 3.23 or newer, and Git for Windows.
