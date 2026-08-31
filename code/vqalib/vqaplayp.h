@@ -400,7 +400,7 @@ typedef struct _VQAAudio {
 	int                field_3C;
 
 	unsigned int      BytesPerSec;
-	VQASOS             ADPCM_Info;
+	_SOS_COMPRESS_INFO ADPCM_Info;
 } VQAAudio;
 
 /* Audio flags. */

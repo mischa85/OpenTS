@@ -2456,17 +2456,14 @@ static bool Init_Secondary_Mixfiles(void)
 
 	DebugStringNoPrefix(" SCORES.MIX");
 
-	if (ScoresMix == NULL) {
-		return(false);
-	}
-
 	if (CCFileClass("SCORES01.MIX").Is_Available()) {
 		Scores01Mix = new MFCD("SCORES01.MIX", &FastKey);
 	}
 
 	DebugStringNoPrefix(" SCORES01.MIX");
 
-	ScoresPresent = true;
+	// An install without the score archives plays no music rather than not playing.
+	ScoresPresent = (ScoresMix != NULL || Scores01Mix != NULL);
 	Theme.Scan();
 
 	{

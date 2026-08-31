@@ -16,21 +16,11 @@
 
 #pragma once
 
+#include "../soscomp.h"
+
 #if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(push,1)
 #endif
-
-struct _VQA_SOS_COMPRESS_INFO
-
-{
-	long dwPredicted;
-	short wIndex;
-	long dwPredicted2;
-	short wIndex2;
-};
-
-typedef _VQA_SOS_COMPRESS_INFO VQASOS;
-
 
 extern "C" {
 unsigned int __cdecl VQA_LCW_Uncompress(char const *source, char *dest, unsigned int length);
@@ -41,13 +31,6 @@ unsigned int __cdecl VQA_LCW_Uncompress(char const *source, char *dest, unsigned
 extern "C" {
 long __cdecl AudioUnzap(void *source, void *dest, long);
 }
-
-extern "C" {
-void __cdecl VQA_sosCODECInitStream(_VQA_SOS_COMPRESS_INFO *);
-void __cdecl VQA_sosCODECDecompressData(void *src, void *dst, unsigned short wBitSize, unsigned short wChannels, unsigned int dwUnCompSize, _VQA_SOS_COMPRESS_INFO *sosinfo);
-}
-
-//#define VQA_sosCODECDecompressData sosCODECDecompressData
 
 #if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(pop)

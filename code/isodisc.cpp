@@ -14,7 +14,10 @@
 
 #include "iso9660.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <dirent.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +35,23 @@ void ISO_Image_Locations(std::vector<std::string> & locations)
 
 	char const * configured = std::getenv("OPENTS_DISCS");
 	if (configured == NULL || configured[0] == '\0') {
+
+		/*
+		 * Without configuration, a discs directory beside the game data supplies the
+		 * images, sorted by name so the mount order is stable.
+		 */
+		DIR * dir = opendir("discs");
+		if (dir != NULL) {
+			for (struct dirent * entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
+				char const * name = entry->d_name;
+				std::size_t const length = std::strlen(name);
+				if (length > 4 && (std::strcmp(name + length - 4, ".iso") == 0 || std::strcmp(name + length - 4, ".ISO") == 0)) {
+					locations.push_back(std::string("discs/") + name);
+				}
+			}
+			closedir(dir);
+			std::sort(locations.begin(), locations.end());
+		}
 		return;
 	}
 
