@@ -53,7 +53,7 @@ int Browser_Canvas_CSS_Height(void) { return(0); }
 int Browser_Screen_Width(void) { return(0); }
 int Browser_Screen_Height(void) { return(0); }
 char const * Browser_Canvas_Selector(void) { return(""); }
-void Host_Apply_Cursor(unsigned long const *, int, int, int, int) {}
+void Host_Apply_Cursor(unsigned int const *, int, int, int, int) {}
 void * Host_Native_Window_Handle(void) { return(nullptr); }
 void * Host_Native_Display_Handle(void) { return(nullptr); }
 

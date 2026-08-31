@@ -70,7 +70,7 @@ static ULONG_PTR const LAST_SYSTEM_CURSOR = 32767;
 struct Win32CursorClass
 {
 	std::string Css;
-	std::vector<unsigned long> Pixels;
+	std::vector<unsigned int> Pixels;
 	int Width = 0;
 	int Height = 0;
 	int HotX = 0;
@@ -461,7 +461,7 @@ static std::vector<unsigned char> Store_Deflate(std::vector<unsigned char> const
 /// A page takes a cursor image as a URL, so the pixels have to arrive in a format a
 /// browser decodes. PNG is the one that carries an alpha channel everywhere.
 /// </remarks>
-static std::vector<unsigned char> Encode_PNG(unsigned long const * pixels, int width, int height)
+static std::vector<unsigned char> Encode_PNG(unsigned int const * pixels, int width, int height)
 {
 	std::vector<unsigned char> raw;
 	raw.reserve((std::size_t)height * (1 + (std::size_t)width * 4));
@@ -472,7 +472,7 @@ static std::vector<unsigned char> Encode_PNG(unsigned long const * pixels, int w
 		raw.push_back(0);
 
 		for (int x = 0; x < width; x++) {
-			unsigned long pixel = pixels[(std::size_t)y * width + x];
+			unsigned int pixel = pixels[(std::size_t)y * width + x];
 			raw.push_back((unsigned char)((pixel >> 16) & 0xFF));
 			raw.push_back((unsigned char)((pixel >> 8) & 0xFF));
 			raw.push_back((unsigned char)(pixel & 0xFF));
@@ -525,7 +525,7 @@ static std::string Base64(std::vector<unsigned char> const & data)
 }
 
 
-HCURSOR Win32_Window_Create_Cursor(unsigned long const * pixels, int width, int height, int hotx, int hoty)
+HCURSOR Win32_Window_Create_Cursor(unsigned int const * pixels, int width, int height, int hotx, int hoty)
 {
 	if (pixels == nullptr || width <= 0 || height <= 0) {
 		return(nullptr);

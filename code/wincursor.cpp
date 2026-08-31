@@ -132,8 +132,8 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 		height = shape->Get_Height() * scale;
 	}
 
-	std::vector<unsigned long> pixels((size_t)width * (size_t)height, 0);
-	unsigned long * bits = pixels.data();
+	std::vector<unsigned int> pixels((size_t)width * (size_t)height, 0);
+	unsigned int * bits = pixels.data();
 #else
 
 	BITMAPINFO info;
@@ -154,7 +154,7 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 
 	memset(surface, '\0', width * height * 4);
 
-	unsigned long * bits = (unsigned long *)surface;
+	unsigned int * bits = (unsigned int *)surface;
 #endif
 
 	// The shapes are palette indices and the primary is 565, so the drawer's table is
@@ -170,13 +170,13 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 			}
 
 			unsigned short pixel = table[index];
-			unsigned long red = ((pixel >> 11) & 0x1F) << 3;
-			unsigned long green = ((pixel >> 5) & 0x3F) << 2;
-			unsigned long blue = (pixel & 0x1F) << 3;
-			unsigned long argb = 0xFF000000UL | (red << 16) | (green << 8) | blue;
+			unsigned int red = ((pixel >> 11) & 0x1F) << 3;
+			unsigned int green = ((pixel >> 5) & 0x3F) << 2;
+			unsigned int blue = (pixel & 0x1F) << 3;
+			unsigned int argb = 0xFF000000U | (red << 16) | (green << 8) | blue;
 
 			for (int suby = 0; suby < scale; suby++) {
-				unsigned long * row = bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
+				unsigned int * row = bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
 				for (int subx = 0; subx < scale; subx++) {
 					row[subx] = argb;
 				}

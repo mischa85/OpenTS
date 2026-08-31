@@ -27,7 +27,7 @@
 
 // Builds a cursor from the pixels the game drew, each 0xAARRGGBB and in rows from the top.
 // The result is a handle SetCursor and DestroyCursor accept like any other.
-HCURSOR Win32_Window_Create_Cursor(unsigned long const * pixels, int width, int height, int hotx, int hoty);
+HCURSOR Win32_Window_Create_Cursor(unsigned int const * pixels, int width, int height, int hotx, int hoty);
 
 // The largest cursor a browser will draw. Past it the page shows no pointer at all rather
 // than a clipped one, so a caller scales its image down to fit instead.

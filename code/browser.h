@@ -136,7 +136,7 @@ Mouse * Browser_Create_Mouse(HWND window);
 // are bitmaps handed to the host rather than CSS handed to a page.
 void * Host_Native_Window_Handle(void);
 void * Host_Native_Display_Handle(void);
-void Host_Apply_Cursor(unsigned long const * pixels, int width, int height, int hotx, int hoty);
+void Host_Apply_Cursor(unsigned int const * pixels, int width, int height, int hotx, int hoty);
 #endif
 
 #endif	// __EMSCRIPTEN__

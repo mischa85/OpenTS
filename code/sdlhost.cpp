@@ -644,7 +644,7 @@ Mouse * Browser_Create_Mouse(HWND window)
 }
 
 
-void Host_Apply_Cursor(unsigned long const * pixels, int width, int height, int hotx, int hoty)
+void Host_Apply_Cursor(unsigned int const * pixels, int width, int height, int hotx, int hoty)
 {
 	static SDL_Cursor * applied = nullptr;
 
