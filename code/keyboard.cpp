@@ -55,6 +55,7 @@
 #include "keyboard.h"
 
 #include "_xmouse.h"
+#include "browser.h"
 #include "msgloop.h"
 #include "vidscale.h"
 
@@ -72,7 +73,6 @@
 /// </summary>
 void Stop_Execution (void)
 {
-	//	__asm nop			// Is this line needed?
 }
 
 
@@ -227,6 +227,13 @@ bool WWKeyboardClass::Put_Key_Message(unsigned short vk_key, bool release)
 	**	would be incompatible with the dos version.
 	*/
 	if (!Is_Mouse_Key(vk_key)) {
+#if defined(__EMSCRIPTEN__)
+		/*
+		 * A page reports the modifiers with the event they belong to rather than keeping a
+		 * key state array to be asked after the fact, so the platform layer holds them.
+		 */
+		vk_key |= Browser_Key_Modifiers();
+#else
 		if (((GetKeyState(VK_SHIFT) & 0x8000) != 0) /*||
 			((GetKeyState(VK_CAPITAL) & 0x0008) != 0) ||
 			((GetKeyState(VK_NUMLOCK) & 0x0008) != 0)*/) {
@@ -239,6 +246,7 @@ bool WWKeyboardClass::Put_Key_Message(unsigned short vk_key, bool release)
 		if ((GetKeyState(VK_MENU) & 0x8000) != 0) {
 			vk_key |= WWKEY_ALT_BIT;
 		}
+#endif
 	}
 
 	if (release) {
@@ -310,6 +318,15 @@ char WWKeyboardClass::To_ASCII(unsigned short key)
 		return('\0');
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * There is no keyboard layout to consult here. What a key produces is known only to
+	 * the browser, which reports it with the event, so the platform layer recorded it as
+	 * the key went down and hands it back now.
+	 */
+	return(Browser_Key_To_ASCII(key));
+#else
+
 	/*
 	**	Set the KeyState buffer to reflect the shift bits stored in the key value.
 	*/
@@ -357,6 +374,7 @@ char WWKeyboardClass::To_ASCII(unsigned short key)
 	}
 
 	return(buffer[0]);
+#endif
 }
 
 
@@ -378,11 +396,21 @@ bool WWKeyboardClass::Down(unsigned short key)
 {
 	key &= 0xFF;
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page has no way to be asked what is held down, so the platform layer tracks it
+	 * from the events. Buttons are never swapped: the browser has already applied whatever
+	 * the desktop's own setting is by the time the event names a button.
+	 */
+	return(Browser_Key_Is_Down(key));
+#else
+
 	if ((key == VK_LBUTTON || key == VK_RBUTTON) && GetSystemMetrics(SM_SWAPBUTTON) == TRUE) {
 		key = (key != VK_LBUTTON) ? VK_LBUTTON : VK_RBUTTON;
 	}
 
 	return(GetAsyncKeyState(key) != 0);
+#endif
 }
 
 
@@ -797,3 +825,33 @@ int WWKeyboardClass::Noop(void) const
 {
 	return(0);
 }
+
+
+#if defined(__EMSCRIPTEN__)
+
+/// <summary>
+/// Records a key the page reported.
+/// </summary>
+/// <param name="vk_key">The virtual key the page's own key identifier named.</param>
+/// <param name="release">Was the key released rather than pressed?</param>
+/// <returns>bool; Was there room in the keyboard buffer for it?</returns>
+bool WWKeyboardClass::Post_Key_Event(unsigned short vk_key, bool release)
+{
+	return(Put_Key_Message(vk_key, release));
+}
+
+
+/// <summary>
+/// Records a mouse button the page reported, along with where the frame it happened over.
+/// </summary>
+/// <param name="vk_key">The virtual key naming the button.</param>
+/// <param name="x">The position in the frame, not in the page.</param>
+/// <param name="y">The position in the frame, not in the page.</param>
+/// <param name="release">Was the button released rather than pressed?</param>
+/// <returns>bool; Was there room in the keyboard buffer for the whole event?</returns>
+bool WWKeyboardClass::Post_Mouse_Event(unsigned short vk_key, int x, int y, bool release)
+{
+	return(Put_Mouse_Message(vk_key, x, y, release));
+}
+
+#endif	// __EMSCRIPTEN__

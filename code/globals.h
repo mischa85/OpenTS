@@ -315,6 +315,7 @@ extern bool TacticalActive;
 
 extern CDTimerClass<FrameTimerClass> TournamentTimer;
 
-extern char Debug_ScenarioName[];
+extern char Debug_ScenarioName[128];
+extern char Debug_CampaignName[32];
 
 extern Buffer * UnkBuffer;

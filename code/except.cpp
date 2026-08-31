@@ -51,8 +51,16 @@
 #include "version.h"
 #include "win.h"
 
+#if defined(_WIN32)
+#ifdef _WIN32
 #include <dbghelp.h>
+#else
+#include "win32compat.h"
+#endif
+#ifdef _WIN32
 #include <tlhelp32.h>
+#endif
+#endif
 
 #include <atomic>
 #include <cmath>
@@ -61,8 +69,20 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if defined(_WIN32)
 #include <eh.h>
+#endif
 #include <exception>
+
+/*
+** Everything down to the WebAssembly section at the end of this file reports a crash from
+** the machine state that produced it, which takes structured exception handling to catch
+** the fault, DbgHelp to name the frames, and the minidump format to preserve them. None of
+** the three exists in a browser: a wasm trap unwinds to the host, and the program cannot
+** read its own call stack or file. The WebAssembly build therefore keeps the
+** entry points and loses the report.
+*/
+#if defined(_WIN32)
 
 #define MS_VC_THREAD_NAME_EXCEPTION			0x406D1388
 #define MS_CPP_EXCEPTION					0xE06D7363
@@ -905,7 +925,7 @@ static void Guarded_Registers(CONTEXT const * context)
 		Append_Registers(context);
 		Append_Floating_Point(context);
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
-		Exception_Printf("  <register dump faulted>\r\n");
+		Exception_Printf("  <dump faulted>\r\n");
 	}
 }
 
@@ -1277,7 +1297,7 @@ static INT_PTR CALLBACK Exception_Dialog_Proc(HWND window, UINT message, WPARAM 
 	switch (message) {
 		case WM_INITDIALOG:
 		{
-			// A fixed pitch face is what lets the register columns and the stack dump line up.
+			// A fixed pitch face is what lets the columns and the stack dump line up.
 			// The font is deliberately never freed; the process ends with this dialog.
 			HDC const dc = GetDC(window);
 			int const height = -MulDiv(9, GetDeviceCaps(dc, LOGPIXELSY), 72);
@@ -2019,3 +2039,81 @@ void Exception_Wndproc_Test_Fault(void)
 {
 	*(volatile int *)16 = 1;
 }
+
+#else	// not _WIN32
+
+/*
+** The WebAssembly half. The callers above WinMain are unchanged; what they get is a
+** subsystem that announces its own absence once and then keeps out of the way. Faults
+** reach the host as a wasm trap, and the browser or Node reports them with a JavaScript
+** stack, which is the only stack there is to report.
+*/
+
+
+static void Exception_Report(char const * message)
+{
+	fprintf(stderr, "OpenTS: %s\n", message);
+	fflush(stderr);
+}
+
+
+/// <summary>
+/// Ends the process after an uncaught exception or a failed allocation.
+/// </summary>
+[[noreturn]] static void Terminate_Handler(void)
+{
+	Exception_Report("std::terminate was called. Ending the process rather than continuing.");
+	abort();
+}
+
+
+/// <summary>
+/// Installs what crash reporting this target has. Call this first, before anything else.
+/// </summary>
+void Install_Exception_Handler(void)
+{
+	std::set_terminate(Terminate_Handler);
+
+	Exception_Report("crash reporting is unavailable on the WebAssembly target. A fault ends "
+		"the run and is reported by the host, without a machine state dump.");
+}
+
+
+/// <summary>
+/// Records where the debug log is. Nothing reads it here, because no artifacts are written.
+/// </summary>
+/// <param name="path">The log file's full path.</param>
+void Exception_Register_Log_File(char const * path)
+{
+	(void)path;
+}
+
+
+/// <summary>
+/// Records which test fault the launch options asked for.
+/// </summary>
+/// <param name="mode">The name of the fault to raise.</param>
+void Exception_Set_Test_Mode(char const * mode)
+{
+	if (mode != NULL && mode[0] != '\0') {
+		Exception_Report("-EXCEPTIONTEST exercises the crash reporter, which this target does "
+			"not have. The requested fault will not be raised.");
+	}
+}
+
+
+void Exception_Run_Immediate_Test(void)
+{
+}
+
+
+void Exception_Run_Post_Window_Test(void)
+{
+}
+
+
+void Exception_Wndproc_Test_Fault(void)
+{
+}
+
+#endif	// _WIN32

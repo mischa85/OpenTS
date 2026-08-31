@@ -55,6 +55,7 @@
 #include "animtype.h"
 #include "blight.h"
 #include "brain.h"
+#include "browser.h"
 #include "building.h"
 #include "builtype.h"
 #include "bullet.h"
@@ -90,7 +91,7 @@
 #include "ipxmgr.h"
 #include "isotype.h"
 #include "jumpjet.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "levitate.h"
 #include "light.h"
 #include "lightcon.h"
@@ -110,6 +111,7 @@
 #include "rules.h"
 #include "scenario.h"
 #include "scheme.h"
+#include "screenlayout.h"
 #include "script.h"
 #include "session.h"
 #include "shapeset.h"
@@ -156,10 +158,11 @@
 #include "wwmouse.h"
 #include "zbuffer.h"
 
+#ifdef _WIN32
 #include <shellapi.h>
-
 #include <conio.h>
 #include <io.h>
+#endif
 #include <cfloat>
 #include <string>
 #include <vector>
@@ -439,6 +442,12 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 	// thread that crashed may be the one holding the logger's lock.
 	Exception_Register_Log_File(Debug_Log_File_Name());
 
+	// The two mutexes below exclude a second copy of the game and the AutoPlay shell from
+	// running at the same time as this one. A WebAssembly module has neither: it is the whole
+	// process, and there is no installer to wait for. Both are skipped rather than answered by
+	// a stub, because the loop below waits for the AutoPlay mutex forever if it cannot get one.
+#if !defined(__EMSCRIPTEN__)
+
 	/*
 	 * Create a mutex with a unique name to TibSun in order to determine if
 	 * our app is already running.
@@ -509,17 +518,23 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 		DebugString ("Got AutoPlayMutex okay.\n");
 	}
 
+#endif
+
 	atexit(Prog_End);
 
 	if (!Init_Language_Resources(true)) {
 		return(EXIT_SUCCESS);
 	}
 
+	// The common controls carry the Win32 front end, which a page has no way to load and
+	// the browser build does not reach.
+#if !defined(__EMSCRIPTEN__)
 	if (GetDllVersion("comctl32.dll") < PACKVERSION(4, 70)) {
 		sprintf(buffer, Fetch_String(TXT_DLL_INVALID), "comctl32.dll", 4, 70, "comctl32.dll");
 		MessageBox(NULL, buffer, Fetch_String(TXT_SHORT_TITLE), MB_ICONERROR);
 		exit(EXIT_FAILURE);
 	}
+#endif
 
 	OleInitialize(NULL);
 
@@ -572,14 +587,15 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 		Options.ScreenHeight = ConfigINI.Get_Int("Video", "ScreenHeight", Options.ScreenHeight);
 
 		/*
-		 * These are wanted before the window and the renderer exist, which is well
-		 * before the rest of the settings are read.
+		 * These are wanted before the window, the renderer and the drawing surfaces
+		 * exist, which is well before the rest of the settings are read.
 		 */
 		Options.Fullscreen = ConfigINI.Get_Bool("Video", "Fullscreen", Options.Fullscreen);
 		Options.WindowWidth = ConfigINI.Get_Int("Video", "WindowWidth", Options.WindowWidth);
 		Options.WindowHeight = ConfigINI.Get_Int("Video", "WindowHeight", Options.WindowHeight);
 		Options.VSync = ConfigINI.Get_Bool("Video", "VSync", Options.VSync);
 		Options.Renderer = ConfigINI.Get_Int("Video", "Renderer", Options.Renderer);
+		Options.UIScale = ConfigINI.Get_Int("Video", "UIScale", Options.UIScale);
 
 		/*
 		 * The command line asks for a window regardless of what the settings say.
@@ -633,18 +649,21 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 			exit(EXIT_FAILURE);
 		}
 
+		// A page's canvas is already laid out and already showing, so there is no window
+		// to wait on coming up. Waiting here would instead park the whole startup for as
+		// long as the tab happened to be in the background.
+#if !defined(__EMSCRIPTEN__)
 		do {
 			Windows_Message_Handler();
 		}
 		while (!GameInFocus);
+#endif
 
 		VisibleSurface->Fill(0);
 
-		Rect sidebar_rect(0,0,SidebarClass::SIDE_WIDTH,VisibleRect.Height);
-		Rect tile_rect(0,0,VisibleRect.Width-sidebar_rect.Width, sidebar_rect.Height);
-		Rect composite_rect(0,0,VisibleRect.Width-sidebar_rect.Width, sidebar_rect.Height);
+		ScreenLayout const layout = Compute_Screen_Layout(VisibleRect);
 
-		Allocate_Surfaces(VisibleRect, composite_rect, tile_rect, sidebar_rect, false);
+		Allocate_Surfaces(layout.Hidden, layout.Composite, layout.Tile, layout.Sidebar, false);
 		LogicalSurface = HiddenSurface;
 		Update_Visible_Surface(HiddenSurface);
 
@@ -653,7 +672,13 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 
 		AlphaBuffer = new ABuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y));
 
+#if defined(__EMSCRIPTEN__)
+		// The page reports where the pointer is over the canvas; there is no cursor to ask
+		// after, so the browser's mouse reads that instead of the operating system.
+		MouseCursor = Browser_Create_Mouse(MainWindow);
+#else
 		MouseCursor = new WWMouseClass(MainWindow);
+#endif
 		MouseCursor->Capture_Mouse();
 
 		/*
@@ -661,7 +686,17 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 		**	configuration file says "no", then don't run the intro.
 		*/
 		if (!Special.IsFromInstall) {
-			Special.IsFromInstall = ConfigINI.Get_Bool("Intro", "PlayIntro", true);
+			/*
+			**	The sequence belongs to a first run that follows an installation. A page
+			**	installs nothing and copies nothing, so there is no setup for it to cover;
+			**	it plays there only for someone who asks for it by name.
+			*/
+#if defined(__EMSCRIPTEN__)
+			bool const wanted = false;
+#else
+			bool const wanted = true;
+#endif
+			Special.IsFromInstall = ConfigINI.Get_Bool("Intro", "PlayIntro", wanted);
 		}
 
 		/*
@@ -701,10 +736,14 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 		/*
 		**	Wait until the message handler has dealt with the message
 		*/
+		// Nothing answers that message on a page, so the wait below would never end. The
+		// tab closing is what ends a browser run.
+#if !defined(__EMSCRIPTEN__)
 		do
 		{
 			Windows_Message_Handler();
 		}while (ReadyToQuit == 1);
+#endif
 
 		error_code = EXIT_SUCCESS;
 
@@ -727,6 +766,44 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 
 	return(error_code);
 }
+
+
+#if defined(__EMSCRIPTEN__)
+
+/// <summary>
+/// The WebAssembly entry point.
+/// </summary>
+/// <remarks>
+/// A page owns the thread this runs on, and the engine borrows it. Browser_Init attaches
+/// the engine to the canvas and to the page's event callbacks; from there WinMain runs the
+/// startup sequence it always has, and every wait it reaches hands the thread back through
+/// Windows_Message_Handler rather than keeping it. browser.cpp is where that is arranged
+/// and docs/WASM-PORT.md Part A is what decided it.
+///
+/// This function returns while the engine is still inside it, which is not a contradiction:
+/// under the yield scaffold the return is a promise the page holds, and the runtime is kept
+/// alive for it.
+/// </remarks>
+int main(int argc, char ** argv)
+{
+	static char command_line[1024];
+
+	command_line[0] = '\0';
+	for (int index = 1; index < argc; index++) {
+		if (command_line[0] != '\0') {
+			strncat(command_line, " ", sizeof(command_line) - strlen(command_line) - 1);
+		}
+		strncat(command_line, argv[index], sizeof(command_line) - strlen(command_line) - 1);
+	}
+
+	// A host without a canvas -- Node, for one -- gets no drawing target and no events, but
+	// the startup sequence still runs far enough to be diagnosed there.
+	Browser_Init();
+
+	return(WinMain(NULL, NULL, command_line, SW_SHOWNORMAL));
+}
+
+#endif	// __EMSCRIPTEN__
 
 /***********************************************************************************************
  * Prog_End -- Cleans up library systems in prep for game exit.                                *

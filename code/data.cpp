@@ -37,9 +37,44 @@
 
 #include "data.h"
 
+#ifdef _WIN32
 #include <new.h>
+#else
+#include "crtcompat.h"
+#include "language/languageimage.h"
+#include "peresource.h"
+#endif
+
+#include <vector>
 
 HINSTANCE LanguageResources;
+
+#ifndef _WIN32
+
+/*
+ * The language resources, compiled from the same script the Visual Studio build turns into
+ * Language.dll and carried by the executable rather than loaded, because there is no module
+ * loader on this target. The directory is held for the life of the process because a fetched
+ * resource is a pointer into it, which is the lifetime a locked resource has on Windows.
+ */
+static PEResourceClass LanguageImage;
+
+
+/*
+ * Either half of a resource lookup is a MAKEINTRESOURCE identifier when nothing is set in
+ * the upper half of the pointer, and a name otherwise.
+ */
+static PEResourceNameClass Resource_Name(LPCSTR name)
+{
+	if (((std::uintptr_t)name >> 16) == 0) {
+		return(PEResourceNameClass((unsigned int)(std::uintptr_t)name));
+	}
+
+	return(PEResourceNameClass(name));
+}
+
+#endif
+
 
 /***********************************************************************************************
  * Load_Alloc_Data -- Allocates a buffer and loads the file into it.                           *
@@ -246,6 +281,15 @@ char const * Fetch_String(int id)
 	_buffers[oldest].ID = id;
 	_buffers[oldest].TimeStamp = _time;
 
+#ifndef _WIN32
+	if (!LanguageImage.Is_Loaded()) {
+		Init_Language_Resources(false);
+	}
+
+	if (LanguageImage.Fetch_String((unsigned int)id, stringptr, sizeof(_buffers[oldest].String)) == 0) {
+		return("");
+	}
+#else
 	if (LanguageResources == NULL) {
 		Init_Language_Resources(false);
 	}
@@ -253,8 +297,59 @@ char const * Fetch_String(int id)
 	if (LoadString(LanguageResources, id, stringptr, sizeof(_buffers[oldest].String)) == 0) {
 		return("");
 	}
+#endif
 	stringptr[sizeof(_buffers[oldest].String)-1] = '\0';
 	return(stringptr);
+}
+
+
+/*
+ * How large each resource handed out so far is. A resource reaches its caller as a bare
+ * pointer, and a caller that walks a variable length one -- the dialog template
+ * interpreter -- has to know where it stops. The library stays mapped for the life of the
+ * process and holds a few dozen resources, so a note per resource costs nothing and never
+ * goes stale.
+ */
+struct ResourceExtent
+{
+	void const * Data;
+	unsigned int Size;
+};
+
+static std::vector<ResourceExtent> _extents;
+
+
+static void Record_Resource_Extent(void const * data, unsigned int size)
+{
+	for (unsigned int index = 0; index < _extents.size(); index++) {
+		if (_extents[index].Data == data) {
+			_extents[index].Size = size;
+			return;
+		}
+	}
+
+	ResourceExtent extent;
+	extent.Data = data;
+	extent.Size = size;
+	_extents.push_back(extent);
+}
+
+
+/// <summary>
+/// Reports how large a resource previously fetched is.
+/// </summary>
+/// <param name="data">The pointer Fetch_Resource handed back.</param>
+/// <returns>Returns with the size of the resource in bytes, or zero when the pointer did
+/// not come from Fetch_Resource.</returns>
+unsigned int Fetch_Resource_Size(void const * data)
+{
+	for (unsigned int index = 0; index < _extents.size(); index++) {
+		if (_extents[index].Data == data) {
+			return(_extents[index].Size);
+		}
+	}
+
+	return(0);
 }
 
 
@@ -266,9 +361,22 @@ char const * Fetch_String(int id)
 /// </summary>
 /// <param name="resname">Name or identifier of the resource to fetch.</param>
 /// <param name="restype">Type of the resource to fetch.</param>
+/// <param name="ressize">Filled in with the size of the resource, when supplied. A caller
+/// that walks a variable length resource needs it to know where the resource ends.</param>
 /// <returns>Returns with a pointer to the resource data. Otherwise, NULL is returned.</returns>
-void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
+void const * Fetch_Resource(LPCSTR resname, LPCSTR restype, unsigned int * ressize)
 {
+	if (ressize != NULL) {
+		*ressize = 0;
+	}
+
+#ifndef _WIN32
+	std::size_t size = 0;
+	void const * data = LanguageImage.Fetch_Resource(Resource_Name(restype), Resource_Name(resname), &size);
+	if (data == NULL) {
+		return(NULL);
+	}
+#else
 	/// The superfluous MAKEINTRESOURCE cast is the game's, and the C4302 warning with it.
 	HRSRC handle = FindResource(LanguageResources, MAKEINTRESOURCE(resname), restype);
 	if (handle == NULL) {
@@ -280,7 +388,20 @@ void const * Fetch_Resource(LPCSTR resname, LPCSTR restype)
 		return(NULL);
 	}
 
-	return(LockResource(rhandle));
+	DWORD size = SizeofResource(LanguageResources, handle);
+	void const * data = LockResource(rhandle);
+	if (data == NULL) {
+		return(NULL);
+	}
+#endif
+
+	Record_Resource_Extent(data, (unsigned int)size);
+
+	if (ressize != NULL) {
+		*ressize = (unsigned int)size;
+	}
+
+	return(data);
 }
 
 
@@ -332,15 +453,42 @@ void * Hires_Load(FileClass & file)
 
 
 /// <summary>
-/// Loads the language resource library.
-/// This routine brings in the library that every localized string and resource is fetched
-/// from. It may be called as often as convenient -- the library is only loaded the first
-/// time. If asked to, it will tell the player to reinstall when the library is missing.
+/// Makes the language resources available.
+/// This routine brings in the resources that every localized string and dialog template is
+/// fetched from: Language.dll where a module loader can be asked for it, and the directory
+/// compiled into the executable where one cannot. It may be called as often as convenient --
+/// the work is only done the first time. If asked to, it reports a failure to the player.
 /// </summary>
 /// <param name="show_error">Should the player be told when the library cannot be loaded?</param>
 /// <returns>bool; Are the language resources available?</returns>
 bool Init_Language_Resources(bool show_error)
 {
+#ifndef _WIN32
+
+	if (!LanguageImage.Is_Loaded()) {
+
+		/*
+		 * Nothing is read here. A global constructor can reach Fetch_String, so this runs
+		 * before the mixfile and search path objects are constructed and could not touch
+		 * them anyway.
+		 */
+		if (!LanguageImage.Load_Directory(LanguageResourceImage, LanguageResourceImageSize)) {
+
+			if (show_error == true) {
+				MessageBox(NULL,
+					"The language resources built into this program cannot be read.",
+					"Tiberian Sun",
+					MB_ICONERROR);
+			}
+
+			return(false);
+		}
+	}
+
+	return(true);
+
+#else
+
 	if (LanguageResources == NULL) {
 
 		LanguageResources = LoadLibrary("Language.dll");
@@ -362,6 +510,8 @@ bool Init_Language_Resources(bool show_error)
 	}
 
 	return(true);
+
+#endif
 }
 
 
@@ -376,6 +526,26 @@ bool Init_Language_Resources(bool show_error)
 /// <remarks>Be sure that the destination buffer is big enough to hold the composed text.</remarks>
 void Get_Language_Version(char *version_string)
 {
+#ifndef _WIN32
+
+	char name[128];
+	char version[128];
+
+	if (version_string != NULL) {
+		version_string[0] = '\0';
+
+		if (LanguageImage.Fetch_Version_String("InternalName", name, sizeof(name))) {
+
+			sprintf(version_string, "Language: %s ", name);
+
+			if (LanguageImage.Fetch_Version_String("FileVersion", version, sizeof(version))) {
+				strcat(version_string, version);
+			}
+		}
+	}
+
+#else
+
 	INT dwSize;
 	LPVOID pFileInfo;
 	UINT puInfoLen;
@@ -430,4 +600,6 @@ void Get_Language_Version(char *version_string)
 			}
 		}
 	}
+
+#endif
 }
