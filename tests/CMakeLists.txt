@@ -18,6 +18,7 @@ add_subdirectory(unvqdelta)
 add_subdirectory(colorops)
 add_subdirectory(voxeldraw)
 add_subdirectory(lcwcomp)
+add_subdirectory(lzocomp)
 
 # The CPU detection reads CPUID and the time stamp counter, so it only exists for x86.
 if(OPENTS_TARGET_IS_X86)
