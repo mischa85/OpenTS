@@ -17,12 +17,12 @@
 
 #include "audiobackend.h"
 
-#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#ifndef _WIN32
 
-// No native audio output exists yet; the servicing hooks the engine calls stay callable
-// and silence stays silent. docs/PORTING.md stage 5 tracks the native backend.
-#include "audiobackend.h"
+#if defined(OPENTS_NO_AUDIO_BACKEND)
 
+// A build without OpenAL keeps the servicing hooks the engine calls callable, and the
+// missing sound object leaves the engine running without sound.
 void Audio_Backend_Service(void) {}
 
 
@@ -31,7 +31,7 @@ LPDIRECTSOUND Audio_Create_Sound_Object(void)
 	return(nullptr);
 }
 
-#elif defined(__EMSCRIPTEN__)
+#else
 
 #include "dbgprint.h"
 #include "dsaudio.h"
@@ -39,19 +39,46 @@ LPDIRECTSOUND Audio_Create_Sound_Object(void)
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
+#if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
+#else
+#include <chrono>
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 
 
+/// <summary>
+/// The milliseconds a silent stream's cursor is advanced against.
+/// </summary>
+static double Audio_Clock_Ms(void)
+{
+#if defined(__EMSCRIPTEN__)
+	return(emscripten_get_now());
+#else
+	return(std::chrono::duration<double, std::milli>(
+		std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
+}
+
+
 /*
 ** Reading and resuming the page's audio clock. OpenAL has no notion of an output that a
 ** page refuses to start, so both go through the emitted library's own context object.
 ** These sit at file scope because EM_JS emits a metadata symbol whose name the compiler
-** has to find intact.
+** has to find intact. A native device needs no reader gesture, so there its state reads
+** as running and the resume and arming calls have nothing to do.
 */
+#if !defined(__EMSCRIPTEN__)
+
+static int Audio_Web_Context_State(void) { return(1); }
+static void Audio_Web_Context_Resume(void) {}
+static void Audio_Web_Arm_Gesture_Resume(void) {}
+
+#else
+
 EM_JS(int, Audio_Web_Context_State, (void), {
 	if (typeof AL === 'undefined' || !AL.currentCtx || !AL.currentCtx.audioCtx) {
 		return 0;
@@ -91,6 +118,8 @@ EM_JS(void, Audio_Web_Arm_Gesture_Resume, (void), {
 		document.addEventListener(names[index], resume, true);
 	}
 });
+
+#endif	// __EMSCRIPTEN__
 
 
 namespace {
@@ -244,7 +273,7 @@ void Flush_Queue(AudioBackendStream * stream, int offset)
 	stream->SubmitOffset = offset;
 	stream->PlayedBytes = 0;
 	stream->SubmittedBytes = 0;
-	stream->SilentClock = emscripten_get_now();
+	stream->SilentClock = Audio_Clock_Ms();
 }
 
 
@@ -254,7 +283,7 @@ void Flush_Queue(AudioBackendStream * stream, int offset)
 */
 void Service_Silent(AudioBackendStream * stream)
 {
-	double now = emscripten_get_now();
+	double now = Audio_Clock_Ms();
 	double elapsed = now - stream->SilentClock;
 
 	if (elapsed <= 0.0) {
@@ -390,7 +419,7 @@ void Audio_Backend_Shutdown(void)
 	*/
 	for (AudioBackendStream * stream = StreamList; stream != nullptr; stream = stream->Next) {
 		stream->HasSource = false;
-		stream->SilentClock = emscripten_get_now();
+		stream->SilentClock = Audio_Clock_Ms();
 	}
 
 	if (Context != nullptr) {
@@ -437,7 +466,7 @@ void Audio_Backend_Service(void)
 		bool running = (Audio_Web_Context_State() == 1);
 
 		if (!running) {
-			double now = emscripten_get_now();
+			double now = Audio_Clock_Ms();
 			if (now - LastResumeAttempt > 250.0) {
 				LastResumeAttempt = now;
 				Audio_Web_Context_Resume();
@@ -595,7 +624,7 @@ void Audio_Backend_Start(AudioBackendStream * stream)
 	}
 
 	stream->Playing = true;
-	stream->SilentClock = emscripten_get_now();
+	stream->SilentClock = Audio_Clock_Ms();
 
 	Audio_Backend_Resume();
 }
@@ -1232,5 +1261,7 @@ LPDIRECTSOUND Audio_Create_Sound_Object(void)
 
 	return(new WebSoundObjectClass);
 }
+
+#endif	// OPENTS_NO_AUDIO_BACKEND
 
 #endif

@@ -154,6 +154,20 @@ if(NOT WIN32 AND NOT EMSCRIPTEN)
     )
     add_dependencies(OpenTSEngine OpenTSBuildStamp)
 
+    # The audio backend speaks OpenAL on every non-Windows target; openal-soft is the
+    # provider outside a browser. Homebrew installs it keg-only, so its prefix is named.
+    if(APPLE)
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/openal-soft" "/usr/local/opt/openal-soft")
+    endif()
+    find_package(OpenAL CONFIG QUIET)
+    if(OpenAL_FOUND)
+        get_target_property(OPENTS_OPENAL_INCLUDE OpenAL::OpenAL INTERFACE_INCLUDE_DIRECTORIES)
+        target_include_directories(OpenTSEngine PRIVATE ${OPENTS_OPENAL_INCLUDE})
+    else()
+        message(STATUS "OpenAL not found; the native build carries no audio output")
+        target_compile_definitions(OpenTSEngine PRIVATE OPENTS_NO_AUDIO_BACKEND)
+    endif()
+
     set(BGFX_ROOT "${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bgfx")
     set_source_files_properties("${CMAKE_SOURCE_DIR}/code/bgfxbackend.cpp" PROPERTIES
         INCLUDE_DIRECTORIES
@@ -231,6 +245,9 @@ if(NOT WIN32 AND NOT EMSCRIPTEN)
             bgfx bx bimg
             Threads::Threads
         )
+        if(OpenAL_FOUND)
+            target_link_libraries(OpenTSNative PRIVATE OpenAL::OpenAL)
+        endif()
 
         set_target_properties(OpenTSNative PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
