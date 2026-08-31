@@ -204,14 +204,18 @@ would try to suspend outside the promising boundary and trap
   of the language library, so what is missing is the template-to-window step.
   The consequences per caller are recorded in
   [Building OpenTS](BUILDING.md#what-has-been-run).
-- **Storage that outlives the tab.** The container half is no longer missing:
+- **Saving and loading through the engine.** Neither half is missing any more.
   `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
   `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and
   `tests/save` holds its writer and its reader to the layout Microsoft publishes
   as MS-CFB. [C.3](WASM-PORT.md#c3-com-and-what-it-means-for-the-save-format)
-  sizes the decision behind it. What a page still has nowhere to put is the
-  result: a save is written into the in-memory filesystem, which the tab
-  discards when it closes (`code/win32disk.cpp:28`).
+  sizes the decision behind it. A save also has somewhere to live: `/save` is
+  mounted from IndexedDB and read back before the engine starts
+  (`wasm/game.html:357`), and it stands in front of the game directory for any
+  bare name, on an open (`code/win32compat.cpp:421`) and on a scan
+  (`code/win32compat.cpp:1928`), with writes flushed by `FS.syncfs`
+  (`code/win32compat.cpp:452`). What is missing is evidence: no save has been
+  written or loaded through the engine in a page.
 - **The mouse cursor.** `code/wincursor.cpp:180` routes the Emscripten build to
   `Win32_Window_Create_Cursor`, which encodes the frame as a PNG data URL for
   `canvas.style.cursor` (`code/win32window.cpp:541`). The pointer a player sees

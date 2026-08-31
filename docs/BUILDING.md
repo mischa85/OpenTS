@@ -387,11 +387,15 @@ Not established, and not to be read into the above:
 - **Saving and loading.** The container is implemented and covered:
   `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
   `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and the
-  `save` harness passes here. Nothing past the container is established. No save
-  has been written by `Save_Game` or read back by `Load_Game`
-  (`code/saveload.cpp`) in a browser, the dialog that reaches them is dead for
-  the reason the next entry gives, and a save lands on the in-memory filesystem
-  the tab discards (`code/win32disk.cpp:28`).
+  `save` harness passes here. Somewhere to keep one is implemented too: the page
+  mounts `/save` from IndexedDB and reads it back before the engine starts
+  (`wasm/game.html:357`), a bare name resolves into that directory ahead of the
+  game directory (`code/win32compat.cpp:421`), a wildcard scan folds it into the
+  results (`code/win32compat.cpp:1928`), and a write to it is flushed with
+  `FS.syncfs` (`code/win32compat.cpp:452`). What is not established is any of it
+  end to end: no save has been written by `Save_Game` or read back by
+  `Load_Game` (`code/saveload.cpp`) in a browser, and the dialog that reaches
+  them is dead for the reason the next entry gives.
 - **The owner-draw Win32 front end.** `code/win32user.cpp` is a real in-process
   window manager, but the dialog-template entry points are still stubs
   (`code/win32compat.cpp:2613`–`:2615`), so `OwnerDraw::Begin_Dialog` returns
