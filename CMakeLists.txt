@@ -87,10 +87,12 @@ elseif(NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|
     set(OPENTS_TARGET_IS_X86 TRUE)
 endif()
 
-# The Win32 substitute every non-Windows target builds on: the compatibility layer, the
-# compound-file writer, and the disc image reader, with the native POSIX helpers.
+# The Win32 substitute every non-Windows target builds on: the file layer, the compatibility
+# layer, the compound-file writer, and the disc image reader, with the native POSIX helpers.
 if(NOT WIN32)
     add_library(OpenTSPosixCompat STATIC
+        "${CMAKE_SOURCE_DIR}/code/filesystem.cpp"
+        "${CMAKE_SOURCE_DIR}/code/hostfile.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32stub.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
