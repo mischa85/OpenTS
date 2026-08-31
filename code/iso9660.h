@@ -56,6 +56,64 @@ class ISOBlockSourceClass
 
 
 /*
+ * A scope in which a read of an image may answer that the bytes are not here yet instead of
+ * going and getting them.
+ *
+ * Every read below this is synchronous, and on a page that means the engine stops until a
+ * server answers. For a map or a cameo that is the right trade, because the game cannot go
+ * on without them. For music it is the wrong one: a score the game has to wait for costs a
+ * frame, and a score it simply does not play yet costs nothing at all.
+ *
+ * A read that declines delivers nothing rather than part of what was asked for, so the
+ * caller reads zero bytes and the file position does not move; asking again once the bytes
+ * have landed reads the same run over. Declined is not short, and Declined() is how the two
+ * are told apart -- a caller that reads zero and was not declined has reached the end of the
+ * file, exactly as before.
+ *
+ * The scope is meant to be entered around one read of a file that is already open and left
+ * straight afterwards. Nothing a name is looked up through is inside one, so a file that is
+ * missing still reads as missing. Constructing one with defer false suspends any scope
+ * around it, which is how a caller that must not decline says so.
+ *
+ * A source with the bytes at hand never declines, so a local image and a host filesystem
+ * behave exactly as they did.
+ */
+class ISODeferredReadClass
+{
+	public:
+		explicit ISODeferredReadClass(bool defer = true);
+		~ISODeferredReadClass(void);
+
+		ISODeferredReadClass(ISODeferredReadClass const &) = delete;
+		ISODeferredReadClass & operator = (ISODeferredReadClass const &) = delete;
+
+		/// <summary>Did a read inside this scope decline for want of bytes not yet here?</summary>
+		bool Declined(void) const {return(IsDeclined);}
+
+		/// <summary>May a read decline rather than fetch, on this thread, right now?</summary>
+		static bool Deferring(void);
+
+		/// <summary>Has a read inside the innermost scope declined?</summary>
+		/// <returns>bool; false when there is no scope, which is what every other target
+		/// and every read outside one answers.</returns>
+		/// <remarks>For the layers between the block source and the caller, which see a read
+		/// of nothing and have to know whether to try again or to give up on it.</remarks>
+		static bool Declined_Now(void);
+
+		/// <summary>Records that a read has declined, which the innermost scope reports.</summary>
+		static void Decline(void);
+
+	private:
+
+		bool IsDeferring;
+		bool IsDeclined;
+		ISODeferredReadClass * Outer;
+
+		static thread_local ISODeferredReadClass * Innermost;
+};
+
+
+/*
  * Serves an image out of a local file.
  */
 class ISOLocalFileSourceClass : public ISOBlockSourceClass

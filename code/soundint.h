@@ -236,6 +236,19 @@ struct SampleTrackerType {
 	void	*FileBuffer;    // Temporary streaming buffer (allowed to be freed).
 
 	/*
+	** May a refill of this stream give up rather than wait for the disc? A score is worth
+	** a gap far more than it is worth a stopped frame, so music sets this and speech does
+	** not. Nothing declines on a disc whose bytes are at hand, so it costs nothing there.
+	*/
+	bool IsDeferrable;
+
+	// And when the stream first found the bytes missing, so that one which never gets them
+	// stops waiting for them instead of holding this slot for the run, and when it last
+	// asked, so that it does not ask again faster than an answer could arrive.
+	unsigned int DeferredAt;
+	unsigned int DeferredTry;
+
+	/*
 	**	The following structure is used if the sample if compressed using
 	**	the sos 16 bit compression Codec.
 	*/

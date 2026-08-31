@@ -1911,6 +1911,13 @@ static unsigned int _HintDone = 0;
 **	or a few long ones and the worst says whether any of them was long enough to be seen,
 **	which is the difference between a run that is slow and a run that stops.
 */
+/*
+**	And the reads that took none of it. A reader that may go without says so rather than
+**	waiting, so each of these is a stall that did not happen; the blocks are asked for at
+**	the same moment and the read comes back for them once they have landed.
+*/
+static unsigned int _Deferred = 0;
+
 static unsigned int _Stalls = 0;
 static double _StallMs = 0.0;
 static double _StallWorst = 0.0;
@@ -2094,6 +2101,14 @@ EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Ahead_Waste(void)
 ** landed before anything wanted it costs the engine nothing and is counted as nothing.
 */
 EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Stalls(void) {return(_Stalls);}
+
+/*
+** And how many reads declined instead of stalling. A reader that can carry on without the
+** bytes is answered rather than made to wait, so this is the count of stalls that were
+** available to be taken and were not.
+*/
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Deferred(void) {return(_Deferred);}
+
 EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Ms(void) {return(_StallMs);}
 EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Worst(void) {return(_StallWorst);}
 EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Stall_Worst_Offset(void) {return((double)_StallWorstAt);}
@@ -2340,6 +2355,82 @@ void ISOHttpSourceClass::Look_Ahead(void)
 }
 
 
+/// <summary>Asks for the blocks a read wants, without waiting for any of them.</summary>
+/// <param name="offset">Where the span the read could not be served begins.</param>
+/// <param name="length">How long it is.</param>
+/// <remarks>The window reaches in front of the cursor and never asks for the block the
+/// reading is standing on, because an ordinary read fetches that one itself on its way
+/// through. A read that declines fetches nothing, so unless the block it wanted is asked
+/// for here nothing would ever ask for it and the reader would decline for ever. A block
+/// already held or already on its way is left alone.</remarks>
+void ISOHttpSourceClass::Ahead_Want(std::uint64_t offset, unsigned int length)
+{
+#if defined(OPENTS_WASM_JSPI)
+	if (Url.empty() || Length == 0 || length == 0) return;
+	if (ISO_Store_Under_Main() == 0) return;
+
+	ISO_Http_Ahead_Ready((unsigned int)BLOCK_SIZE);
+
+	std::uint64_t const first = offset / (std::uint64_t)BLOCK_SIZE;
+	std::uint64_t const last = (offset + length - 1) / (std::uint64_t)BLOCK_SIZE;
+
+	std::uint64_t const at = first * (std::uint64_t)BLOCK_SIZE;
+	std::uint64_t bytes = (last - first + 1) * (std::uint64_t)BLOCK_SIZE;
+
+	if (at + bytes > Length) bytes = Length - at;
+	if (bytes == 0) return;
+
+	if (ISO_Http_Ahead_State(Url.c_str(), (double)at, (unsigned int)bytes) != 0) return;
+
+	double const asked = ISO_Http_Ahead_Start(Url.c_str(), (double)at, (double)bytes,
+		(int)Link.Flights());
+
+	if (asked > 0.0) {
+		Account_For_Transfer(Meter, at, (unsigned int)asked);
+		_AheadRequests++;
+		_AheadBytes += (std::uint64_t)asked;
+	}
+#else
+	(void)offset;
+	(void)length;
+#endif
+}
+
+
+/// <summary>Is any of what a read wants already on its way?</summary>
+/// <param name="offset">Where the read begins.</param>
+/// <param name="length">How long it is.</param>
+/// <returns>bool; Is a request outstanding that covers part of it?</returns>
+/// <remarks>A read that may decline and whose bytes are already coming has nothing to do
+/// but come back later, and doing anything at all would be worse than doing nothing: it
+/// asks again for what is already in flight, and it makes the image follow a run that is
+/// not being read, which takes the window off the reading that is.</remarks>
+bool ISOHttpSourceClass::Ahead_Pending(std::uint64_t offset, unsigned int length)
+{
+#if defined(OPENTS_WASM_JSPI)
+	if (Url.empty() || Length == 0 || length == 0) return(false);
+
+	std::uint64_t const first = offset / (std::uint64_t)BLOCK_SIZE;
+	std::uint64_t const last = (offset + length - 1) / (std::uint64_t)BLOCK_SIZE;
+
+	for (std::uint64_t index = first; index <= last; index++) {
+		std::uint64_t const at = index * (std::uint64_t)BLOCK_SIZE;
+		std::uint64_t span = (std::uint64_t)BLOCK_SIZE;
+
+		if (at + span > Length) span = Length - at;
+
+		if (ISO_Http_Ahead_State(Url.c_str(), (double)at, (unsigned int)span) == 1) return(true);
+	}
+
+	return(false);
+#else
+	(void)offset;
+	(void)length;
+	return(false);
+#endif
+}
+
+
 /// <summary>Serves a span the look-ahead already asked for.</summary>
 /// <returns>bool; Was the whole span delivered without a request of its own?</returns>
 /// <remarks>A span whose bytes are already here costs a copy and no suspension at all,
@@ -2367,6 +2458,12 @@ bool ISOHttpSourceClass::Ahead_Serve(std::uint64_t offset, void * buffer, unsign
 	}
 
 	if (state != 1 || ISO_Store_Under_Main() == 0) return(false);
+
+	/*
+	**	The bytes are on their way but are not here. A read that may decline says so and
+	**	comes back for them later; only a read that must have them waits.
+	*/
+	if (ISODeferredReadClass::Deferring()) return(false);
 
 	double const stalled = emscripten_get_now();
 
@@ -2925,6 +3022,21 @@ bool ISOHttpSourceClass::Fetch_Run(std::uint64_t offset, void * buffer, unsigned
 	if (Store_Serve(offset, buffer, length, part)) return(true);
 
 	/*
+	**	Everything that could have answered without a request has been asked. What is left
+	**	is a round trip, and a read that may decline takes none: the blocks it wanted are
+	**	put in flight and the window is opened behind them, and the read comes back empty
+	**	so that whatever asked for it can go on and try again once they have landed.
+	*/
+#if defined(OPENTS_WASM_JSPI)
+	if (ISODeferredReadClass::Deferring()) {
+		Ahead_Want(offset, length);
+		_Deferred++;
+		ISODeferredReadClass::Decline();
+		return(false);
+	}
+#endif
+
+	/*
 	**	The window is opened before this read is paid for rather than after it. The request
 	**	it starts then runs alongside the one this read is about to wait on instead of behind
 	**	it, which is what a run read faster than the network answers needs: a movie opened in
@@ -2979,6 +3091,21 @@ bool ISOHttpSourceClass::Read_At(std::uint64_t offset, void * buffer, unsigned i
 	if (Length == 0 || offset > Length || (std::uint64_t)length > Length - offset) return(false);
 
 	ReadType const read = {offset, length};
+
+	/*
+	**	A read that may decline and whose bytes are already coming declines before anything
+	**	else happens. A reader that carries on without them asks again as often as it is
+	**	called, and every one of those asks would otherwise be followed as a run: the image
+	**	would spend the whole wait aiming its window at bytes it has already asked for, and
+	**	taking it off the reading that is actually going on.
+	*/
+#if defined(OPENTS_WASM_JSPI)
+	if (ISODeferredReadClass::Deferring() && Ahead_Pending(offset, length)) {
+		_Deferred++;
+		ISODeferredReadClass::Decline();
+		return(false);
+	}
+#endif
 
 	/*
 	**	A batch left over from a burst of loading is written once the loading stops, so that

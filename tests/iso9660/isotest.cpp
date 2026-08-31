@@ -375,6 +375,45 @@ class MemorySourceClass : public ISOBlockSourceClass
 };
 
 
+/*
+**	A block source with nothing at hand. It answers a read that has to be answered and
+**	declines one that may be declined, which is what a source fetching over a network does
+**	with a block it does not already hold.
+*/
+class DeferringSourceClass : public ISOBlockSourceClass
+{
+	public:
+		DeferringSourceClass(std::vector<unsigned char> const & data) :
+			Fetches(0), From(0), Data(data) {}
+
+		virtual bool Read_At(std::uint64_t offset, void * buffer, unsigned int length) override
+		{
+			if (offset > Data.size() || Data.size() - offset < length) return(false);
+
+			if (ISODeferredReadClass::Deferring() && offset >= From) {
+				ISODeferredReadClass::Decline();
+				return(false);
+			}
+
+			std::memcpy(buffer, Data.data() + offset, length);
+			Fetches++;
+			return(true);
+		}
+
+		virtual std::uint64_t Total_Size(void) override {return(Data.size());}
+
+		int Fetches;
+
+		// Everything at or past here declines, so a file spread over several extents can be
+		// made to decline part way through one.
+		std::uint64_t From;
+
+	private:
+
+		std::vector<unsigned char> Data;
+};
+
+
 bool Read_Whole(ISOVolumeClass const & volume, ISOEntryClass const & entry, std::vector<unsigned char> & out)
 {
 	out.assign(entry.Size, 0);
@@ -646,6 +685,94 @@ int main(int argc, char ** argv)
 			memory.Find("INSTALL/TIBSUN.MIX", entry);
 		}
 		Check(watch->Reads == before, "the sector cache served a repeated lookup without a fetch");
+	}
+
+	/*
+	**	Reading what is not here yet. A read that may go without says so and delivers
+	**	nothing, and the caller can tell that from the end of the file; a read that may not
+	**	is answered exactly as it always was.
+	*/
+	{
+		ISOVolumeClass volume;
+		std::unique_ptr<DeferringSourceClass> owned(new DeferringSourceClass(first));
+		DeferringSourceClass * const source = owned.get();
+
+		Check(volume.Attach(std::move(owned)), "mounted an image through a source that may decline");
+		Check(!ISODeferredReadClass::Deferring(), "nothing declines outside a scope");
+
+		Check(volume.Find("INSTALL/TIBSUN.MIX", entry), "found a file with no scope in the way");
+
+		std::vector<unsigned char> actual(3000, 0);
+		Check(volume.Read(entry, 0, actual.data(), 3000) == 3000, "read the file with no scope in the way");
+		Check(actual == Pattern(4, 3000), "the unscoped read came back byte for byte");
+
+		int const fetched = source->Fetches;
+		std::vector<unsigned char> spoiled(3000, 0xCD);
+
+		{
+			ISODeferredReadClass defer;
+
+			Check(ISODeferredReadClass::Deferring(), "a scope lets a read decline");
+			Check(volume.Read(entry, 0, spoiled.data(), 3000) == 0, "a declined read delivered nothing");
+			Check(defer.Declined(), "the scope reported that the read declined");
+		}
+
+		Check(!ISODeferredReadClass::Deferring(), "the scope let go when it ended");
+		Check(source->Fetches == fetched, "a declined read fetched nothing");
+		Check(spoiled[0] == 0xCD, "a declined read left the buffer alone");
+
+		/*
+		**	The end of the file is also a read of nothing, and must not be mistaken for one
+		**	that declined -- that difference is the whole of what tells a caller to come
+		**	back later rather than to stop.
+		*/
+		{
+			ISODeferredReadClass defer;
+
+			Check(volume.Read(entry, 3000, spoiled.data(), 16) == 0, "reading past the end delivered nothing");
+			Check(!defer.Declined(), "reading past the end did not report a decline");
+		}
+
+		/*
+		**	A file split across extents declines whole or not at all. Delivering the extents
+		**	that came before the one that declined would move the caller's position past
+		**	bytes it never saw, and the run could not be read again.
+		*/
+		{
+			ISOEntryClass split;
+
+			Check(volume.Find("INSTALL/SPLIT.BIN", split), "found the file spread over two extents");
+			Check(split.Extents.size() > 1, "the split file really does have several extents");
+
+			std::vector<unsigned char> piece(3000, 0);
+
+			source->From = (std::uint64_t)split.Extents[1].Start * ISO_SECTOR_SIZE;
+
+			ISODeferredReadClass defer;
+
+			Check(volume.Read(split, 0, piece.data(), 3000) == 0,
+				"a read declining in a later extent delivered nothing");
+			Check(defer.Declined(), "the part-way decline was reported as one");
+
+			source->From = 0;
+		}
+
+		/*
+		**	A caller that must not be declined says so, and any scope around it stands
+		**	aside for as long as it says.
+		*/
+		{
+			ISODeferredReadClass defer;
+			{
+				ISODeferredReadClass insist(false);
+
+				Check(!ISODeferredReadClass::Deferring(), "an inner scope suspended the deferral");
+				Check(volume.Read(entry, 0, actual.data(), 3000) == 3000, "the insisting read was answered");
+			}
+
+			Check(ISODeferredReadClass::Deferring(), "the deferral came back when the inner scope ended");
+			Check(!defer.Declined(), "the insisting read reported no decline");
+		}
 	}
 
 #ifdef _WIN32

@@ -534,7 +534,17 @@ int ISOVolumeClass::Read(ISOEntryClass const & entry, std::uint32_t offset, void
 		unsigned int chunk = length < available ? length : available;
 
 		std::uint64_t at = (std::uint64_t)extent.Start * ISO_SECTOR_SIZE + skip;
-		if (!Source->Read_At(at, (char *)buffer + total, chunk)) break;
+
+		if (!Source->Read_At(at, (char *)buffer + total, chunk)) {
+
+			/*
+			**	A read that declined delivers nothing at all, not the extents that came
+			**	before it. The caller's position then does not move and asking again reads
+			**	the same run over, which is what lets it come back for it.
+			*/
+			if (ISODeferredReadClass::Declined_Now()) return(0);
+			break;
+		}
 
 		total += chunk;
 		length -= chunk;
@@ -580,6 +590,46 @@ void ISOVolumeClass::Hint(ISOEntryClass const & entry, ISOHintType kind, std::ui
 		length -= chunk;
 		skip = 0;
 	}
+}
+
+
+/*
+**	The scope a read is inside, per thread. A block source consults it as it decides how to
+**	answer, and a caller that entered one reads back whether it declined.
+*/
+thread_local ISODeferredReadClass * ISODeferredReadClass::Innermost = nullptr;
+
+
+ISODeferredReadClass::ISODeferredReadClass(bool defer) :
+	IsDeferring(defer),
+	IsDeclined(false),
+	Outer(Innermost)
+{
+	Innermost = this;
+}
+
+
+ISODeferredReadClass::~ISODeferredReadClass(void)
+{
+	Innermost = Outer;
+}
+
+
+bool ISODeferredReadClass::Deferring(void)
+{
+	return(Innermost != nullptr && Innermost->IsDeferring);
+}
+
+
+bool ISODeferredReadClass::Declined_Now(void)
+{
+	return(Innermost != nullptr && Innermost->IsDeclined);
+}
+
+
+void ISODeferredReadClass::Decline(void)
+{
+	if (Innermost != nullptr) Innermost->IsDeclined = true;
 }
 
 

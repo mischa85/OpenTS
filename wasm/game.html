@@ -262,6 +262,12 @@
 		window.OpenTS_State.isoRequests = requests;
 		window.OpenTS_State.isoUniqueBlocks = blocks;
 
+		// Reads that were told the bytes are not here yet and carried on without them. Each
+		// is a stall that was there to be taken and was not, so the two are read together.
+		if (Module._OpenTS_Iso_Deferred) {
+			window.OpenTS_State.isoDeferred = Module._OpenTS_Iso_Deferred();
+		}
+
 		// The persistent store, when the build has one. Hits are blocks the browser already
 		// held, so a warm run reads most of its data without going to the network at all.
 		var store = "";

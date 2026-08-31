@@ -55,6 +55,21 @@
 */
 #define STREAM_CUSHION_BLOCKS   4
 
+/*
+**	How long a stream that may give the disc up goes on giving it up before it waits for it
+**	after all, in milliseconds. It is the outer bound on being told the bytes are coming and
+**	never getting them, and is far longer than any read that is genuinely on its way takes.
+*/
+#define DEFER_LIMIT             8000u
+
+/*
+**	And how long it leaves the disc alone between two such attempts, in milliseconds. The
+**	refill runs many times a frame, an answer takes a round trip, and the buffers hold
+**	several seconds, so asking again this often is often enough and asking every pass would
+**	spend the whole wait in the file layer.
+*/
+#define DEFER_RETRY             100u
+
 
 /*
 **	This is the maximum size that a sonarc block can be.  All sonarc blocks
@@ -877,6 +892,9 @@ int DSAudio::Get_Free_Sample_Handle(int priority)
 	}
 
 	st->IsScore = FALSE;
+	st->IsDeferrable = false;
+	st->DeferredAt = 0;
+	st->DeferredTry = 0;
 
 	UNLOCK_SECONDARY_MUTEX(id);
 
@@ -1759,16 +1777,64 @@ void DSAudio::File_Stream_Preload(int handle)
 	**	Loop through the blocks and load up the number we need.
 	*/
 	int index = st->FilePending;
+	bool deferred = false;
+
+	unsigned int const now = timeGetTime();
+	bool patient = st->IsDeferrable;
+
+	if (patient && st->DeferredAt != 0) {
+
+		/*
+		**	Not asked again at once. This runs many times a frame and the answer cannot
+		**	change that fast, so asking every time would spend the whole wait walking the
+		**	file layer for an answer that is already known.
+		*/
+		if ((unsigned int)(now - st->DeferredTry) < DEFER_RETRY) {
+			UNLOCK_STREAMING_SECONDARY_MUTEX(handle);
+			return;
+		}
+
+		/*
+		**	And waited for after all once it has been waited for a long time. Nothing else
+		**	would ever start a score whose bytes never arrive, and the slot it holds would
+		**	be held for the rest of the run; one ordinary read either gets them or fails
+		**	the way it always did.
+		*/
+		if ((unsigned int)(now - st->DeferredAt) >= DEFER_LIMIT) patient = false;
+	}
+
 	if (st->FileHandle != NULL) {
 		for (index = st->FilePending; index < num; index++) {
-			int s = st->FileHandle->Read(Audio_Add_Long_To_Pointer(buffer, (int)index * (int)StreamBufferSize), StreamBufferSize);
+			int s;
+
+			{
+				ISODeferredReadClass defer(patient);
+
+				s = st->FileHandle->Read(Audio_Add_Long_To_Pointer(buffer, (int)index * (int)StreamBufferSize), StreamBufferSize);
+				deferred = defer.Declined();
+			}
+
 			if (s > 0) {
 		 		st->FilePendingSize = s;
 	  			st->FilePending++;
 			}
-			if (s < StreamBufferSize) break;
+			if (deferred || s < StreamBufferSize) break;
 		}
 	}
+
+	/*
+	**	The bytes are on their way rather than absent, so nothing is started and nothing is
+	**	given up. The loading stays as it is and the next pass tries again, which the theme
+	**	engine reads as a score that is still playing and leaves alone.
+	*/
+	if (deferred) {
+		if (st->DeferredAt == 0) st->DeferredAt = (now != 0) ? now : 1;
+		st->DeferredTry = now;
+		UNLOCK_STREAMING_SECONDARY_MUTEX(handle);
+		return;
+	}
+
+	st->DeferredAt = 0;
 
 //	Sound_Timer_Callback(0,0,0,0,0);	//Shouldnt block as we are calling it from the same thread
 
@@ -1875,7 +1941,8 @@ void DSAudio::File_Stream_Preload(int handle)
  * HISTORY:                                                                                    *
  *=============================================================================================*/
 
-int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start)
+int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start,
+	bool deferrable)
 {
 	SampleTrackerType       *st;
 	CCFileClass *fh;
@@ -1935,6 +2002,9 @@ int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_
 		st->Volume				= volume << 7;
 		st->FileHandle			= fh;
 		st->FileBuffer			= buffer;
+		st->IsDeferrable		= deferrable;
+		st->DeferredAt			= 0;
+		st->DeferredTry			= 0;
 		UNLOCK_STREAMING_SECONDARY_MUTEX(handle);
 
 		/*
@@ -2064,6 +2134,7 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
 {
 	SampleTrackerType       *st;            // Pointer to sample playback control struct.
 	void                    *ptr;           // Pointer to working portion of file buffer.
+	bool                    deferred = false;   // Did a refill find the bytes not here yet?
 
 	if (id != -1) {
 
@@ -2115,6 +2186,20 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
 				}
 #endif
 
+				/*
+				**	A stream that was told the bytes are not here yet leaves the refill
+				**	alone until an answer could have arrived, rather than asking again on
+				**	every pass. What has been buffered goes on playing throughout.
+				*/
+				unsigned int const now = timeGetTime();
+
+				if (st->IsDeferrable && st->DeferredAt != 0 &&
+					(unsigned int)(now - st->DeferredTry) < DEFER_RETRY) {
+
+					deferred = true;
+					num_empty_buffers = 0;
+				}
+
 				while (num_empty_buffers && (st->FileHandle != NULL)) {
 					int     tofill;
 					int    psize;
@@ -2122,7 +2207,28 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
 					tofill = (*odd + st->FilePending) % STREAM_BUFFER_COUNT;
 
 					ptr = Audio_Add_Long_To_Pointer(st->FileBuffer, (int)tofill * (int)Audio.StreamBufferSize);
-					psize = st->FileHandle->Read(ptr, Audio.StreamBufferSize);
+
+					{
+						ISODeferredReadClass defer(st->IsDeferrable);
+
+						psize = st->FileHandle->Read(ptr, Audio.StreamBufferSize);
+
+						/*
+						**	Nothing was read because nothing is here yet, which is not the
+						**	end of the file. The file stays open at the position it was
+						**	already at and the next pass reads the same block over; what has
+						**	been buffered goes on playing meanwhile, and the sample runs out
+						**	only if the bytes stay away for as long as the buffers last.
+						*/
+						if (defer.Declined()) {
+							if (st->DeferredAt == 0) st->DeferredAt = (now != 0) ? now : 1;
+							st->DeferredTry = now;
+							deferred = true;
+							break;
+						}
+					}
+
+					st->DeferredAt = 0;
 
 				 	/*
 				 	**	If less than the requested amount of data was read, this
@@ -2167,8 +2273,13 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
 			**	If there are no more buffers that the callback routine
 			**	can slot into the primary position, then signal that
 			**	no furthur callbacks are needed.
+			**
+			**	A refill that was told the bytes are on their way still has a file to read,
+			**	so it asks to be called again however little it managed to buffer. Saying
+			**	otherwise would take the callback away while the handle is still open, which
+			**	is the one combination the service pass has no answer for.
 			*/
-			if (st->FilePending > 0) {
+			if (st->FilePending > 0 || deferred) {
 				//LeaveCriticalSection(&GlobalAudioCriticalSection);
 				_UNLOCK_SECONDARY_MUTEX(id);
 				return(TRUE);

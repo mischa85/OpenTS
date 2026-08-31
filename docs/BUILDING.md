@@ -191,6 +191,20 @@ rather than accommodated: the transport requires a `206` and a `Content-Range`
 it can read (`code/isohttp.cpp:70`, `:117`). Under node the same list can be
 named through the `OPENTS_IMAGE` environment variable.
 
+Every read is synchronous, so one the caches miss stops the engine until the server
+answers. A single reader is exempt. `ISODeferredReadClass` (`code/iso9660.h:81`)
+marks a scope in which a block source may answer that the bytes are not here yet:
+it asks for them without waiting and reports a read of nothing, which the layers
+above pass up unchanged rather than retrying (`code/iso9660.cpp:545`,
+`code/rawfile.cpp:491`, `code/win32compat.cpp:1122`) and which the scope tells
+apart from the end of a file. The score player is the only caller —
+`ThemeClass::Play_Song` asks for a stream that may decline (`code/theme.cpp:439`)
+and the two refill sites in `code/dsaudio.cpp` enter the scope around that
+stream's reads alone, so sound effects, speech, and every ordinary file read still
+wait for what they asked for. A block source with the bytes at hand never
+declines, so nothing changes on any other target. `OpenTS_Iso_Deferred` counts the
+reads that declined, beside the stall figures the same page reports.
+
 The build offers no `--preload-file` bundling. [README](../README.md) is
 explicit that OpenTS supplies the engine and not the game data, so a deployment
 that serves an image is one serving data it has the right to serve.

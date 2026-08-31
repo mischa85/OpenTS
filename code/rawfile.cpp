@@ -51,6 +51,8 @@
 
 #include "rawfile.h"
 
+#include "iso9660.h"
+
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -480,6 +482,14 @@ int RawFileClass::Read(void * buffer, int size)
 			buffer = (char *)buffer + bytesread;
 			size -= bytesread;
 			total += bytesread;
+
+			/*
+			**	A read that declined has not failed, so retrying it here would only ask
+			**	again for bytes that are on their way. What was read is reported short and
+			**	the caller, which said the read may decline, comes back for the rest.
+			*/
+			if (ISODeferredReadClass::Declined_Now()) break;
+
 			Error(GetLastError(), true, Filename);
 			continue;
 		}

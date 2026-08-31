@@ -628,6 +628,8 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		BlockType const * Block(std::uint64_t index, ReadType const & read);
 
 		void Look_Ahead(void);
+		void Ahead_Want(std::uint64_t offset, unsigned int length);
+		bool Ahead_Pending(std::uint64_t offset, unsigned int length);
 		bool Ahead_Serve(std::uint64_t offset, void * buffer, unsigned int length,
 			ReadType const & read);
 		void Ahead_Drop(void);

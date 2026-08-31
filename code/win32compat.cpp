@@ -1114,7 +1114,12 @@ BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD toread, LPDWORD read, LPOVERLAPP
 		if (read != nullptr) *read = (DWORD)(got > 0 ? got : 0);
 
 		if (got < 0 || (DWORD)got != wanted) {
-			SetLastError(ERROR_READ_FAULT);
+
+			/*
+			** A read the volume declined has not failed. The caller asked for a read that
+			** may say the bytes are not here yet, and that is what is reported.
+			*/
+			SetLastError(ISODeferredReadClass::Declined_Now() ? ERROR_IO_PENDING : ERROR_READ_FAULT);
 			return(FALSE);
 		}
 
