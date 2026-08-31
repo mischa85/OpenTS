@@ -3097,7 +3097,7 @@ int Main_Menu(unsigned int timeout)
 	if (dialog != NULL) {
 		SetWindowLongPtr(dialog, GWLP_USERDATA, (LONG_PTR)&retval);
 		char *menu = Get_New_Menu()->Background;
-		Load_Title_Screen(menu, HiddenSurface, &CCPalette);
+		Load_Title_Screen(menu, HiddenSurface, &CCPalette, true);
 		Draw_Version_Text(HiddenSurface);
 		Update_Visible_Surface();
 		OwnerDraw::Move_Dialog(dialog, -1, (HiddenSurface->Get_Height() - 400) / 2 + 147);
@@ -3232,7 +3232,7 @@ void Title_Screen_Restore(bool force)
 	if (force == true) {
 		HiddenSurface->Fill(0);
 		char *menu = Get_New_Menu()->Background;
-		Load_Title_Screen(menu, HiddenSurface, &CCPalette);
+		Load_Title_Screen(menu, HiddenSurface, &CCPalette, true);
 		Draw_Version_Text(HiddenSurface);
 		Update_Visible_Surface(HiddenSurface);
 	}
