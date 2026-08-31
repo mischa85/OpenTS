@@ -52,14 +52,13 @@ AHANDLE_CALLBACK_2 _AHandleCallbackFunc2;
 
 /// private, call handler instead
 
-int32_t __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t);
-int32_t __cdecl Close_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Start_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Stop_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Play_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
-int32_t __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes);
+VQAErrorType __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t);
+VQAErrorType __cdecl Close_Audio_Handler(VQAHandleP *vqap);
+VQAErrorType __cdecl Start_Audio_Handler(VQAHandleP *vqap);
+VQAErrorType __cdecl Stop_Audio_Handler(VQAHandleP *vqap);
+VQAErrorType __cdecl Play_Audio_Handler(VQAHandleP *vqap);
+VQAErrorType __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
+VQAErrorType __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes);
 void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR);
 _STATIC unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
@@ -204,7 +203,7 @@ intptr_t __cdecl Stream_Audio_Handler(VQAHandle *vqa, uint32_t action, void *buf
 }
 
 
-int32_t __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t b)
+VQAErrorType __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t b)
 {
 	DSCAPS dscaps;
 
@@ -311,7 +310,7 @@ int32_t __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, 
 }
 
 
-int32_t __cdecl Close_Audio_Handler(VQAHandleP *vqap)
+VQAErrorType __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 {
 	DebugString("Closing VQ audio handler\n");
 
@@ -358,7 +357,7 @@ int32_t __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-int32_t __cdecl Start_Audio_Handler(VQAHandleP *vqap)
+VQAErrorType __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 {
 	/* Dereference commonly used data members for quicker access. */
 	VQAConfig *config = &vqap->Config;
@@ -431,7 +430,7 @@ int32_t __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-int32_t __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes)
+VQAErrorType __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
@@ -457,7 +456,7 @@ int32_t __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbyte
 }
 
 
-int32_t __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
+VQAErrorType __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
@@ -472,32 +471,30 @@ int32_t __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-int32_t __cdecl Play_Audio_Handler(VQAHandleP *vqap)
+VQAErrorType __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
-	int32_t rc;
 	if (!handle->Used || handle->SecondaryBufferPtr == NULL) {
 		return(VQAERR_AUDIO);
 	}
 
 	std::lock_guard<std::recursive_mutex> guard(Lock_Of(handle));
 
-	rc = handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
-	if (rc == S_OK) {
-		handle->PauseAdjust = Simple_Timer_Callback_Audio_Handler(NULL) - handle->LastTimerTick;
-		DebugString("Ahandle: PauseAdjust %ld\n", handle->PauseAdjust);
-		handle->Flags &= ~AHANDLEF_IS_PAUSED;
-		rc = VQAERR_NONE;
-	} else {
-		rc = VQAERR_AUDIO;
+	HRESULT const return_code = handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
+	if (return_code != S_OK) {
+		return(VQAERR_AUDIO);
 	}
 
-	return(rc);
+	handle->PauseAdjust = Simple_Timer_Callback_Audio_Handler(NULL) - handle->LastTimerTick;
+	DebugString("Ahandle: PauseAdjust %ld\n", handle->PauseAdjust);
+	handle->Flags &= ~AHANDLEF_IS_PAUSED;
+
+	return(VQAERR_NONE);
 }
 
 
-int32_t __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
+VQAErrorType __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
