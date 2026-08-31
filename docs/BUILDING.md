@@ -397,11 +397,12 @@ Not established, and not to be read into the above:
   `Load_Game` (`code/saveload.cpp`) in a browser, and the dialog that reaches
   them is dead for the reason the next entry gives.
 - **The owner-draw Win32 front end.** `code/win32user.cpp` is a real in-process
-  window manager, but the dialog-template entry points are still stubs
-  (`code/win32compat.cpp:2613`–`:2615`), so `OwnerDraw::Begin_Dialog` returns
-  null (`code/ownrdraw.cpp:6737`). Skirmish setup and the save/load dialog then
-  do nothing at all, and `Main_Options_Dialog` spins on the null handle without
-  servicing the page (`code/mainopt.cpp:69`), which hangs the tab.
+  window manager and the dialog-template entry points are no longer stubs:
+  `CreateDialogIndirectParamA` builds the dialog and its controls out of the
+  template (`code/win32user.cpp:2432`), converting dialog units at `:2463` and
+  `:2485`. Dialogs open and are drawn. What has not been established is each
+  dialog doing its job: the options and load screens have been used, skirmish
+  setup has not.
 - **The mouse cursor.** `code/win32window.cpp:541` encodes each cursor frame as
   a PNG data URL for `canvas.style.cursor`, but what a player sees is still the
   browser's own arrow, and that path is under active work.

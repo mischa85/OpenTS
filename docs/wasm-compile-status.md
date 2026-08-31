@@ -108,6 +108,12 @@ matters, not their value on a given day.
 
 Each of these says so where it is defined.
 
+- **Dialog templates.** `CreateDialogIndirectParamA` (`code/win32user.cpp:2432`)
+  builds a dialog and its controls out of the template, converting dialog units
+  to pixels at `:2463` and `:2485`, over the window manager the rest of
+  `code/win32user.cpp` supplies. `CreateDialogParam` and `DialogBoxParam` reach
+  it. What each individual dialog then does is recorded in
+  [Building OpenTS](BUILDING.md#what-has-been-run).
 - **The filesystem.** The Win32 file API over POSIX, with a case-insensitive
   fallback when the exact spelling is missing, and directory enumeration, so
   `FindFirstFile` answers. It also mounts an ISO 9660 volume, lazily, on the
@@ -196,14 +202,6 @@ would try to suspend outside the promising boundary and trap
 - **Version and icon resources.** `Sun.rc` and `except.rc` are resource-compiler
   input, so the WebAssembly target does not build them
   (`code/CMakeLists.txt:72`). Nothing replaces them.
-- **Dialog templates.** `CreateDialogParam`, `CreateDialogIndirectParam`, and
-  `DialogBoxParam` are still stubs (`code/win32compat.cpp:2613`–`:2615`), so
-  `OwnerDraw::Begin_Dialog` returns null (`code/ownrdraw.cpp:6737`) and every
-  dialog behind the main menu is dead. `code/win32user.cpp` supplies the window
-  manager underneath them, and the templates themselves are already readable out
-  of the language library, so what is missing is the template-to-window step.
-  The consequences per caller are recorded in
-  [Building OpenTS](BUILDING.md#what-has-been-run).
 - **Saving and loading through the engine.** Neither half is missing any more.
   `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
   `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and
