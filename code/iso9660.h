@@ -228,3 +228,10 @@ class ISOVolumeClass
 bool ISO_Compare_Names(char const * left, char const * right);
 bool ISO_Match_Wildcard(char const * pattern, char const * name);
 void ISO_Search_Directories(ISOVolumeClass const & volume, std::vector<std::string> & directories);
+
+/*
+ * Answered by the platform's image backend: the browser fetches an image over HTTP ranges,
+ * a native host opens a local file. Both backends declare the same pair.
+ */
+void ISO_Image_Locations(std::vector<std::string> & locations);
+std::unique_ptr<ISOBlockSourceClass> ISO_Open_Location(char const * location);

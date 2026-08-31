@@ -9,7 +9,7 @@
 
 #pragma once
 
-#if defined(__EMSCRIPTEN__)
+#ifndef _WIN32
 #include "win32compat.h"
 #else
 #ifndef WIN32_LEAN_AND_MEAN

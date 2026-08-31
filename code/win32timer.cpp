@@ -21,9 +21,17 @@
 
 #include "win32timer.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
+#if defined(__EMSCRIPTEN__)
 #include "browser.h"
+#else
+// The native host supplies the same yield trio browser.h declares for the page; the
+// defaults in hostyield.cpp wait with the operating system's own clock.
+void Browser_Yield(void);
+bool Browser_Yield_If_Due(void);
+bool Browser_Yield_Is_Available(void);
+#endif
 
 
 /*
@@ -172,7 +180,7 @@ void Win32_Timer_Service(void)
 		**	The clock wraps every forty nine days, so the comparison is on the signed
 		**	difference rather than on the readings themselves.
 		*/
-		if ((long)(now - event->Due) < 0) continue;
+		if ((LONG)(now - event->Due) < 0) continue;
 
 		UINT id = event->Id;
 		LPTIMECALLBACK callback = event->Callback;

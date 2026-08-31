@@ -32,7 +32,7 @@
 
 #pragma once
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "crtcompat.h"
 #include "iso9660.hh"
@@ -133,16 +133,17 @@ bool Win32_Hint_File(char const * filename, ISOHintType kind, unsigned int offse
 
 
 /*
-** The fundamental Win32 scalar types, at their Win32 x86 widths.
+** The fundamental Win32 scalar types, at their Win32 x86 widths. Spelled with the
+** fixed-width types so an LP64 host keeps them at those widths.
 */
-typedef unsigned long	DWORD;
+typedef uint32_t		DWORD;
 typedef unsigned short	WORD;
 typedef unsigned char	BYTE;
 typedef int				BOOL;
 typedef int				INT;
 typedef unsigned int	UINT;
-typedef long			LONG;
-typedef unsigned long	ULONG;
+typedef int32_t			LONG;
+typedef uint32_t		ULONG;
 typedef short			SHORT;
 typedef unsigned short	USHORT;
 typedef char			CHAR;
@@ -161,13 +162,12 @@ typedef unsigned int		DWORD32;
 typedef unsigned long long	DWORD64;
 
 /*
-** The pointer-sized integers. Win32 x86 and wasm32 agree that a pointer is four bytes,
-** so these keep their Win32 spellings rather than becoming intptr_t.
+** The pointer-sized integers, which must hold a pointer on every host.
 */
-typedef int				INT_PTR;
-typedef unsigned int	UINT_PTR;
-typedef long			LONG_PTR;
-typedef unsigned long	ULONG_PTR;
+typedef intptr_t		INT_PTR;
+typedef uintptr_t		UINT_PTR;
+typedef intptr_t		LONG_PTR;
+typedef uintptr_t		ULONG_PTR;
 typedef ULONG_PTR		DWORD_PTR;
 typedef ULONG_PTR		SIZE_T;
 typedef LONG_PTR		SSIZE_T;
@@ -206,7 +206,7 @@ typedef BOOL *			LPBOOL;
 typedef UINT_PTR		WPARAM;
 typedef LONG_PTR		LPARAM;
 typedef LONG_PTR		LRESULT;
-typedef long			HRESULT;
+typedef int32_t			HRESULT;
 typedef LONG			SCODE;
 typedef DWORD			COLORREF;
 typedef DWORD *			LPCOLORREF;
@@ -303,7 +303,7 @@ typedef struct tagMSG {
 #define _REFCLSID_DEFINED
 
 typedef struct _GUID {
-	unsigned long Data1;
+	uint32_t Data1;
 	unsigned short Data2;
 	unsigned short Data3;
 	unsigned char Data4[8];
@@ -3090,8 +3090,8 @@ typedef struct _IP_ADAPTER_INFO {
 	BOOL HaveWins;
 	IP_ADDR_STRING PrimaryWinsServer;
 	IP_ADDR_STRING SecondaryWinsServer;
-	long LeaseObtained;
-	long LeaseExpires;
+	int32_t LeaseObtained;
+	int32_t LeaseExpires;
 } IP_ADAPTER_INFO, * PIP_ADAPTER_INFO;
 
 DWORD GetAdaptersInfo(PIP_ADAPTER_INFO adapters, PULONG size);
@@ -3136,7 +3136,7 @@ struct IRpcStubBuffer;
 struct IRpcProxyBuffer;
 typedef struct _RPC_MESSAGE RPC_MESSAGE;
 typedef struct _RPC_MESSAGE * PRPC_MESSAGE;
-typedef long RPC_STATUS;
+typedef int32_t RPC_STATUS;
 
 #define TCM_FIRST			0x1300
 #define TCM_SETITEMSIZE		(TCM_FIRST + 41)

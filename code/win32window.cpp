@@ -31,8 +31,9 @@
 
 #include "win32window.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
+#if defined(__EMSCRIPTEN__)
 #include "browser.h"
 #include "misc.h"
 #include "vidscale.h"
@@ -42,27 +43,15 @@
 #include "wincursor.h"
 
 #include <emscripten/emscripten.h>
+#endif
 
 #include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#if defined(__EMSCRIPTEN__)
 
-/*
-** Windows-1252 is Latin-1 apart from the range 0x80 to 0x9F, which this table spells out.
-** The five positions the code page leaves undefined carry the C1 control of the same
-** value, which is what the Windows table does with them and what makes every byte a round
-** trip. peresource.cpp holds the same mappings for the one direction it needs; it has no
-** byte to return for a wide character outside them and answers with a question mark, which
-** is what this does too.
-*/
-static unsigned short const _HighRange[32] = {
-	0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
-	0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
-	0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
-	0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178
-};
 
 // A browser refuses to draw a cursor image larger than this, and shows nothing at all
 // rather than a clipped one.
@@ -901,11 +890,30 @@ BOOL EnumDisplaySettingsA(LPCSTR, DWORD mode, LPDEVMODEA devmode)
 	return(TRUE);
 }
 
+#endif	// __EMSCRIPTEN__
+
 /*
 ** ---------------------------------------------------------------------------------------
 ** The code page.
 ** ---------------------------------------------------------------------------------------
 */
+
+/*
+** Windows-1252 is Latin-1 apart from the range 0x80 to 0x9F, which this table spells out.
+** The five positions the code page leaves undefined carry the C1 control of the same
+** value, which is what the Windows table does with them and what makes every byte a round
+** trip. peresource.cpp holds the same mappings for the one direction it needs; it has no
+** byte to return for a wide character outside them and answers with a question mark, which
+** is what this does too.
+*/
+static unsigned short const _HighRange[32] = {
+	0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+	0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+	0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+	0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178
+};
+
+
 
 
 /// <summary>
@@ -1094,4 +1102,4 @@ int WideCharToMultiByte(UINT codepage, DWORD flags, LPCWSTR wide, int widecount,
 	return((int)out.size());
 }
 
-#endif	// __EMSCRIPTEN__
+#endif	// !_WIN32

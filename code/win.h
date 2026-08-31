@@ -44,12 +44,6 @@
 #include <winuser.h>
 #else
 #include "platform.h"
-
-typedef void * HWND;
-typedef void * HINSTANCE;
-typedef void * HDC;
-typedef void * HBITMAP;
-typedef void * HGDIOBJ;
 #endif
 
 extern int			ShowCommand;

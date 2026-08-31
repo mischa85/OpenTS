@@ -20,7 +20,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <math.h>
+#ifdef _MSC_VER
 #include <new.h>
+#else
+#include <new>
+#endif
 
 
 template <class T>

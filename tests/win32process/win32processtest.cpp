@@ -23,7 +23,7 @@
 // directory to come back unchanged. An answer that failed it would move the engine off its
 // game data.
 
-#if defined(__EMSCRIPTEN__)
+#ifndef _WIN32
 #include "win32compat.h"
 #else
 #include <windows.h>

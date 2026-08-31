@@ -25,7 +25,7 @@
 // so a request that returns the wrong sub-object address fails a check instead of being
 // discovered later as a call through a mismatched vtable.
 
-#if defined(__EMSCRIPTEN__)
+#ifndef _WIN32
 #include "win32compat.h"
 #else
 #include <windows.h>

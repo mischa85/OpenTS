@@ -44,7 +44,11 @@
 
 #include "win.h"
 
+#ifdef _WIN32
 #include <commctrl.h>
+#else
+#include "win32compat.h"
+#endif
 
 /*
  * Custom messages for the TreeView drag-and-drop helpers below. The helpers

@@ -19,7 +19,7 @@
 // actually does; on WebAssembly it holds win32compat.cpp to that same account. A check
 // that would pass against the substitute but not against Windows is worth nothing here.
 
-#if defined(__EMSCRIPTEN__)
+#ifndef _WIN32
 #include "win32compat.h"
 #else
 #include <windows.h>

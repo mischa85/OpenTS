@@ -31,7 +31,7 @@
 
 #include "win32ctrl.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "keyboard.h"
 #include "win32user.h"

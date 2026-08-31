@@ -15,7 +15,7 @@
 // This header is deliberately not #pragma once. Including it again after INITGUID changes
 // is the whole mechanism.
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "win32compat.h"
 

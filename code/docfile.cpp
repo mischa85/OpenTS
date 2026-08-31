@@ -215,7 +215,7 @@ class DocFileClass : public IStorage
 		virtual HRESULT STDMETHODCALLTYPE OpenStream(OLECHAR const * name, void * reserved1, DWORD mode, DWORD reserved2, IStream ** stream) override;
 		virtual HRESULT STDMETHODCALLTYPE CreateStorage(OLECHAR const * name, DWORD mode, DWORD reserved1, DWORD reserved2, IStorage ** storage) override;
 		virtual HRESULT STDMETHODCALLTYPE OpenStorage(OLECHAR const * name, IStorage * priority, DWORD mode, SNB exclude, DWORD reserved, IStorage ** storage) override;
-#if !defined(__EMSCRIPTEN__)
+#if defined(_WIN32)
 		/*
 		** Three methods the Windows declaration of IStorage carries and win32compat.h does
 		** not, so that the same class satisfies both.
@@ -600,7 +600,7 @@ HRESULT DocFileClass::OpenStorage(OLECHAR const *, IStorage *, DWORD, SNB, DWORD
 }
 
 
-#if !defined(__EMSCRIPTEN__)
+#if defined(_WIN32)
 HRESULT DocFileClass::CopyTo(DWORD, IID const *, SNB, IStorage *)
 {
 	return(STG_E_UNIMPLEMENTEDFUNCTION);

@@ -28,9 +28,13 @@
 
 #include "win32compat.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
+#if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+#else
+#include "platform.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +73,7 @@ static char const * Program_Path(void)
 	static char path[MAX_PATH];
 
 	if (path[0] == '\0') {
+#if defined(__EMSCRIPTEN__)
 		char working[MAX_PATH];
 
 		if (::getcwd(working, sizeof(working)) == nullptr) {
@@ -83,6 +88,12 @@ static char const * Program_Path(void)
 			path[0] = '\0';
 			return(nullptr);
 		}
+#else
+		if (!Platform_Executable_Path(path, sizeof(path))) {
+			path[0] = '\0';
+			return(nullptr);
+		}
+#endif
 	}
 
 	return(path);
@@ -156,6 +167,7 @@ DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size)
 ** supplied arguments some other way is still answered; a build that renames the internal
 ** falls back rather than reporting nothing.
 */
+#if defined(__EMSCRIPTEN__)
 EM_JS(int, Process_Argument_Count, (void), {
 	var args = (typeof programArgs !== "undefined" && programArgs) ||
 		(typeof Module !== "undefined" && Module["arguments"]) || [];
@@ -176,6 +188,37 @@ EM_JS(int, Process_Argument, (int index, char * buffer, int size), {
 	HEAPU8[buffer + count] = 0;
 	return count;
 });
+#else
+
+static int Process_Argument_Count(void)
+{
+	int argc = 0;
+	Platform_Command_Line_Arguments(&argc);
+	return(argc > 1 ? argc - 1 : 0);
+}
+
+
+static int Process_Argument(int index, char * buffer, int size)
+{
+	int argc = 0;
+	char const * const * argv = Platform_Command_Line_Arguments(&argc);
+
+	// Index zero is the executable path, which the browser's list does not carry.
+	if (index < 0 || index + 1 >= argc || size <= 0) {
+		buffer[0] = '\0';
+		return(0);
+	}
+
+	int count = 0;
+	char const * text = argv[index + 1];
+	while (text[count] != '\0' && count + 1 < size) {
+		buffer[count] = text[count];
+		count++;
+	}
+	buffer[count] = '\0';
+	return(count);
+}
+#endif
 
 
 /*

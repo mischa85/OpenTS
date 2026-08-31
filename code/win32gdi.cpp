@@ -40,7 +40,7 @@
 
 #include "win32gdi.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "ownrdraw.h"
 #include "surface.h"

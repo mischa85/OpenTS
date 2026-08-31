@@ -19,12 +19,16 @@
 
 #pragma once
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <new>
 #include <stdio.h>
 #include <stdlib.h>
@@ -250,7 +254,11 @@ int _getch(void);
 
 inline size_t _msize(void * block)
 {
+#if defined(__APPLE__)
+	return(malloc_size(block));
+#else
 	return(malloc_usable_size(block));
+#endif
 }
 
 

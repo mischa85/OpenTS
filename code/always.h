@@ -38,19 +38,17 @@
 
 /*
  * MSVC spellings the other toolchains lack. The calling-convention keywords matter only for
- * the 32-bit Windows ABI, so elsewhere they say nothing.
+ * the 32-bit Windows ABI, so elsewhere they say nothing; the C runtime spellings live in
+ * crtcompat.h.
  */
 #ifndef _MSC_VER
-#include <strings.h>
-#define __cdecl
-#define __stdcall
-#define stricmp strcasecmp
-#define strnicmp strncasecmp
-char * strupr(char * string);
+#include "crtcompat.h"
 
-// The MSVC <ctype.h> classification mask some inherited code compares character values to.
-#ifndef _CONTROL
-#define _CONTROL 0x20
+#ifndef __cdecl
+#define __cdecl
+#endif
+#ifndef __stdcall
+#define __stdcall
 #endif
 #endif
 

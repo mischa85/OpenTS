@@ -12,18 +12,29 @@
 
 #include "always.h"
 
-#include "browser.h"
 #include "crtcompat.h"
 #include "docfile.h"
-#include "isohttp.h"
+#include "iso9660.h"
 #include "misc.h"
 #include "video.h"
 #include "win32compat.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
-#include <dirent.h>
+#if defined(__EMSCRIPTEN__)
+#include "browser.h"
+#include "isohttp.h"
 #include <emscripten.h>
+#endif
+
+#include <ctime>
+#include <dirent.h>
+
+#if defined(__APPLE__)
+#define st_atim st_atimespec
+#define st_mtim st_mtimespec
+#define st_ctim st_ctimespec
+#endif
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,86 +54,67 @@
 ** Win32 x86, so a change to win32compat.h that moves a field or resizes a type fails the
 ** build here rather than silently reshaping a saved game or a network packet.
 */
-static_assert(sizeof(void *) == 4, "wasm32 must be ILP32, as Win32 x86 is");
 static_assert(sizeof(BYTE) == 1 && sizeof(WORD) == 2 && sizeof(DWORD) == 4, "");
 static_assert(sizeof(LONG) == 4 && sizeof(ULONG) == 4 && sizeof(BOOL) == 4, "");
 static_assert(sizeof(LONGLONG) == 8 && alignof(LONGLONG) == 8, "");
-static_assert(sizeof(WPARAM) == 4 && sizeof(LPARAM) == 4 && sizeof(LRESULT) == 4, "");
-static_assert(sizeof(HRESULT) == 4 && sizeof(HANDLE) == 4 && sizeof(HWND) == 4, "");
+static_assert(sizeof(HRESULT) == 4, "");
+static_assert(sizeof(WPARAM) == sizeof(void *) && sizeof(LPARAM) == sizeof(void *), "");
+
+#if defined(__EMSCRIPTEN__)
+/*
+** The parts of the contract only wasm32 keeps: a 64-bit native host has 8-byte pointers
+** and a 4-byte wchar_t, and nothing that crosses a save or a packet depends on either.
+*/
+static_assert(sizeof(void *) == 4, "wasm32 must be ILP32, as Win32 x86 is");
+static_assert(sizeof(LRESULT) == 4 && sizeof(HANDLE) == 4 && sizeof(HWND) == 4, "");
 static_assert(sizeof(WCHAR) == 2, "-fshort-wchar keeps OLECHAR two bytes, as Windows has it");
+#endif
 
 static_assert(sizeof(POINT) == 8 && offsetof(POINT, y) == 4, "");
 static_assert(sizeof(RECT) == 16 && offsetof(RECT, bottom) == 12, "");
 static_assert(sizeof(SIZE) == 8, "");
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(MSG) == 28 && offsetof(MSG, pt) == 20, "");
+#endif
 static_assert(sizeof(GUID) == 16 && alignof(GUID) == 4, "");
 static_assert(sizeof(FILETIME) == 8, "");
 static_assert(sizeof(SYSTEMTIME) == 16, "");
 static_assert(sizeof(LARGE_INTEGER) == 8 && sizeof(ULARGE_INTEGER) == 8, "");
 static_assert(offsetof(LARGE_INTEGER, u.HighPart) == 4, "");
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(CRITICAL_SECTION) == 24, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(WIN32_FIND_DATAA) == 320 && offsetof(WIN32_FIND_DATAA, cFileName) == 44, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(OSVERSIONINFOA) == 148, "");
+#endif
 static_assert(sizeof(WAVEFORMATEX) == 18, "mmsystem.h packs the wave formats to one byte");
 static_assert(sizeof(BITMAPFILEHEADER) == 14, "wingdi.h packs the file header to two bytes");
 static_assert(sizeof(BITMAPINFOHEADER) == 40, "");
 static_assert(sizeof(RGBQUAD) == 4, "");
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(STATSTG) == 72 && offsetof(STATSTG, cbSize) == 8, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(DSBUFFERDESC) == 20, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(WNDCLASSA) == 40, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(SCROLLINFO) == 28, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(LOGFONTA) == 60, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(EXCEPTION_RECORD) == 80, "");
+#endif
+#if defined(__EMSCRIPTEN__)
 static_assert(sizeof(CONTEXT) == 716, "");
-
-
-/*
-** Reporting. Each entry point names itself the first time it is reached; a stub inside
-** a frame loop would otherwise bury everything else in the log.
-*/
-static char const * ReportedFunctions[512];
-static int ReportedCount = 0;
-
-
-static bool Already_Reported(char const * function)
-{
-	for (int index = 0; index < ReportedCount; index++) {
-		if (ReportedFunctions[index] == function || strcmp(ReportedFunctions[index], function) == 0) {
-			return(true);
-		}
-	}
-
-	if (ReportedCount < (int)(sizeof(ReportedFunctions) / sizeof(ReportedFunctions[0]))) {
-		ReportedFunctions[ReportedCount++] = function;
-	}
-	return(false);
-}
-
-
-void Win32_Stub_Reached(char const * function)
-{
-	if (Already_Reported(function)) return;
-	fprintf(stderr, "OpenTS: unimplemented Win32 entry point %s reached; it reports failure.\n", function);
-	fflush(stderr);
-}
-
-
-void Win32_Unsupported_Reached(char const * description)
-{
-	if (Already_Reported(description)) return;
-	fprintf(stderr, "OpenTS: %s is not implemented on this target; the call reports failure.\n", description);
-	fflush(stderr);
-}
-
-
-void Win32_Stub_Fatal(char const * function)
-{
-	fprintf(stderr, "OpenTS: unimplemented Win32 entry point %s reached, and it has no way to "
-		"report failure to its caller. Stopping rather than continuing on a result that was "
-		"never produced.\n", function);
-	fflush(stderr);
-	abort();
-}
+#endif
 
 
 /*
@@ -468,6 +460,7 @@ static bool PersistentDirty = false;
 
 static void Flush_Persistent_Storage(void)
 {
+#if defined(__EMSCRIPTEN__)
 	if (!PersistentDirty) return;
 	PersistentDirty = false;
 
@@ -496,7 +489,9 @@ static void Flush_Persistent_Storage(void)
 			Module.OpenTS_SyncRunning = true;
 			again();
 		}
-	});
+	});#else
+	PersistentDirty = false;
+#endif
 }
 
 
@@ -2993,6 +2988,7 @@ int GetTimeFormatA(LCID, DWORD flags, SYSTEMTIME const * time, LPCSTR format, LP
 	bool const seconds = (flags & (TIME_NOSECONDS | TIME_NOMINUTESORSECONDS)) == 0;
 	bool const minutes = (flags & TIME_NOMINUTESORSECONDS) == 0;
 
+#if defined(__EMSCRIPTEN__)
 	return(EM_ASM_INT({
 		var options = {hour: "numeric"};
 		if ($4) options.minute = "2-digit";
@@ -3005,6 +3001,19 @@ int GetTimeFormatA(LCID, DWORD flags, SYSTEMTIME const * time, LPCSTR format, LP
 		stringToUTF8(text, $5, $6);
 		return size;
 	}, time->wHour, time->wMinute, time->wSecond, seconds, minutes, text, count));
+#else
+	struct tm fields;
+	memset(&fields, 0, sizeof(fields));
+	fields.tm_year = 100;
+	fields.tm_mday = 1;
+	fields.tm_hour = time->wHour;
+	fields.tm_min = time->wMinute;
+	fields.tm_sec = time->wSecond;
+
+	char const * picture = seconds ? "%H:%M:%S" : (minutes ? "%H:%M" : "%H");
+	size_t const written = strftime(text, (size_t)count, picture, &fields);
+	return(written != 0 ? (int)written + 1 : 0);
+#endif
 }
 
 
@@ -3016,6 +3025,7 @@ int GetDateFormatA(LCID, DWORD, SYSTEMTIME const * date, LPCSTR format, LPSTR te
 		return(WIN32_UNSUPPORTED("GetDateFormatA: a picture string of its own", 0));
 	}
 
+#if defined(__EMSCRIPTEN__)
 	return(EM_ASM_INT({
 		var text = new Date($0, $1 - 1, $2).toLocaleDateString();
 		var size = lengthBytesUTF8(text) + 1;
@@ -3024,6 +3034,16 @@ int GetDateFormatA(LCID, DWORD, SYSTEMTIME const * date, LPCSTR format, LPSTR te
 		stringToUTF8(text, $3, $4);
 		return size;
 	}, date->wYear, date->wMonth, date->wDay, text, count));
+#else
+	struct tm fields;
+	memset(&fields, 0, sizeof(fields));
+	fields.tm_year = date->wYear - 1900;
+	fields.tm_mon = date->wMonth - 1;
+	fields.tm_mday = date->wDay;
+
+	size_t const written = strftime(text, (size_t)count, "%x", &fields);
+	return(written != 0 ? (int)written + 1 : 0);
+#endif
 }
 
 
