@@ -13,6 +13,8 @@ Each document owns one class of project fact:
   accidents.
 - [Project direction](DIRECTION.md) — the architectural direction behind the
   roadmap.
+- [The browser harness](HARNESS.md) — the one way to run the WebAssembly build
+  in a browser: serving it, driving it, observing it, and taking it down.
 
 The WebAssembly port has three documents of its own. [Building
 OpenTS](BUILDING.md) owns its build support and what has been run; these record

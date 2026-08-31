@@ -1,0 +1,11 @@
+# The browser harness deliberately has no third-party dependencies.
+#
+# It speaks the DevTools protocol over a socket, serves range requests out of
+# http.server, and decodes a PNG with zlib, all on the standard library, so that
+# `python tools/harness/harness.py` works from a clean checkout with no virtual
+# environment, no pip, and no second copy of a browser downloaded for it. That
+# is what keeps it easier to use than to reinvent.
+#
+# This file is the owner of that decision. Anything the harness ever needs is
+# pinned here and nowhere else; it is not the manual's requirements.txt and must
+# not be merged into it.

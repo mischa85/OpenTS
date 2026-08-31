@@ -7,6 +7,8 @@ instructions in [`../AGENTS.md`](../AGENTS.md).
 
 - Use [`../docs/BUILDING.md`](../docs/BUILDING.md) for supported build paths.
 - Use [`../docs/STYLE.md`](../docs/STYLE.md) for source conventions.
+- Use [`../docs/HARNESS.md`](../docs/HARNESS.md) before running the WebAssembly
+  build in a browser.
 - Read the task-relevant implementation, callers, data paths, and tests before
   editing.
 
@@ -92,6 +94,11 @@ Section 7 notices. Comment syntax does not establish authorship.
   remains accurate.
 - Run the narrowest relevant checks first, followed by the supported build or
   test suite when the change warrants it.
+- Use `python3 tools/harness/harness.py` to run the WebAssembly build in a
+  browser. Do not write a server, browser launcher, readiness poll, input
+  dispatch, or screenshot comparison of your own; extend the harness instead.
+  It reads the developer's discs, so what it produces is a runtime observation
+  and never a test result.
 - Report exact commands, configurations, environments, results, and relevant
   checks not run. Never turn an unverified result into a support claim.
 - Behavior changes require focused evidence and corresponding documentation.

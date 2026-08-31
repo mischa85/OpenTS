@@ -172,8 +172,20 @@ with the game data staged in `Run` exactly as the Win32 build expects it.
 
 **In a browser** there is no host filesystem, so the data is left on a web server
 as disc images and read with HTTP range requests. Configure with
-`-DOPENTS_WASM_NODERAWFS=OFF`, serve `build-wasm/bin` and the images from a
-server that answers ranges, and open `index.html`. The images are named by
+`-DOPENTS_WASM_NODERAWFS=OFF`, then use [the browser harness](HARNESS.md), which
+owns serving a build with the images beside it, starting and tearing down a
+browser, and driving the engine once it is up:
+
+```bash
+python3 tools/harness/harness.py doctor --bin build-wasm/bin
+python3 tools/harness/harness.py serve --bin build-wasm/bin
+```
+
+Do not write another one; [the engine source instructions](../code/AGENTS.md)
+make that a rule. It reads the discs, so it is not part of the CTest suite.
+
+Serving the directory and the images by hand from any server that answers ranges
+and opening `index.html` works too. The images are named by
 `Module.opentsImage`, set on the page before the module loads, which takes a
 list or a single name (`code/isohttp.h:214`); the shipped `wasm/game.html`
 names the three original discs beside the page and lets `?image=` override them.
