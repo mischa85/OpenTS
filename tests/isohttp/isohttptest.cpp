@@ -640,6 +640,7 @@ void Serve_From_Node(char const * page, char const * node, double total, char co
 			answer.open = function () {};
 			answer.setRequestHeader = function () {};
 			answer.send = function () {
+				globalThis.__opentsAsked = (globalThis.__opentsAsked || 0) + 1;
 				answer.status = 206;
 				answer.responseURL = node;
 			};
@@ -660,6 +661,265 @@ void Stop_Serving(void)
 		delete globalThis.XMLHttpRequest;
 		delete globalThis.location;
 	});
+}
+
+
+// How many requests the transport above has been asked for since the count was cleared.
+void Asked_Reset(void)
+{
+	EM_ASM({ globalThis.__opentsAsked = 0; });
+}
+
+
+int Asked(void)
+{
+	return(EM_ASM_INT({ return globalThis.__opentsAsked || 0; }));
+}
+
+
+/*
+**	Stands in for the browser's local storage, which is where what a probe learned is kept
+**	because it is the one store that answers before the engine has a wait to spend. node has
+**	none, so without this every run is a first run and nothing below could be told apart.
+*/
+void Serve_Storage(void)
+{
+	/*
+	**	Written a property at a time because the block below is a macro argument, and a
+	**	comma between two of them at this level would end it.
+	*/
+	EM_ASM({
+		var held = new Map();
+		var store = {};
+
+		store.getItem = function (key) {
+			var name = "" + key;
+			return held.has(name) ? held.get(name) : null;
+		};
+		store.setItem = function (key, value) { held.set("" + key, "" + value); };
+		store.removeItem = function (key) { held.delete("" + key); };
+
+		globalThis.localStorage = store;
+	});
+}
+
+
+void Stop_Storing(void)
+{
+	EM_ASM({ delete globalThis.localStorage; });
+}
+
+
+/*
+**	A server that answers the one request that says what the image is and refuses every
+**	range past it, which is what an image that has been replaced under its old location
+**	looks like to a run that believed a record instead of asking.
+*/
+void Serve_Changed(char const * page, double total, char const * tag)
+{
+	EM_ASM({
+		globalThis.location = {href: UTF8ToString($0)};
+
+		var total = $1;
+		var tag = UTF8ToString($2);
+
+		globalThis.XMLHttpRequest = function () {
+			var answer = this;
+			var probing = false;
+
+			answer.status = 0;
+			answer.response = null;
+			answer.responseURL = "";
+			answer.open = function () {};
+			answer.overrideMimeType = function () {};
+			answer.setRequestHeader = function (name, value) {
+				if (("" + name).toLowerCase() !== "range") return;
+				probing = ("" + value) === "bytes=0-0";
+			};
+			answer.send = function () {
+				globalThis.__opentsAsked = (globalThis.__opentsAsked || 0) + 1;
+				answer.status = probing ? 206 : 416;
+			};
+			answer.getResponseHeader = function (name) {
+				var wanted = ("" + name).toLowerCase();
+				if (wanted === "content-range") return "bytes 0-0/" + total;
+				if (wanted === "etag") return tag;
+				return null;
+			};
+		};
+	}, page, total, tag);
+}
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	What a probe learned, and what it costs to have to learn it. A probe is a round trip
+**	spent before the engine has read a byte, and a game on three discs spends three of
+**	them one after another, because the transport it goes through is synchronous. Nothing
+**	it answers changes while the location does not, so the answer is kept and the second
+**	launch asks nobody.
+**	------------------------------------------------------------------------------------
+*/
+void Check_Probe_Record(void)
+{
+	ISOProbeClass written;
+
+	written.Length = 710277120;
+	written.Validator = "\"58f20419\"";
+	written.Trip = 42.5;
+	written.Rate = 1234.75;
+
+	ISOProbeClass read;
+
+	Check(read.Decode(written.Encode().c_str()), "a written record reads back");
+	Check(read.Length == written.Length && read.Validator == written.Validator,
+		"as the image it was written for");
+	Check(read.Trip > 42.0 && read.Trip < 43.0 && read.Rate > 1234.0 && read.Rate < 1235.0,
+		"and as what the link to it was measured to cost");
+
+	Check(!read.Decode(""), "an empty record is not a record");
+	Check(!read.Decode(nullptr), "and neither is nothing at all");
+	Check(!read.Decode("something-else|4096|0.000|0.000|\"abc\""),
+		"a record this build cannot read is refused");
+	Check(!read.Decode("opents-probe-1|0|0.000|0.000|\"abc\""),
+		"and so is one naming an image of no length");
+	Check(!read.Decode("opents-probe-1|4096|0.000"), "and one that stops part way through");
+	Check(read.Length == 0 && read.Validator.empty(),
+		"none of which leaves anything behind to be believed");
+
+	/*
+	**	The validator is whatever the server chose to call the file, so it is the last field
+	**	and takes the rest of the line rather than being escaped into one.
+	*/
+	ISOProbeClass odd;
+
+	odd.Length = 4096;
+	odd.Validator = "W/\"a|b\"";
+
+	Check(read.Decode(odd.Encode().c_str()) && read.Validator == "W/\"a|b\"",
+		"a validator carrying the separator is read back whole");
+
+	ISOProbeClass rough;
+
+	rough.Length = 4096;
+	rough.Validator = "one\ntwo";
+
+	Check(read.Decode(rough.Encode().c_str()) && read.Validator.find('\n') == std::string::npos,
+		"and one carrying a line end is flattened rather than written");
+}
+
+
+void Check_Probe_Recall(void)
+{
+	char const * const page = "https://player.example/game/";
+	char const * const image = "https://mirror.example/download/ts1.iso";
+	double const total = 710277120.0;
+
+	Serve_Storage();
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"58f20419\"");
+
+	ISOHttpSourceClass source;
+
+	Asked_Reset();
+	Check(source.Open(image), "an image nothing is known about opens");
+	Check(Asked() == 1, "by asking the server what it is");
+	Check(!source.Recalled(), "which is what a first run does");
+
+	std::string const slot = source.Store_Key();
+	std::string const signature = source.Store_Signature();
+
+	source.Close();
+
+	Asked_Reset();
+	Check(source.Open(image), "the same image opens a second time");
+	Check(Asked() == 0, "without asking the server anything at all");
+	Check(source.Recalled(), "out of what the run before it was told");
+	Check(source.Total_Size() == (std::uint64_t)total, "knowing how long the image is");
+	Check(source.Store_Key() == slot && source.Store_Signature() == signature,
+		"and landing on the blocks that run stored");
+
+	source.Close();
+
+	Asked_Reset();
+	Check(source.Open("https://mirror.example/download/ts2.iso"),
+		"a location nothing is held for opens");
+	Check(Asked() == 1, "by asking the server, since it is not the location that was kept");
+
+	source.Close();
+
+	/*
+	**	A relative name is the same image as the location it resolves to, so a page that
+	**	names it either way is one record rather than two.
+	*/
+	Asked_Reset();
+	Check(source.Open("https://player.example/game/ts3.iso"), "an image beside the page opens");
+	Check(Asked() == 1, "by asking the server the first time");
+
+	source.Close();
+
+	Asked_Reset();
+	Check(source.Open("ts3.iso") && Asked() == 0,
+		"and the same image named beside the page is the record already held");
+
+	source.Close();
+
+	/*
+	**	And this is the whole of what not asking gives up: an image replaced under a
+	**	location that did not change is read as the image that was there before. What
+	**	notices it is the check the run makes long after it has its data, which drops the
+	**	record so that the next launch asks -- and that is a fetch nothing here can wait on.
+	*/
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total + 65536.0, "\"5f000000\"");
+
+	Asked_Reset();
+	Check(source.Open(image) && Asked() == 0 && source.Store_Signature() == signature,
+		"an image replaced under an unchanged location is still read as the old one");
+
+	source.Close();
+	Stop_Serving();
+
+	/*
+	**	Until a read the server will not answer says so. A range refused is the first
+	**	evidence a run that asked nothing has that what it believed is wrong, and asking
+	**	then is what re-establishes the image and lets go of the blocks held for the old one.
+	*/
+	Serve_Changed(page, total + 65536.0, "\"5f000000\"");
+
+	unsigned char scrap[2048];
+
+	Check(source.Open(image) && source.Recalled(),
+		"the image opens again out of the record that is now wrong");
+
+	Asked_Reset();
+	Check(!source.Read_At(0, scrap, sizeof(scrap)), "a read the server refuses fails");
+	Check(Asked() > 1, "having asked the server what the image is before giving up on it");
+	Check(!source.Recalled(), "so the image is no longer one nothing was asked about");
+	Check(source.Total_Size() == (std::uint64_t)(total + 65536.0), "and is the length it now has");
+	Check(source.Store_Signature() != signature,
+		"under a signature the blocks stored for the old one do not answer to");
+
+	source.Close();
+
+	Asked_Reset();
+	Check(source.Open(image) && Asked() == 0 && source.Store_Signature() != signature,
+		"and what was learned in doing so is what the next run opens it with");
+
+	source.Close();
+	Stop_Serving();
+	Stop_Storing();
+
+	/*
+	**	A host with no such storage -- node, and a browser whose owner has turned it off --
+	**	reports having nothing, and every run is a first run exactly as it was before.
+	*/
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"58f20419\"");
+
+	Asked_Reset();
+	Check(source.Open(image) && Asked() == 1 && !source.Recalled(),
+		"a host that keeps nothing asks the server every time");
+
+	source.Close();
+	Stop_Serving();
 }
 
 
@@ -998,6 +1258,31 @@ void Check_Link(void)
 		&& distant.Span() <= (unsigned int)ISOLinkClass::SPAN_MAX
 		&& distant.Flights() <= (unsigned int)ISOLinkClass::FLIGHTS_MAX,
 		"and none of the three runs past what it is allowed");
+
+	/*
+	**	A run that opens an image out of a record has measured nothing yet and would reach
+	**	no further than the floor, which on a distant link is the whole problem the window
+	**	exists for. What the run before it measured of the same location is a far better
+	**	opening guess, and is only an opening guess: a reading of its own takes over.
+	*/
+	ISOLinkClass seeded;
+
+	seeded.Seed(distant.Trip(), distant.Rate());
+
+	Check(seeded.Measured() && seeded.Window() == distant.Window(),
+		"an image opened out of a record reaches as far ahead as the run that wrote it");
+
+	seeded.Seed(0.5, 100000.0);
+
+	Check(seeded.Window() == distant.Window(),
+		"and takes on nothing over a reading it already has");
+
+	ISOLinkClass partial;
+
+	partial.Seed(150.0, 0.0);
+
+	Check(!partial.Measured() && partial.Trip() > 100.0,
+		"a record naming a round trip and no rate leaves the rate to be measured");
 
 	/*
 	**	One request that queued behind another says nothing about the link, and a window
@@ -1613,6 +1898,8 @@ int main(int argc, char ** argv)
 	Check_Several_Images();
 	Check_Block_Index();
 	Check_Image_Identity();
+	Check_Probe_Record();
+	Check_Probe_Recall();
 	Check_Stall_Record();
 	Check_Link();
 	Check_Read_Ahead();

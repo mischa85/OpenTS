@@ -289,6 +289,21 @@
 
 		window.OpenTS_State.isoImages = discs;
 
+		// How the discs were established. A launch whose discs are the ones it was given
+		// last time asks the server nothing about them and says so; one that asked has
+		// been given a disc it had not seen before, or is a first run.
+		if (Module._OpenTS_Iso_Probes) {
+			window.OpenTS_State.isoProbes = Module._OpenTS_Iso_Probes();
+			window.OpenTS_State.isoRecalls = Module._OpenTS_Iso_Recalls();
+
+			store += "  |  discs " + (window.OpenTS_State.isoProbes === 0 ? "known" :
+				window.OpenTS_State.isoProbes + " asked about");
+
+			// And whether one of them turned out to have been replaced since. The run
+			// carries on with what it has; the reload is what reads the new one.
+			if (window.OpenTS_State.isoStale) store += ", one has changed: reload to read it";
+		}
+
 		return(discs + " discs  |  image " + requests + " requests  |  " +
 			mib(Module._OpenTS_Iso_Fetched()) +
 			" fetched  |  " + blocks + " unique blocks (" + mib(blocks * size) + ")" +

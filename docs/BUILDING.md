@@ -187,7 +187,7 @@ make that a rule. It reads the discs, so it is not part of the CTest suite.
 Serving the directory and the images by hand from any server that answers ranges
 and opening `index.html` works too. The images are named by
 `Module.opentsImage`, set on the page before the module loads, which takes a
-list or a single name (`code/isohttp.h:214`); the shipped `wasm/game.html`
+list or a single name (`code/isohttp.h:795`); the shipped `wasm/game.html`
 names the three original discs beside the page and lets `?image=` override them.
 
 Several images mount at once and are searched in the order they are named, each
@@ -200,8 +200,32 @@ one request apiece (`code/isohttp.h:144`).
 
 A server that ignores the range and answers with the whole image is rejected
 rather than accommodated: the transport requires a `206` and a `Content-Range`
-it can read (`code/isohttp.cpp:70`, `:117`). Under node the same list can be
+it can read (`code/isohttp.cpp:84`, `:152`). Under node the same list can be
 named through the `OPENTS_IMAGE` environment variable.
+
+Opening an image the browser has read before costs no request. The one thing the
+server has to be asked — how long the image is, and what it calls this version of
+it — is written to `localStorage` under the location made absolute, and a launch
+that names the same locations opens every image out of that record instead
+(`ISOProbeClass`, `code/isohttp.h:183`). A location the browser holds no record
+for is probed exactly as before, so adding a disc to `?image=` or moving the
+images asks about the ones that moved and nothing else. `OpenTS_Iso_Probes` and
+`OpenTS_Iso_Recalls` report which of the two each image took, and the page's
+status line says `discs known` when nothing was asked. A host with no such
+storage — node, a private window, a browser told to keep nothing — reports
+holding nothing, and every launch probes.
+
+Two things ride on that record besides the length. The round trip and rate the
+last run measured of the same location are seeded into `ISOLinkClass`, so the
+first read is fetched at the size the link was last found to want rather than at
+the floor. And what it gives up — an image replaced at a location that did not
+change — is checked for fifteen seconds after the image opens, by a `fetch`
+nothing waits on (`ISOHttpSourceClass::Watch`). A mismatch drops the record and
+sets `OpenTS_State.isoStale`; the run carries on with what it holds, and the next
+launch probes, finds a signature the stored blocks do not answer to, and clears
+them. A read the server refuses before then re-establishes the image on the spot
+(`ISOHttpSourceClass::Revive`), which is what catches an image that changed
+length.
 
 Every read is synchronous, so one the caches miss stops the engine until the server
 answers. A single reader is exempt. `ISODeferredReadClass` (`code/iso9660.h:81`)

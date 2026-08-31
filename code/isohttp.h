@@ -164,6 +164,49 @@ class ISOBlockIndexClass
 
 
 /*
+ * What one probe learned about an image, in the form a later run reads it back in.
+ *
+ * A probe costs a round trip before the engine has read a byte, and three discs cost three
+ * of them, one after another, because the transport is synchronous. Nothing it answers
+ * changes while the location it was asked of does not: an image is a file on a server, and
+ * a run that has already been told how long it is and what the server calls it has been
+ * told everything the next run would ask. So the answer is kept, and a launch whose
+ * locations are unchanged is not a launch that has to ask again.
+ *
+ * The estimates of what the link costs ride along with it. They are the reason the probe
+ * was worth its round trip beyond the length -- without them the first file is read as
+ * though the server were on this machine -- and a reading taken from the same location on
+ * the run before is a better opening guess than the one round trip a probe measures.
+ *
+ * Nothing here fetches or stores. It is the text of one record, and is tested as such.
+ */
+class ISOProbeClass
+{
+	public:
+		ISOProbeClass(void);
+
+		/// <summary>Takes on a stored record.</summary>
+		/// <param name="text">What the browser held, or an empty string for nothing.</param>
+		/// <returns>bool; Does it describe an image? A false leaves the record empty.</returns>
+		bool Decode(char const * text);
+
+		std::string Encode(void) const;
+
+		std::uint64_t Length;
+		std::string Validator;
+
+		// What the link to this image last measured, in milliseconds and in bytes a
+		// millisecond. Either may be zero, which is a run that never measured one.
+		double Trip;
+		double Rate;
+
+		// Long enough for the length, the two figures, and whatever a server chooses to
+		// call a version of a file. The location is the key rather than a field of it.
+		static constexpr std::size_t RECORD_MAX = 1024;
+};
+
+
+/*
  * What the link to one image turns out to cost, measured from the requests the engine is
  * already making rather than from any traffic of its own.
  *
@@ -194,6 +237,15 @@ class ISOLinkClass
 		/// <param name="bytes">How many bytes it carried.</param>
 		/// <param name="milliseconds">How long it took, start to finish.</param>
 		void Note(std::uint64_t bytes, double milliseconds);
+
+		/// <summary>Takes on what an earlier run measured of the same link.</summary>
+		/// <param name="trip">The round trip in milliseconds, or zero for none.</param>
+		/// <param name="rate">The rate in bytes a millisecond, or zero for none.</param>
+		/// <remarks>An opening guess rather than a reading, so it is installed only where
+		/// nothing has been measured and the first readings that disagree follow it away.
+		/// It is the same location that was measured, so what it says about the trip and
+		/// the rate is what this run is about to measure again.</remarks>
+		void Seed(double trip, double rate);
 
 		double Trip(void) const {return(Round);}
 		double Rate(void) const {return(Speed);}
@@ -489,6 +541,13 @@ class ISOReadRunsClass
  *
  * A server that ignores the range and answers with the entire image is rejected rather
  * than accommodated: every read would then cost the whole file.
+ *
+ * Opening one costs nothing where a run has opened it before. What a probe would answer is
+ * kept under the location it was asked of, in a store that answers without a wait, so a
+ * launch whose locations are unchanged reads its record instead of the server and the first
+ * thing that touches the network is the engine's own first read. What that gives up is
+ * noticing an image that changed under a location that did not, which is checked for well
+ * after the run is under way rather than in front of it -- see Watch.
  */
 class ISOHttpSourceClass : public ISOBlockSourceClass
 {
@@ -508,6 +567,9 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 
 		/// <summary>The key that says whether stored blocks still belong to this image.</summary>
 		std::string const & Store_Signature(void) const {return(Signature);}
+
+		/// <summary>Was this image opened out of a stored record rather than a probe?</summary>
+		bool Recalled(void) const {return(FromRecord);}
 
 		virtual bool Read_At(std::uint64_t offset, void * buffer, unsigned int length) override;
 		virtual std::uint64_t Total_Size(void) override {return(Length);}
@@ -637,6 +699,30 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		void Soon(std::uint64_t offset, std::uint64_t length);
 		void Soon_Keep(void);
 
+		/// <summary>Asks the server what the image is, and keeps the answer.</summary>
+		/// <returns>bool; Did it answer a ranged request and report the length?</returns>
+		bool Probe(void);
+
+		/// <summary>Writes what is known about the image back to where a later run reads it.</summary>
+		void Learn(void);
+
+		/// <summary>Re-establishes an image a stored record described wrongly.</summary>
+		/// <returns>bool; Was the record wrong, and has the image been re-established from
+		/// the server? A false is a record the server agrees with, so whatever the read
+		/// failed for, it was not this.</returns>
+		/// <remarks>Reached from a read the server would not answer, which on an image
+		/// nothing was probed for is the first evidence that what was believed about it is
+		/// wrong. The stored record goes either way: an image that cannot be read is worth
+		/// asking about again whatever the answer turns out to be.</remarks>
+		bool Revive(void);
+
+		/// <summary>Asks, once the run is under way, whether the image still is what was believed.</summary>
+		/// <remarks>Only where the image was opened out of a record, since a probe has just
+		/// established the same thing. It asks without waiting and acts on nothing in this
+		/// run: what it can do is drop the record, so that the next launch probes, finds a
+		/// signature the stored blocks do not answer to, and clears them.</remarks>
+		void Watch(void);
+
 		bool Store_Ready(void);
 		bool Store_Serve(std::uint64_t offset, void * buffer, unsigned int length,
 			ReadType const & read);
@@ -652,6 +738,14 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		static void Store_Settle(void);
 
 		std::string Url;
+
+		// The absolute form of the location, which is what identifies the image: a relative
+		// name resolves to one of these however the page is reached, and a pool answering
+		// from a different node each time does not change it. Everything the browser keeps
+		// about the image -- the blocks, and the record describing them -- is found by it.
+		std::string Location;
+		std::string Validator;
+
 		std::uint64_t Length;
 		std::vector<BlockType> Cache;
 
@@ -662,6 +756,22 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		ISOReadRunsClass Ahead;
 		ISOLinkClass Link;
 		std::uint64_t Queued;
+
+		// Whether the image was taken from a stored record, and when that record last had
+		// this run's figures written into it.
+		bool FromRecord;
+		double Learned;
+
+		// How long a run goes between writing back what it has measured of the link. The
+		// record is read once per launch and the estimates move slowly, so this is a
+		// bound on how often a synchronous store is written rather than a schedule.
+		static constexpr double LEARN_IDLE = 10000.0;
+
+		// And how long after an image is opened the check that it is still that image is
+		// made, in milliseconds. It is a fetch nothing waits on, but it takes one of the
+		// connections a page is allowed, so it is put well past the loading that decides
+		// how soon the player sees anything.
+		static constexpr double WATCH_DELAY = 15000.0;
 
 		std::string Signature;
 		std::string Slot;

@@ -103,31 +103,46 @@ EM_JS(int, ISO_Http_Transfer, (char const * url, double offset, void * buffer, u
 
 
 /*
-** The one request that establishes what is being read. It answers the image's length, and
-** with it the two things that identify the image to a later run: the location the page was
-** given, made absolute, and whatever the server calls this version of it.
+** Which of a location's two forms identifies the image, worked out without asking anybody.
 **
-** The location is what identifies the image, and not the URL the request ended at. A large
-** image is commonly served from a pool that redirects each request to whichever node
+** The location the page was given, made absolute, and not the URL a request ends at. A
+** large image is commonly served from a pool that redirects each request to whichever node
 ** answers it, so the URL a run ends at is not a property of the image at all and keying on
 ** it would give a second run a slot the first one wrote nothing under. What the run has
-** already fetched would then be re-fetched, once per node. The validator carries what the
-** redirect cannot: a node serving a different file answers with a different entity tag or
-** date, and the length differs besides, so the image is still identified by what it is.
+** already fetched would then be re-fetched, once per node.
+**
+** Resolving it is arithmetic over the document's own address, so it costs nothing and is
+** available before anything has been asked of the server. A host with no document -- node,
+** or a test -- resolves nothing and the location stands for itself.
 */
-EM_JS(double, ISO_Http_Probe, (char const * url, char * identity, int identitysize, char * validator, int validatorsize), {
-	var write = function (text, buffer, size) {
-		var count = 0;
-		while (count < text.length && count + 1 < size) {
-			var code = text.charCodeAt(count);
-			HEAPU8[buffer + count] = (code > 126 || code < 32) ? 63 : code;
-			count++;
-		}
-		HEAPU8[buffer + count] = 0;
-	};
+EM_JS(void, ISO_Http_Identity, (char const * url, char * identity, int size), {
+	var text = UTF8ToString(url);
 
-	write("", identity, identitysize);
-	write("", validator, validatorsize);
+	try {
+		text = new URL(text, location.href).href;
+	} catch (error) {}
+
+	var count = 0;
+	while (count < text.length && count + 1 < size) {
+		var code = text.charCodeAt(count);
+		HEAPU8[identity + count] = (code > 126 || code < 32) ? 63 : code;
+		count++;
+	}
+	HEAPU8[identity + count] = 0;
+});
+
+
+/*
+** The one request that establishes what is being read. It answers the image's length and
+** whatever the server calls this version of it, which together with the location above are
+** what identify the image to a later run.
+**
+** The validator carries what a redirect cannot: a node serving a different file answers
+** with a different entity tag or date, and the length differs besides, so the image is
+** identified by what it is rather than by which node handed it over.
+*/
+EM_JS(double, ISO_Http_Probe, (char const * url, char * validator, int validatorsize), {
+	HEAPU8[validator] = 0;
 
 	try {
 		var request = new XMLHttpRequest();
@@ -142,19 +157,132 @@ EM_JS(double, ISO_Http_Probe, (char const * url, char * identity, int identitysi
 		var total = range.split("/")[1];
 		if (!total || total === "*") return -1;
 
-		try {
-			write(new URL(UTF8ToString(url), location.href).href, identity, identitysize);
-		} catch (error) {
-			write(UTF8ToString(url), identity, identitysize);
-		}
-
 		var tag = request.getResponseHeader("ETag") || request.getResponseHeader("Last-Modified") || "";
-		write(tag, validator, validatorsize);
+		var count = 0;
+
+		while (count < tag.length && count + 1 < validatorsize) {
+			var code = tag.charCodeAt(count);
+			HEAPU8[validator + count] = (code > 126 || code < 32) ? 63 : code;
+			count++;
+		}
+		HEAPU8[validator + count] = 0;
 
 		return parseFloat(total);
 	} catch (error) {
 		return -1;
 	}
+});
+
+
+/*
+**	------------------------------------------------------------------------------------
+**	What a probe learned, kept where the next launch can read it.
+**
+**	It goes in ordinary local storage rather than in the database the blocks are in,
+**	because it has to be readable before the engine has a wait to spend: an image is
+**	opened from the first file the host cannot answer for, which the engine asks about
+**	while its static objects are still being constructed, and only a synchronous store can
+**	answer there. It is a line of text per image, so what it costs that store is nothing.
+**
+**	A browser that will not hand one over -- a private window, storage turned off, a host
+**	with no such thing at all -- reports having nothing, and the run probes exactly as it
+**	did before.
+**	------------------------------------------------------------------------------------
+*/
+
+EM_JS(int, ISO_Probe_Recall, (char const * key, char * record, int size), {
+	HEAPU8[record] = 0;
+
+	try {
+		var text = localStorage.getItem(UTF8ToString(key));
+		if (typeof text !== "string" || text.length === 0) return 0;
+
+		var count = 0;
+		while (count < text.length && count + 1 < size) {
+			var code = text.charCodeAt(count);
+			HEAPU8[record + count] = (code > 126 || code < 32) ? 63 : code;
+			count++;
+		}
+		HEAPU8[record + count] = 0;
+		return 1;
+	} catch (error) {
+		return 0;
+	}
+});
+
+
+EM_JS(void, ISO_Probe_Remember, (char const * key, char const * record), {
+	try {
+		localStorage.setItem(UTF8ToString(key), UTF8ToString(record));
+	} catch (error) {}
+});
+
+
+EM_JS(void, ISO_Probe_Forget, (char const * key), {
+	try {
+		localStorage.removeItem(UTF8ToString(key));
+	} catch (error) {}
+});
+
+
+/*
+** Asks, once the run is under way, whether the image a record described is still the image
+** the server has.
+**
+** It is the whole of what is given up by not probing, put back where it costs nothing: an
+** ordinary fetch, started from a timer well after the engine has its data, waited on by
+** nobody. What it can do about a mismatch is drop the record, so that the next launch
+** probes; the blocks are then found under a signature they do not answer to and are
+** cleared by the machinery that already does that. This run carries on with what it has,
+** because the alternative is to throw away a store the game is reading out of on the
+** strength of one late answer.
+**
+** Headers a caller cannot read are not evidence of anything. A cross-origin answer with no
+** Content-Range to read is left alone rather than treated as a changed image.
+*/
+EM_JS(void, ISO_Probe_Watch, (char const * key, char const * url, double length, char const * validator, double delay), {
+	var state = globalThis.__opentsIsoProbe;
+
+	if (state === undefined) {
+		state = {watched: {}};
+		globalThis.__opentsIsoProbe = state;
+	}
+
+	var slot = UTF8ToString(key);
+	if (state.watched[slot]) return;
+	state.watched[slot] = true;
+
+	var where = UTF8ToString(url);
+	var named = UTF8ToString(validator);
+	var total = length;
+
+	var timer = setTimeout(function () {
+		try {
+			fetch(where, {headers: {"Range": "bytes=0-0"}, cache: "no-store"}).then(function (answer) {
+				if (answer.status !== 206) return;
+
+				var range = answer.headers.get("Content-Range");
+				if (!range) return;
+
+				var said = range.split("/")[1];
+				if (!said || said === "*") return;
+
+				var tag = answer.headers.get("ETag") || answer.headers.get("Last-Modified") || "";
+				if (parseFloat(said) === total && tag === named) return;
+
+				try { localStorage.removeItem(slot); } catch (error) {}
+
+				state.stale = true;
+				if (globalThis.OpenTS_State) globalThis.OpenTS_State.isoStale = true;
+				console.warn("OpenTS: " + where + " is no longer the image its cache was " +
+					"built from; the next run will read it again.");
+			}).catch(function () {});
+		} catch (error) {}
+	}, delay);
+
+	// A page is kept open by its own document; a host whose timers hold the process alive
+	// would be held open for the delay by a check nothing is waiting for.
+	if (timer && typeof timer.unref === "function") timer.unref();
 });
 
 
@@ -1448,6 +1576,104 @@ void ISOBlockIndexClass::Cap(std::uint64_t bytes, std::vector<std::uint64_t> & e
 }
 
 
+/*
+**	What the stored record opens with, so that a record this build cannot read is told from
+**	one that is simply not there. Anything else under the key is left alone and the image is
+**	probed, which is what an older or a newer build's record gets.
+*/
+static char const * const ISO_PROBE_MAGIC = "opents-probe-1";
+
+
+ISOProbeClass::ISOProbeClass(void) :
+	Length(0),
+	Trip(0.0),
+	Rate(0.0)
+{
+}
+
+
+/// <summary>Takes on a stored record.</summary>
+/// <remarks>
+/// The validator comes last and takes the rest of the line, since it is the one field
+/// whose contents are the server's to choose and a separator inside it would otherwise
+/// have to be escaped. Everything before it is a number the record wrote itself.
+/// </remarks>
+bool ISOProbeClass::Decode(char const * text)
+{
+	Length = 0;
+	Validator.clear();
+	Trip = 0.0;
+	Rate = 0.0;
+
+	if (text == nullptr) return(false);
+
+	std::string const line(text);
+	std::size_t cursor = 0;
+	std::string field[4];
+
+	for (std::string & part : field) {
+		std::size_t const stop = line.find('|', cursor);
+		if (stop == std::string::npos) return(false);
+
+		part = line.substr(cursor, stop - cursor);
+		cursor = stop + 1;
+	}
+
+	if (field[0] != ISO_PROBE_MAGIC) return(false);
+
+	char const * const count = field[1].c_str();
+	char * end = nullptr;
+	double const length = std::strtod(count, &end);
+
+	if (end == count || *end != '\0' || !(length > 0.0)) return(false);
+
+	Length = (std::uint64_t)length;
+	Trip = std::strtod(field[2].c_str(), nullptr);
+	Rate = std::strtod(field[3].c_str(), nullptr);
+	Validator = line.substr(cursor);
+
+	if (!(Trip > 0.0)) Trip = 0.0;
+	if (!(Rate > 0.0)) Rate = 0.0;
+
+	return(true);
+}
+
+
+std::string ISOProbeClass::Encode(void) const
+{
+	char head[128];
+
+	std::snprintf(head, sizeof(head), "%s|%llu|%.3f|%.3f|", ISO_PROBE_MAGIC,
+		(unsigned long long)Length, Trip, Rate);
+
+	std::string record(head);
+
+	record += Validator;
+
+	/*
+	**	The record is written and read a byte at a time, so it is held to plain printable
+	**	ASCII the same way the key and the signature are.
+	*/
+	for (char & character : record) {
+		if (character < 0x20 || character > 0x7E) character = '?';
+	}
+
+	if (record.size() > RECORD_MAX - 1) record.resize(RECORD_MAX - 1);
+	return(record);
+}
+
+
+/*
+**	Where the browser keeps what a probe learned about one image, which is a store of its
+**	own rather than the database the blocks are in; see the note above ISO_Probe_Recall for
+**	why it has to be.
+*/
+static std::string Probe_Key(std::string const & location)
+{
+	return("opents-iso-probe|" + location);
+}
+
+
 ISOLinkClass::ISOLinkClass(void)
 {
 	Reset();
@@ -1512,6 +1738,14 @@ void ISOLinkClass::Note(std::uint64_t bytes, double milliseconds)
 
 		if (moving > 0.0) Speed = Follow(Speed, (double)bytes / moving);
 	}
+}
+
+
+/// <summary>Takes on what an earlier run measured of the same link.</summary>
+void ISOLinkClass::Seed(double trip, double rate)
+{
+	if (Round <= 0.0 && trip > 0.0) Round = trip;
+	if (Speed <= 0.0 && rate > 0.0) Speed = rate;
 }
 
 
@@ -2018,6 +2252,14 @@ static double _LinkTrip = 0.0;
 static double _LinkRate = 0.0;
 static unsigned int _LinkWindow = 0;
 
+/*
+**	And how the images were established: how many were asked about, and how many the browser
+**	could already say what they were. A warm launch that reports a probe has been given a
+**	location it had not been given before.
+*/
+static unsigned int _Probes = 0;
+static unsigned int _Recalls = 0;
+
 
 static std::size_t Account_For_Image(char const * url)
 {
@@ -2128,6 +2370,14 @@ EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Soon_Requests(void) {return(_SoonRe
 EMSCRIPTEN_KEEPALIVE double OpenTS_Iso_Soon_Bytes(void) {return((double)_SoonBytes);}
 
 /*
+** How the discs were established. A run that opened every image out of what the browser
+** already held reports as many recalls as it has images and no probes at all, which is what
+** a launch whose locations are unchanged looks like.
+*/
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Probes(void) {return(_Probes);}
+EMSCRIPTEN_KEEPALIVE unsigned int OpenTS_Iso_Recalls(void) {return(_Recalls);}
+
+/*
 ** What the link to the discs turns out to cost, as the read ahead measures it: the round
 ** trip in milliseconds, the rate in bytes a millisecond, and the blocks a run is reaching
 ** in front of itself because of them. A page reporting a window of two on a fast link and
@@ -2144,6 +2394,8 @@ ISOHttpSourceClass::ISOHttpSourceClass(void) :
 	Length(0),
 	Meter(0),
 	Queued(0),
+	FromRecord(false),
+	Learned(0.0),
 	StoreState(STORE_UNTRIED),
 	Staged(0),
 	StagedAt(0.0)
@@ -2157,9 +2409,63 @@ ISOHttpSourceClass::~ISOHttpSourceClass(void)
 }
 
 
+/// <summary>Asks the server what the image is, and keeps the answer.</summary>
+bool ISOHttpSourceClass::Probe(void)
+{
+	std::vector<char> validator(ISOBlockIndexClass::SIGNATURE_MAX);
+	validator[0] = '\0';
+
+	double const began = emscripten_get_now();
+	double const length = ISO_Http_Probe(Url.c_str(), validator.data(), (int)validator.size());
+
+	_Probes++;
+
+	if (!(length > 0.0)) return(false);
+
+	/*
+	**	The probe asks for one byte, so what it cost is a round trip and nothing else. It is
+	**	the first thing known about the link and the only reading available before the engine
+	**	has read anything, which is what stops the first file being read as though the server
+	**	were on this machine.
+	*/
+	Link.Note(1, emscripten_get_now() - began);
+	_LinkTrip = Link.Trip();
+
+	Length = (std::uint64_t)length;
+	Validator = validator.data();
+
+	Learn();
+	return(true);
+}
+
+
+/// <summary>Writes what is known about the image back to where a later run reads it.</summary>
+void ISOHttpSourceClass::Learn(void)
+{
+	if (Location.empty() || Length == 0) return;
+
+	ISOProbeClass known;
+
+	known.Length = Length;
+	known.Validator = Validator;
+	known.Trip = Link.Trip();
+	known.Rate = Link.Rate();
+
+	ISO_Probe_Remember(Probe_Key(Location).c_str(), known.Encode().c_str());
+	Learned = emscripten_get_now();
+}
+
+
 /// <summary>Opens an image served from a URL.</summary>
 /// <param name="url">Where the image is, absolute or relative to the page.</param>
-/// <returns>bool; Did the server answer a ranged request and report the image length?</returns>
+/// <returns>bool; Is the image's length known, from a stored record or from the server?</returns>
+/// <remarks>
+/// The store is not opened here. Open is reached from the first file the host cannot answer
+/// for, which the engine asks about while its static objects are still being constructed,
+/// and a wait there is not yet legal. That is also why the record this reads is kept in a
+/// store that answers without one, and why the record has to carry the length rather than
+/// leaving it to be looked up beside the blocks.
+/// </remarks>
 bool ISOHttpSourceClass::Open(char const * url)
 {
 	Close();
@@ -2169,48 +2475,88 @@ bool ISOHttpSourceClass::Open(char const * url)
 	Url = url;
 
 	std::vector<char> identity(ISOBlockIndexClass::SIGNATURE_MAX);
-	std::vector<char> validator(ISOBlockIndexClass::SIGNATURE_MAX);
+	identity[0] = '\0';
+	ISO_Http_Identity(Url.c_str(), identity.data(), (int)identity.size());
 
-	double const began = emscripten_get_now();
-	double const length = ISO_Http_Probe(Url.c_str(), identity.data(), (int)identity.size(),
-		validator.data(), (int)validator.size());
+	Location = (identity[0] != '\0') ? identity.data() : Url;
 
 	/*
-	**	The probe asks for one byte, so what it cost is a round trip and nothing else. It is
-	**	the first thing known about the link and the only reading available before the engine
-	**	has read anything, which is what stops the first file being read as though the server
-	**	were on this machine.
+	**	What an earlier run was told about this location, which is everything a probe would
+	**	answer. Nothing about a file on a server changes while the location does not, so a
+	**	launch whose locations are unchanged asks the server nothing at all.
 	*/
-	if (length > 0.0) {
-		Link.Note(1, emscripten_get_now() - began);
-		_LinkTrip = Link.Trip();
-	}
+	ISOProbeClass known;
+	std::vector<char> record(ISOProbeClass::RECORD_MAX);
 
-	if (!(length > 0.0)) {
+	record[0] = '\0';
+	FromRecord = (ISO_Probe_Recall(Probe_Key(Location).c_str(), record.data(),
+		(int)record.size()) == 1) && known.Decode(record.data());
+
+	if (FromRecord) {
+		_Recalls++;
+		Length = known.Length;
+		Validator = known.Validator;
+		Link.Seed(known.Trip, known.Rate);
+		_LinkTrip = Link.Trip();
+		_LinkRate = Link.Rate();
+		_LinkWindow = Link.Window();
+	} else if (!Probe()) {
 		Url.clear();
+		Location.clear();
+		Validator.clear();
 		return(false);
 	}
 
-	Length = (std::uint64_t)length;
 	Meter = Account_For_Image(Url.c_str());
 	_Open.push_back(this);
 
-	/*
-	**	The store is not opened here. Open is reached from the first file the host cannot
-	**	answer for, which the engine asks about while its static objects are still being
-	**	constructed, and a wait there is not yet legal. What the probe learned is kept until
-	**	a read arrives at a point where one is.
-	*/
-	/*
-	**	The absolute form of the location that was asked for, which is what the store is
-	**	keyed on. A page that names a relative image still gets one key rather than one per
-	**	directory it is reached from, and a pool that answers from a different node each
-	**	time still gets one key rather than one per node.
-	*/
-	char const * const location = (identity[0] != '\0') ? identity.data() : Url.c_str();
+	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length, Validator.c_str());
+	Slot = ISOBlockIndexClass::Store_Slot(Location.c_str());
 
-	Signature = ISOBlockIndexClass::Signature(location, Length, validator.data());
-	Slot = ISOBlockIndexClass::Store_Slot(location);
+	Watch();
+	return(true);
+}
+
+
+/// <summary>Asks, once the run is under way, whether the image still is what was believed.</summary>
+void ISOHttpSourceClass::Watch(void)
+{
+	if (!FromRecord || Location.empty()) return;
+
+	ISO_Probe_Watch(Probe_Key(Location).c_str(), Url.c_str(), (double)Length,
+		Validator.c_str(), WATCH_DELAY);
+}
+
+
+/// <summary>Re-establishes an image a stored record described wrongly.</summary>
+bool ISOHttpSourceClass::Revive(void)
+{
+	if (!FromRecord) return(false);
+
+	/*
+	**	Once, whatever comes of it. A record the server disagrees with is gone either way,
+	**	and a read that fails a second time is a read that fails.
+	*/
+	FromRecord = false;
+	ISO_Probe_Forget(Probe_Key(Location).c_str());
+
+	std::uint64_t const believed = Length;
+	std::string const named = Validator;
+
+	if (!Probe()) return(false);
+	if (Length == believed && Validator == named) return(false);
+
+	/*
+	**	A different image, so the blocks held under this slot are another file's sectors and
+	**	the signature no longer answers to them. Letting go of the index is what stops them
+	**	being served; the slot itself is cleared when the store is next opened and the record
+	**	in it turns out to have been written for something else.
+	*/
+	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length, Validator.c_str());
+	Store_Discard();
+	Index.Reset(Signature);
+	StoreState = STORE_UNTRIED;
+	_StoreState = 0;
 
 	return(true);
 }
@@ -2229,6 +2575,8 @@ void ISOHttpSourceClass::Close(void)
 	_Open.erase(std::remove(_Open.begin(), _Open.end(), this), _Open.end());
 
 	Url.clear();
+	Location.clear();
+	Validator.clear();
 	Signature.clear();
 	Slot.clear();
 	Removals.clear();
@@ -2238,6 +2586,8 @@ void ISOHttpSourceClass::Close(void)
 	Ahead.Reset();
 	Link.Reset();
 	Queued = 0;
+	FromRecord = false;
+	Learned = 0.0;
 	StoreState = STORE_UNTRIED;
 	Staged = 0;
 }
@@ -2973,13 +3323,32 @@ bool ISOHttpSourceClass::Transfer(std::uint64_t offset, void * buffer, unsigned 
 		double const began = emscripten_get_now();
 		int const got = ISO_Http_Transfer(Url.c_str(), (double)offset, cursor, remaining);
 
-		if (got <= 0) return(false);
+		if (got <= 0) {
+
+			/*
+			**	On an image nothing was probed for, a range the server will not answer is
+			**	the first evidence that what the record said about it is wrong. Asking the
+			**	server settles it, and a record that turns out to have described another
+			**	file takes its stored blocks with it.
+			*/
+			if (Revive()) continue;
+
+			return(false);
+		}
 
 		Link.Note((std::uint64_t)got, emscripten_get_now() - began);
 
 		_LinkTrip = Link.Trip();
 		_LinkRate = Link.Rate();
 		_LinkWindow = Link.Window();
+
+		/*
+		**	And what the link is now believed to cost goes back into the record, so the next
+		**	launch opens its window on a reading of this link rather than on the floor. It is
+		**	held to one write in a while because the estimates move slowly and the store it
+		**	goes to is a synchronous one.
+		*/
+		if (Link.Measured() && (emscripten_get_now() - Learned) > LEARN_IDLE) Learn();
 
 		cursor += (unsigned int)got;
 		offset += (unsigned int)got;
