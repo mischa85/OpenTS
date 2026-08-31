@@ -63,6 +63,12 @@ class CDFileClass : public BufferIOFileClass
 		virtual int Open(int rights=READ) override;
 		virtual int Delete(void) override;
 
+		/*
+		**	Says the rest of the file will not be read. A local file fetches nothing ahead,
+		**	so there is nothing to call off; a streamed source can override this.
+		*/
+		void Abandon(void) {}
+
 		void Searching(int on) {IsDisabled = !on;};
 
 		static void Add_Search_Drive(char const * path);

@@ -13,7 +13,11 @@
 
 #include "theme.hh"
 
+#ifdef _WIN32
 #include <unknwn.h>
+#else
+#include "win32compat.h"
+#endif
 
 class SaveStreamClass;
 class ShapeSet;

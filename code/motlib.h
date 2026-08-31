@@ -11,7 +11,11 @@
 
 #include "matrix3d.h"
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32compat.h"
+#endif
 
 class FileClass;
 

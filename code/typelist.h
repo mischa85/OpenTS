@@ -19,7 +19,11 @@
 #include "win.h"
 
 #include <new>
+#ifdef _WIN32
 #include <objidl.h>
+#else
+#include "win32compat.h"
+#endif
 
 template<typename T>
 class TypeList : public DynamicVectorClass<T>

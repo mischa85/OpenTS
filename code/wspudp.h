@@ -33,7 +33,11 @@
 
 #include "wsproto.h"
 
+#ifdef _WIN32
 #include <nspapi.h>
+#else
+#include "win32compat.h"
+#endif
 
 
 /*

@@ -75,7 +75,15 @@
 #include "mph.hh"
 
 #include <algorithm>
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
+#ifdef _WIN32
 #include <windef.h>
+#else
+#include "win32compat.h"
+#endif
+#endif
 
 
 /***********************************************************************************************

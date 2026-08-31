@@ -39,7 +39,9 @@
 #ifdef _MSC_VER
 #include <intrin.h>
 #else
+#if defined(__i386__) || defined(__x86_64__)
 #include <x86intrin.h>
+#endif
 #endif
 #include <math.h>
 
@@ -121,7 +123,13 @@ static unsigned long TSC_High;
 /// <remarks>Only call this routine on a processor that supports the RDTSC opcode.</remarks>
 void RDTSC(void)
 {
+#if !defined(_M_IX86) && !defined(_M_X64) && !defined(__i386__) && !defined(__x86_64__)
+	LARGE_INTEGER count;
+	QueryPerformanceCounter(&count);
+	unsigned long long const stamp = (unsigned long long)count.QuadPart;
+#else
 	unsigned long long const stamp = __rdtsc();
+#endif
 
 	TSC_Low = (unsigned long)(stamp & 0xFFFFFFFF);
 	TSC_High = (unsigned long)(stamp >> 32);
@@ -139,6 +147,13 @@ void RDTSC(void)
 /// <remarks>Only call this routine on a processor that supports the RDTSC opcode.</remarks>
 int Get_RDTSC_CPU_Speed(void)
 {
+#if !defined(_M_IX86) && !defined(_M_X64) && !defined(__i386__) && !defined(__x86_64__)
+	/*
+	 * There is no cycle counter to race the performance counter against, and nothing that
+	 * consumes the speed scales behavior by it anymore.
+	 */
+	return(0);
+#else
 	LARGE_INTEGER t0,t1;
 	unsigned int	freq=0;						// Most current freq. calc.
 	unsigned int	freq2=0;						// 2nd most current freq. calc.
@@ -257,7 +272,7 @@ int Get_RDTSC_CPU_Speed(void)
 	if ( (freq3 - freq) >= ROUND_THRESHOLD ) norm_freq++;
 
 	return (norm_freq);
-
+#endif
 }
 
 

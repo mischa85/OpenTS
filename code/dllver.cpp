@@ -11,7 +11,11 @@
 
 #include "dllver.h"
 
+#ifdef _WIN32
 #include <shlwapi.h>
+#else
+#include "win32compat.h"
+#endif
 
 /// Sample code from https://learn.microsoft.com/en-us/windows/win32/controls/common-control-versions
 

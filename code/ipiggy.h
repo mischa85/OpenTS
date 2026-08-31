@@ -11,7 +11,11 @@
 
 #include "iloco.h"
 
+#ifdef _WIN32
 #include <comdef.h>
+#else
+#include "win32compat.h"
+#endif
 
 /// Names and comments from TLBs
 

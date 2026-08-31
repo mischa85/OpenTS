@@ -16,8 +16,14 @@
 
 #ifdef STEVES_NEW_CATCHER
 
+#ifdef _WIN32
 #include <crtdbg.h>
+#endif
+#ifdef _MSC_VER
 #include <new.h>
+#else
+#include <new>
+#endif
 
 
 /// <summary>

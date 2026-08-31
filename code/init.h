@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "point.h"
+#include "rect.h"
 #include "stimer.h"
 
 #include "side.hh"
@@ -50,12 +52,12 @@ bool Prep_Speech_For_Side(SideType side);
 
 void Anim_Init(void);
 
-void Load_Title_Page(const char * name, bool visible);
+Point2D Load_Title_Page(const char * name, bool visible);
 
 ThemeType Fetch_Main_Menu_Theme(void);
 ThemeType Fetch_Map_Select_Theme(void);
 
-void Draw_Version_Text(Surface * surface);
+void Draw_Version_Text(Surface * surface, Rect const & area = Rect(0, 0, 0, 0));
 
 ObjectClass * Best_Selected_Object(void);
 int New_Main_Menu(void);

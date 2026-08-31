@@ -39,7 +39,19 @@
 #include "house.hh"
 #include "rtti.hh"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#else
+#ifdef _WIN32
+#ifdef _WIN32
 #include <comdef.h>
+#else
+#include "win32compat.h"
+#endif
+#else
+#include "win32compat.h"
+#endif
+#endif
 
 class AbstractTypeClass;
 class CRCEngine;
@@ -188,6 +200,11 @@ class AbstractClass : public IPersistStream
 		 * Dynamic casts from AbstractClass to derived class.
 		 *
 		 * These must only be implemented in their respective modules!
+		 *
+		 * They are members, so an optimizing compiler is entitled to assume the object
+		 * exists and may drop the null test the cast would otherwise make. A caller
+		 * holding a pointer that may be NULL must test it before asking; a test inside
+		 * the helper would be dropped for the same reason.
 		 */
 		UnitClass * As_UnitClass(void);
 		TagClass * As_TagClass(void);

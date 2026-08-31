@@ -33,7 +33,7 @@
 #include "house.h"
 #include "infatype.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "misc.h"
 #include "mixfile.h"
 #include "mouse.h"
@@ -867,7 +867,7 @@ void Dropship_Screen(void)
 						--j;
 					}
 
-					int alpha = std::min(255ul, (_dissolve_rate * timeGetTime() - _dissolve_rate * effect->StartTime) / _dissolve_scale);
+					int alpha = (int)std::min<unsigned long>(255ul, (unsigned long)(_dissolve_rate * timeGetTime() - _dissolve_rate * effect->StartTime) / _dissolve_scale);
 
 					if (alpha != effect->Alpha || overlap_drawn) {
 						effect->Alpha = alpha;

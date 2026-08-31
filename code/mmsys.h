@@ -36,5 +36,9 @@
 */
 
 #pragma warning(disable:4201)
+#ifdef _WIN32
 #include <mmsystem.h>
+#else
+#include "win32compat.h"
+#endif
 #pragma warning(default:4201)

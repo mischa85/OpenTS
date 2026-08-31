@@ -28,7 +28,7 @@
 #include "goptions.h"
 #include "hsv.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "mainloop.h"
 #include "misc.h"
 #include "msgroute.h"
@@ -45,9 +45,18 @@
 #include "vox.h"
 #include "windlg.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+#include "win32gdi.h"
+#else
+#ifdef _WIN32
 #include <commctrl.h>
+#else
+#include "win32compat.h"
+#endif
+#endif
 #include <ctime>
-#include <sys\timeb.h>
+#include <sys/timeb.h>
 #include <utility>
 
 
@@ -130,6 +139,33 @@ BOOL CALLBACK ODAddWindowToList(HWND window, ArrayList<HWND> * list);
 BOOL CALLBACK SetUserData2(HWND window, LPARAM lparam);
 BOOL CALLBACK InitializeCtrl(HWND window, LPARAM lparam);
 void ODDrawCharRemap(Surface & dst_surf, const char *text, int max_chars, Rect const & rect, char const *font_name, COLORREF color, char flags, int char_spacing);
+
+
+/*
+ * Where a surface's device context comes from. On Windows it is the surface's own GDI
+ * context, which the software blitter is kept off for as long as it is held. A page has no
+ * GDI, so the shim in win32gdi.cpp supplies one that draws through the engine's own fonts
+ * and nothing has to be kept off anything.
+ */
+static HDC OD_Surface_DC(Surface & surface)
+{
+#if defined(__EMSCRIPTEN__)
+	return(Win32_GDI_Surface_DC(surface));
+#else
+	return(((DSurface &)surface).GetDC());
+#endif
+}
+
+
+static void OD_Release_Surface_DC(Surface & surface, HDC hdc)
+{
+#if defined(__EMSCRIPTEN__)
+	(void)surface;
+	DeleteDC(hdc);
+#else
+	((DSurface &)surface).ReleaseDC(hdc);
+#endif
+}
 
 
 ///////////////////////////////////
@@ -319,10 +355,9 @@ static LRESULT CALLBACK ComboDropWinCtrlProc_Internal(HWND hWnd, UINT Msg, WPARA
 	WinData * data = NULL;
 	WinData * master_data = NULL;
 
+	// The window is not in ODWinData until CreateWindowEx returns, so a creation message
+	// legitimately finds nothing here.
 	ODWinData.getPointer(hWnd, &data);
-	if (data == NULL) {
-		DebugString("ComboBox dropdown windata = NULL\n");
-	}
 
 	if (OwnerComboHandle) {
 		ODWinData.getPointer(OwnerComboHandle, &master_data);
@@ -1082,6 +1117,24 @@ bool OwnerDraw::End_Tooltip(void)
 /// message was swallowed here.</returns>
 static LRESULT CALLBACK CtrlProc_Internal(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
+/*
+ * How many paints are on the stack. A control's paint reaches the game's surfaces through
+ * the enclosing dialog's, so the area that has to be put on screen is only complete once
+ * the outermost of them unwinds.
+ */
+static int num_rect_updates;
+
+
+/// <summary>
+/// Is a paint part way through drawing into the game's drawing surfaces?
+/// </summary>
+/// <returns>bool; Would replacing those surfaces now leave a paint drawing into a freed
+/// one?</returns>
+bool OwnerDraw::Is_Painting(void)
+{
+	return(num_rect_updates > 0);
+}
+
 
 /// <summary>
 /// Hands a control its messages, in frame coordinates, and puts what it paints on screen.
@@ -1109,7 +1162,6 @@ static LRESULT CALLBACK CtrlProc_Internal(HWND window, UINT message, WPARAM wpar
 {
 	static POINT min_update_rect = {0xFFFFFF, 0xFFFFFF};
 	static POINT max_update_rect;
-	static int num_rect_updates;
 
 	/*
 	 * Tracks whether the game window had focus on the previous call so the
@@ -4937,7 +4989,7 @@ LRESULT CALLBACK GroupBoxCtrlProc(HWND window, UINT message, WPARAM wparam, LPAR
 				AlternateSurface->Unlock();
 			}
 
-			HDC hdc = ((DSurface *)AlternateSurface)->GetDC();
+			HDC hdc = OD_Surface_DC(*AlternateSurface);
 			SelectObject(hdc, ODFontPtr);
 			SetTextColor(hdc, ODColorText);
 			SetBkMode(hdc, TRANSPARENT);
@@ -4954,7 +5006,7 @@ LRESULT CALLBACK GroupBoxCtrlProc(HWND window, UINT message, WPARAM wparam, LPAR
 			int y = rect.top + text_size.cy / 2;
 			TextOut(hdc, rect.left + 10, rect.top, text, strlen(text));
 
-			((DSurface *)AlternateSurface)->ReleaseDC(hdc);
+			OD_Release_Surface_DC(*AlternateSurface, hdc);
 
 			while (locks > 0) {
 				((DSurface *)AlternateSurface)->Lock();
@@ -5684,7 +5736,7 @@ int ODDrawTextBG(Surface & surface, LPCSTR string, LPRECT rect, HGDIOBJ font, CO
 		surface.Unlock();
 	}
 
-	HDC hdc = ((DSurface &)surface).GetDC();
+	HDC hdc = OD_Surface_DC(surface);
 
 	SelectObject(hdc, font);
 	SetTextColor(hdc, color);
@@ -5694,7 +5746,7 @@ int ODDrawTextBG(Surface & surface, LPCSTR string, LPRECT rect, HGDIOBJ font, CO
 	GetTextExtentPoint32(hdc, string, strlen(string), &char_size);
 	DrawText(hdc, string, strlen(string), rect, format);
 
-	((DSurface &)surface).ReleaseDC(hdc);
+	OD_Release_Surface_DC(surface, hdc);
 
 	while (locks > 0) {
 		((DSurface &)surface).Lock();
@@ -6123,7 +6175,7 @@ bool ODGetFontMetrics(char const * font_name, FontMetrics * metrics)
 /// <summary>
 /// Draws a line of text onto a surface.
 /// This routine borrows a device context from the surface, unlocking it as often as it
-/// must beforehand, and lets Windows put the text out aligned within the rectangle given.
+/// must beforehand, and puts the text out aligned within the rectangle given.
 /// Nothing is drawn while the game does not hold the focus.
 /// </summary>
 /// <param name="len">The number of characters of the text to draw.</param>
@@ -6149,7 +6201,7 @@ int OD_Draw_Text(COLORREF color, HFONT font, Rect const & rect, const char * tex
 
 	SIZE text_size;
 
-	HDC hDC = destsurf->GetDC();
+	HDC hDC = OD_Surface_DC(*destsurf);
 	if (hDC) {
 
 		if (font) {
@@ -6181,7 +6233,7 @@ int OD_Draw_Text(COLORREF color, HFONT font, Rect const & rect, const char * tex
 		}
 
 		TextOut(hDC, x_offset, y_offset, text, len);
-		destsurf->ReleaseDC(hDC);
+		OD_Release_Surface_DC(*destsurf, hDC);
 	} else {
 		text_size.cx = 0;
 	}
@@ -6933,6 +6985,64 @@ int OwnerDraw::Move_Dialog(HWND window, int x, int y)
 	rect2.top = ypos;
 
 	return(MoveWindow(window, rect2.left, rect2.top, rect2.right, rect2.bottom, FALSE));
+}
+
+
+/// <summary>
+/// Puts the open dialogs where the frame's new size wants them.
+/// </summary>
+/// <param name="oldwidth">The frame width the dialogs are placed against now.</param>
+/// <param name="oldheight">The frame height the dialogs are placed against now.</param>
+/// <remarks>
+/// A dialog is placed by its distance from the middle of the frame -- nothing at all for
+/// most of them, and a fixed drop below it for the main menu -- so that distance is what
+/// the move preserves. This leaves the dialogs where they belong but paints nothing; the
+/// caller repaints the frame afterwards.
+/// </remarks>
+void OwnerDraw::Relayout_Dialogs(int oldwidth, int oldheight)
+{
+	/*
+	 * A tooltip holds a copy of the screen it covered, taken from a surface that is not
+	 * the one on screen any more, so putting that copy back would stamp the old frame onto
+	 * the new one.
+	 */
+	End_Tooltip();
+
+	for (int index = 0; index < g_DialogCount; index++) {
+		HWND window = g_Dialogs[index].handle;
+
+		if (window == NULL) {
+			continue;
+		}
+
+		RECT rect;
+		if (!Get_Display_Rect(window, &rect)) {
+			continue;
+		}
+
+		int width = rect.right - rect.left;
+		int height = rect.bottom - rect.top;
+
+		int x = rect.left - (oldwidth - width) / 2 + (VideoModeWidth - width) / 2;
+		int y = rect.top - (oldheight - height) / 2 + (VideoModeHeight - height) / 2;
+
+		if (x < 0) x = 0;
+		if (y < 0) y = 0;
+
+		/*
+		 * The cached backdrop shows the piece of the menu wallpaper that lies under the
+		 * dialog, which both the move and the new frame size settle. Dropping it has the
+		 * repaint compose it again.
+		 */
+		WinData * data = NULL;
+		if (ODWinData.getPointer(window, &data) && data != NULL && data->cachedSurface != NULL) {
+			delete data->cachedSurface;
+			data->cachedSurface = NULL;
+			_surface_count--;
+		}
+
+		MoveWindow(window, x, y, width, height, FALSE);
+	}
 }
 
 

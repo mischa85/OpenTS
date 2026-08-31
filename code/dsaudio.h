@@ -16,7 +16,23 @@
 #include "audio.h"
 #include "soundint.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "win32compat.h"
+
+/*
+ * A page has no DirectSound. This hands back an object that keeps the part of the
+ * DirectSound contract this driver and the movie player are written against -- a looping
+ * buffer with a lock window, a play cursor and a volume -- carried out to the page by
+ * audiobackend.cpp, which is where it is built.
+ */
+LPDIRECTSOUND Audio_Create_Sound_Object(void);
+#else
+#ifdef _WIN32
 #include <dsound.h>
+#else
+#include "win32compat.h"
+#endif
+#endif
 
 #define INVALID_SAMPLE_HANDLE -1
 
@@ -27,7 +43,18 @@ class DSAudio
 		~DSAudio(void);
 
 		int File_Stream_Sample(char const *filename, bool real_time_start = false);
-		int File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start = false);
+
+		/// <summary>Streams a sample straight off the disc.</summary>
+		/// <param name="filename">The file to stream.</param>
+		/// <param name="volume">The volume to play it at, in the range 0 to 255.</param>
+		/// <param name="real_time_start">Should the first buffers be filled a couple at a
+		/// time as the game runs, rather than all at once before it goes on?</param>
+		/// <param name="deferrable">May a refill give the disc up rather than wait for it?
+		/// A stream that says yes plays late or stops early when the bytes are not there
+		/// instead of holding the game, which suits a score and does not suit speech.</param>
+		/// <returns>The handle the sample is playing on, or -1 if it could not be played.</returns>
+		int File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start = false,
+			bool deferrable = false);
 		void Sound_Callback(void);
 		void maintenance_callback(void);
 		//void *Load_Sample(char const *filename);

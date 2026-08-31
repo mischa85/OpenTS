@@ -32,8 +32,16 @@
 
 #pragma once
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32compat.h"
+#endif
+#ifdef _WIN32
 #include <winsock.h>
+#else
+#include "winsockcompat.h"
+#endif
 
 #define FIELD_HEADER_SIZE	(sizeof(FieldClass) - (sizeof(void *) * 2))
 

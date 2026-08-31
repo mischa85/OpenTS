@@ -45,7 +45,12 @@
 #include	"vqaplayp.h"
 #include	<stdio.h>
 #include	<fcntl.h>
-#include	<io.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include "crtcompat.h"
+#include <unistd.h>
+#endif
 #include	<string.h>
 
 

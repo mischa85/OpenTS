@@ -16,6 +16,8 @@
 #include "vqa.h"
 
 #include "_keyboar.h"
+#include "audiobackend.h"
+#include "browser.h"
 #include "ccfile.h"
 #include "dbgprint.h"
 #include "globals.h"
@@ -25,8 +27,10 @@
 #include "session.h"
 #include "unvqtblc.h"
 #include "vector.h"
+#include "video.h"
 #include "vqoption.h"
 #include "win.h"
+#include "win32timer.h"
 
 #include "special.hh"
 
@@ -46,6 +50,25 @@ intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, long action, void * buffer, l
 
 bool VQA_Message_Handler(void)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The player's loop is the only thing running while a movie plays, and it comes through
+	 * here once per pass, so this is the movie's whole service point: the audio timer is run
+	 * from here, the decoded frame goes up from here, and the page gets the thread back from
+	 * here. Without the last of those the tab would be frozen for the length of the movie.
+	 *
+	 * The sound driver's own pass does not run while a movie plays, so the rings are carried
+	 * out to the page here instead. It comes first: the play cursor the audio callback reads
+	 * is what the movie takes its time from, and a cursor that never moves stops the movie.
+	 */
+	Browser_Service();
+	Audio_Backend_Service();
+	Win32_Timer_Service();
+	Video_Present_If_Dirty();
+	Browser_Yield_If_Due();
+	return(true);
+#else
+
 	MSG msg;
 
 	if (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE)) {
@@ -57,6 +80,7 @@ bool VQA_Message_Handler(void)
 		}
 	}
 	return(true);
+#endif
 }
 
 
@@ -182,7 +206,19 @@ VQAClass::VQAClass(char const * filename, int flags, VQA_SURF_LOCK_CALLBACK surf
 	}
 
 	Config.AudioHandler = Stream_Audio_Handler;
+
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Twice the block the player was written around, because the block is also what sizes
+	 * the sound buffer it plays out of: two of them. A page's output has to be handed
+	 * about a tenth of a second of audio in advance or it stops between two passes of the
+	 * scheduler that carries it, and the movie takes its clock from the play cursor, so a
+	 * buffer too short to keep that much in hand stops the movie as well as the sound.
+	 */
+	Config.HMIBufSize = 16384;
+#else
 	Config.HMIBufSize = 8192;
+#endif
 
 	//-------------------------------------------------------------------------
 	// Initialize private class variables.
@@ -564,6 +600,16 @@ int VQAClass::Play_VQA(int last_frame_to_play, bool nobreakout)
 
 		if (!nobreakout && Keyboard->Check() && Keyboard->Get() == (KN_ESC|WWKEY_RLS_BIT)) {
 			brokeout = true;
+
+			/*
+			**	Said here rather than left to the close that follows, because the reading is
+			**	what the fetching runs in front of: a movie is fetched a long way ahead, and
+			**	between this and the teardown the rest of a film nobody is watching would go
+			**	on arriving.
+			*/
+			if (IsFileOpen) {
+				FileHandle.Abandon();
+			}
 		}
 	}
 

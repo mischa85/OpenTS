@@ -38,7 +38,11 @@
 #include <climits>
 #ifndef NO_BLOWFISH_DLL
 #include "iblockci.h"
+#ifdef _WIN32
 #include <comdef.h>
+#else
+#include "win32compat.h"
+#endif
 _COM_SMARTPTR_TYPEDEF(IBlockCipher, __uuidof(IBlockCipher));
 #endif
 

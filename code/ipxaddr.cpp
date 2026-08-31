@@ -46,7 +46,11 @@
 
 #include <cstdio>
 #include <cstring>
+#ifdef _WIN32
 #include <winsock.h>
+#else
+#include "winsockcompat.h"
+#endif
 
 
 /***************************************************************************

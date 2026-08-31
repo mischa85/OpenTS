@@ -88,7 +88,7 @@
 #include "init.h"
 #include "ipxmgr.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "logic.h"
 #include "mainloop.h"
 #include "movie.h"
@@ -118,11 +118,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#ifdef _WIN32
+#ifdef _WIN32
 #include <direct.h>
+#endif
+#endif
+#ifdef _WIN32
+#ifdef _WIN32
 #include <dos.h>
+#endif
+#endif
 #include <fcntl.h>
+#ifdef _WIN32
+#ifdef _WIN32
 #include <io.h>
+#endif
+#endif
+#ifdef _WIN32
+#ifdef _WIN32
 #include <share.h>
+#endif
+#endif
 
 
 /****************************************
@@ -283,6 +299,60 @@ void Ingame_Menu_Dialog(void)
 }
 
 
+/// <summary>
+/// Carries the scenario forward by one pass of the outer game loop.
+/// A pass runs the game's main loop and then services whichever dialog the game asked for,
+/// or, while the game is parked, runs no frame at all and only keeps the message queue
+/// moving. The routine performs exactly one pass and returns, so that the loop above it can
+/// be any loop -- including one a browser drives a frame at a time.
+/// </summary>
+/// <returns>GameFrameType; What this pass did, and whether the scenario is finished.</returns>
+GameFrameType Game_Frame(void)
+{
+#ifdef _DEBUG
+	/*
+	**	Scenario-editor-mode: call the editor's main loop. The editor is never parked.
+	*/
+	if (Debug_Map) {
+		return Map_Edit_Loop() ? GAME_FRAME_FINISHED : GAME_FRAME_ADVANCED;
+	}
+#endif
+
+	/*
+	**	This is tested ahead of the park below because a game that has already been shut
+	**	down must not be left waiting for a focus that would only end it again.
+	*/
+	if (!GameActive) {
+		return GAME_FRAME_FINISHED;
+	}
+
+	/*
+	**	A parked game plays no frame. The pass still pumps the message queue, since that is
+	**	how the game is brought back to the foreground in the first place.
+	*/
+	if (Is_Suspended()) {
+		Service_Suspension();
+		return GAME_FRAME_SUSPENDED;
+	}
+
+	/*
+	**	Call the game's main loop
+	*/
+	if (Main_Loop()) {
+		return GAME_FRAME_FINISHED;
+	}
+
+	/*
+	**	If the SpecialDialog flag is set, invoke the given special dialog.
+	**	This must be done outside the main loop, since the dialog will call
+	**	Main_Loop(), allowing the game to run in the background.
+	*/
+	Ingame_Menu_Dialog();
+
+	return GAME_FRAME_ADVANCED;
+}
+
+
 /***********************************************************************************************
  * Main_Game -- Main game startup routine.                                                     *
  *                                                                                             *
@@ -379,50 +449,12 @@ void Main_Game(int argc, char * argv[])
 		SpecialDialog = SDLG_NONE;
 		_special_dialog_flag = true;
 
-#ifdef _DEBUG
 		/*
-		**	Scenario-editor version of main-loop processing
+		**	Play the scenario one pass at a time until it reports itself finished.
 		*/
-		for (;;) {
-			/*
-			**	Non-scenario-editor-mode: call the game's main loop
-			*/
-			if (!Debug_Map) {
-				if (Main_Loop()) {
-					break;
-				}
-
-				Ingame_Menu_Dialog();
-			} else {
-
-				/*
-				**	Scenario-editor-mode: call the editor's main loop
-				*/
-				if (Map_Edit_Loop()) {
-					break;
-				}
-			}
+		while (Game_Frame() != GAME_FRAME_FINISHED) {
 		}
-#else
-		/*
-		**	Non-editor version of main-loop processing
-		*/
-		for (;;) {
-			/*
-			**	Call the game's main loop
-			*/
-			if (Main_Loop()) {
-				break;
-			}
 
-			/*
-			**	If the SpecialDialog flag is set, invoke the given special dialog.
-			**	This must be done outside the main loop, since the dialog will call
-			**	Main_Loop(), allowing the game to run in the background.
-			*/
-			Ingame_Menu_Dialog();
-		}
-#endif
 		Stop_Ingame_Movie();
 
 		if (ToolTips != NULL) {
@@ -492,6 +524,17 @@ void Main_Game(int argc, char * argv[])
  *=============================================================================================*/
 void Call_Back(void)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Several of the engine's waits spin on this routine alone -- an audio stream
+	 * finishing, mostly -- and never reach the message handler. On a page the thread has
+	 * to be given back somewhere, and "as often as possible" is what this routine's own
+	 * contract already promises. The yield inside is paced, so being called this often
+	 * does not cost a frame per call.
+	 */
+	Windows_Message_Handler();
+#endif
+
 	/*
 	**	Music and speech maintenance
 	*/

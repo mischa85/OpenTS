@@ -48,7 +48,7 @@
 #include "globals.h"
 #include "houstype.h"
 #include "init.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "msgbox.h"
 #include "ownrdraw.h"
 #include "saveload.h"
@@ -489,13 +489,17 @@ bool LoadOptionsClass::Dialog(void)
 								break;
 							}
 
+							/*
+							 * The name of a new save outlives the branch that picks it,
+							 * because filename points into this buffer until the save is
+							 * written.
+							 */
+							char test_filename[256];
 							const char * filename = NULL;
 
 							if (entry && entry->Valid) {
 								filename = entry->Filename;
 							} else {
-								char test_filename[256];
-
 								{ /// the scope is important to make it match - temp_file nedes to be destroyed before assigning the string
 									CCFileClass temp_file;
 									do {

@@ -37,7 +37,11 @@
 #include "house.hh"
 #include "struct.hh"
 
+#ifdef _WIN32
 #include <unknwn.h>
+#else
+#include "win32compat.h"
+#endif
 
 
 class CCINIClass;

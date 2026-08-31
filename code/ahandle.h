@@ -15,8 +15,16 @@
 
 #include "vqaplay.h"
 
+#ifdef _WIN32
 #include <dsound.h>
+#else
+#include "win32compat.h"
+#endif
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32compat.h"
+#endif
 
 struct AhandleInitParams
 {

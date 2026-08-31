@@ -115,5 +115,44 @@ if(WIN32)
     add_subdirectory(code/language)
 endif()
 
+#
+# ---------------------------------------------------------
+# The native engine, compiled but not yet a supported target
+# ---------------------------------------------------------
+#
+# Builds every engine source against the Win32 substitute, as the WebAssembly target does,
+# with the clang flag set. A static library rather than an executable while the native host
+# is still being written; docs/PORTING.md stage 5 records the state.
+if(NOT WIN32 AND NOT EMSCRIPTEN)
+    file(GLOB OPENTS_NATIVE_SRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/code/*.cpp" "${CMAKE_SOURCE_DIR}/code/*.c")
+    file(GLOB OPENTS_VQALIB_SRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/code/vqalib/*.cpp")
+
+    # The MIDL stubs are inputs to the Windows build only, and the compat family already
+    # builds as OpenTSPosixCompat.
+    list(FILTER OPENTS_NATIVE_SRC EXCLUDE REGEX "_i\\.c$")
+
+    add_library(OpenTSEngine STATIC ${OPENTS_NATIVE_SRC} ${OPENTS_VQALIB_SRC})
+    target_compile_features(OpenTSEngine PRIVATE cxx_std_20)
+    target_include_directories(OpenTSEngine PRIVATE
+        "${CMAKE_SOURCE_DIR}/code"
+        "${CMAKE_SOURCE_DIR}/code/vqalib"
+        "${OPENTS_GENERATED_DIR}"
+    )
+    target_compile_definitions(OpenTSEngine PRIVATE NOMINMAX NO_BLOWFISH_DLL)
+    target_compile_options(OpenTSEngine PRIVATE
+        ${OPENTS_HARNESS_COMPILE_OPTIONS}
+        ${OPENTS_HARNESS_FP_OPTIONS}
+        -fno-strict-aliasing
+        -fno-delete-null-pointer-checks
+    )
+    add_dependencies(OpenTSEngine OpenTSBuildStamp)
+
+    set(BGFX_ROOT "${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bgfx")
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/code/bgfxbackend.cpp" PROPERTIES
+        INCLUDE_DIRECTORIES
+            "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
+    )
+endif()
+
 enable_testing()
 add_subdirectory(tests)

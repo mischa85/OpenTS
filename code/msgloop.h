@@ -31,7 +31,15 @@
 
 #pragma once
 
+#ifdef _WIN32
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32compat.h"
+#endif
+#else
+#include "win32compat.h"
+#endif
 
 // Main message handler.
 void Windows_Message_Handler(void);

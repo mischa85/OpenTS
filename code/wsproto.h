@@ -31,14 +31,22 @@
 
 #pragma once
 
-#include "_WSProto.h"
+#include "_wsproto.h"
 #include "ipxaddr.h"
 #include "vector.h"
 
 /*
 **	Include standard Winsock 1.0 header file.
 */
+#if defined(__EMSCRIPTEN__)
+#include "winsockcompat.h"
+#else
+#ifdef _WIN32
 #include <winsock.h>
+#else
+#include "winsockcompat.h"
+#endif
+#endif
 
 #ifndef fw_assert
 #define fw_assert assert

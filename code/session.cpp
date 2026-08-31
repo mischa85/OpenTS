@@ -72,7 +72,9 @@
 
 #include <algorithm>
 #include <ctime> // for station ID computation
+#ifdef _WIN32
 #include <dos.h> // for station ID computation
+#endif
 
 
 /***************************** Globals *************************************/

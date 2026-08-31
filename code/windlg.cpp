@@ -20,8 +20,20 @@
 #include "video.h"
 #include "win.h"
 
+#ifdef _WIN32
+#ifdef _WIN32
 #include <commctrl.h>
+#else
+#include "win32compat.h"
+#endif
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32compat.h"
+#endif
+#else
+#include "win32compat.h"
+#endif
 
 
 BOOL CALLBACK Resize_Dialog(HWND window, LPARAM lParam);
@@ -568,6 +580,14 @@ BOOL CALLBACK Resize_Dialog(HWND window, LPARAM lParam)
 	static int resize_dialog_scale_x = 300;
 	static int resize_dialog_scale_y = 163;
 
+	/*
+	 * IDD_TEMPLATE's own size in dialog units, as Sun.rc declares it. The scale pair
+	 * above is what that many units measure in pixels on the system the dialog artwork
+	 * was drawn against, so the two are not interchangeable.
+	 */
+	static int const resize_dialog_units_x = 200;
+	static int const resize_dialog_units_y = 100;
+
 	LONG w;
 	LONG wheight;
 	RECT rcl;
@@ -592,12 +612,29 @@ BOOL CALLBACK Resize_Dialog(HWND window, LPARAM lParam)
 
 	if (resize_dialog_width == 0) {
 		HWND win = CreateDialogParam(ProgramInstance, (LPCSTR)198, NULL, Resize_Dialog_Proc, NULL);
-		GetClientRect(win, &wrcl);
-		DestroyWindow(win);
-		w = wrcl.right;
-		wheight = wrcl.bottom;
-		resize_dialog_width = w;
-		resize_dialog_height = wheight;
+		if (win != NULL) {
+			GetClientRect(win, &wrcl);
+			DestroyWindow(win);
+			resize_dialog_width = wrcl.right;
+			resize_dialog_height = wrcl.bottom;
+		}
+
+		/*
+		 * The reference dialog measures the design space: its client rectangle is what
+		 * resize_dialog_units_x by resize_dialog_units_y dialog units come to here, so
+		 * the ratio against the scale pair is what every other template has to be
+		 * carried by. Where the executable carries no such template, converting those
+		 * same units through the dialog base units measures it instead, and dividing by
+		 * nothing at all is not an option.
+		 */
+		if (resize_dialog_width <= 0 || resize_dialog_height <= 0) {
+			DWORD units = GetDialogBaseUnits();
+			resize_dialog_width = resize_dialog_units_x * (int)LOWORD(units) / 4;
+			resize_dialog_height = resize_dialog_units_y * (int)HIWORD(units) / 8;
+		}
+
+		w = resize_dialog_width;
+		wheight = resize_dialog_height;
 	} else {
 		w = resize_dialog_width;
 		wheight = resize_dialog_height;

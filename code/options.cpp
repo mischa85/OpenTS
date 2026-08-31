@@ -72,11 +72,12 @@
 #include "init.h"
 #include "ipxmgr.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "mouse.h"
 #include "msgbox.h"
 #include "ownrdraw.h"
 #include "rules.h"
+#include "screenlayout.h"
 #include "session.h"
 #include "techno.h"
 #include "theme.h"
@@ -134,6 +135,7 @@ OptionsClass::OptionsClass(void) :
 	VSync(false),
 	Renderer(0),
 	CursorScale(0),
+	UIScale(0),
 	SoundLatency(9),
 	KeyForceMove1(KN_LALT),
 	KeyForceMove2(KN_LALT),
@@ -393,6 +395,16 @@ void OptionsClass::Load_Settings(void)
 	ScreenHeight = ConfigINI.Get_Int("Video", "ScreenHeight", ScreenHeight);
 	DebugString("Resolution = %d X %d\n", ScreenWidth, ScreenHeight);
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The frame in a browser is the page's canvas rather than a resolution anyone picked, so
+	 * a movie at its own size is a small picture in the middle of the window whatever the
+	 * window is, and the display options that carry this switch are not reachable there. The
+	 * setting still decides it wherever the file names it.
+	 */
+	StretchMovies = true;
+#endif
+
 	StretchMovies = ConfigINI.Get_Bool("Video", "StretchMovies", StretchMovies);
 	DebugString("StretchMovies is %s\n", StretchMovies == true ? "ON" : "OFF");
 
@@ -404,6 +416,9 @@ void OptionsClass::Load_Settings(void)
 	DebugString("ScaleMode is %d, IntegerScaling is %s\n", ScaleMode, IntegerScaling == true ? "ON" : "OFF");
 
 	CursorScale = ConfigINI.Get_Int("Video", "CursorScale", CursorScale);
+
+	UIScale = ConfigINI.Get_Int("Video", "UIScale", UIScale);
+	DebugString("UIScale = %d (drawn at %d)\n", UIScale, UI_Scale());
 
 	Set_Sound_Volume(ConfigINI.Get_Float("Audio", "SoundVolume", SoundVolume), false);
 	Set_Voice_Volume(ConfigINI.Get_Float("Audio", "VoiceVolume", VoiceVolume), false);
@@ -468,6 +483,7 @@ void OptionsClass::Save_Settings (void)
 	ConfigINI.Put_Bool("Video", "VSync", VSync);
 	ConfigINI.Put_Int("Video", "Renderer", Renderer);
 	ConfigINI.Put_Int("Video", "CursorScale", CursorScale);
+	ConfigINI.Put_Int("Video", "UIScale", UIScale);
 	ConfigINI.Put_Float("Audio", "SoundVolume", SoundVolume);
 	ConfigINI.Put_Float("Audio", "VoiceVolume", VoiceVolume);
 	ConfigINI.Put_Float("Audio", "ScoreVolume", ScoreVolume);

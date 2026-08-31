@@ -184,9 +184,13 @@
 #include "scrnsel.hh"
 
 #include <algorithm>
+#ifdef _WIN32
 #include <conio.h>
+#endif
 #include <ctime>
+#ifdef _WIN32
 #include <dos.h>
+#endif
 #include <unordered_set>
 
 extern VoxelDataStruct DropPodVoxel;
@@ -238,7 +242,7 @@ static bool Init_Rules(void);
 static void Init_Commands(void);
 static CampaignType Choose_Campaign(void);
 static void Init_Threads(void);
-void Draw_Version_Text(Surface * surface);
+void Draw_Version_Text(Surface * surface, Rect const & area);
 void Version_Dialog(void);
 
 INT_PTR CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -1603,7 +1607,7 @@ bool Parse_Command_Line(int argc, char * argv[])
 
 
 		bool processed = true;
-		int ob = Obfuscate(string);
+		unsigned int ob = (unsigned int)Obfuscate(string);
 
 #ifdef _DEBUG
 		Debug_Playtest = true;
@@ -1874,10 +1878,17 @@ void Init_Random(void)
 		/*
 		**	Gather some "random" bits from the DOS mode timer.
 		*/
+#ifdef _WIN32
 		struct timeb t;
 		ftime(&t);
 		CryptRandom.Seed_Byte(t.millitm);
 		CryptRandom.Seed_Byte(t.time);
+#else
+		SYSTEMTIME t;
+		GetLocalTime(&t);
+		CryptRandom.Seed_Byte((char)t.wMilliseconds);
+		CryptRandom.Seed_Byte((char)t.wSecond);
+#endif
 	#endif
 
 		/*
@@ -1918,12 +1929,23 @@ void Init_Random(void)
  * HISTORY:                                                                                    *
  *   06/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-void Load_Title_Page(const char * name, bool visible)
+Point2D Load_Title_Page(const char * name, bool visible)
 {
 	HiddenSurface->Fill(0);
-	Load_Title_Screen(name, HiddenSurface, &CCPalette);
+
+	/*
+	 * The title page is the whole of what this screen shows, so it is magnified to fill the
+	 * frame rather than left at the size it was drawn. It is filled out where it is drawn
+	 * rather than on its way to the screen, so that a dialog opening over it and every
+	 * later repaint of the frame carry the filled picture rather than the small one. The
+	 * size drawn is returned for a caller that has its own artwork to move with it.
+	 */
+	Point2D const size = Load_Title_Screen(name, HiddenSurface, &CCPalette, true);
+
 	if (visible)
 		Update_Visible_Surface(HiddenSurface);
+
+	return(size);
 }
 
 
@@ -2288,7 +2310,7 @@ static void Init_Patch_Mixfiles(void)
 /***********************************************************************************************
  * Init_Bootstrap_Mixfiles -- Registers and caches any mixfiles needed for bootstrapping.      *
  *                                                                                             *
- *    This routine will register the initial mixfiles that are required to display error       *
+ *    This routine will the initial mixfiles that are required to display error       *
  *    messages and get input from the player.                                                  *
  *                                                                                             *
  * INPUT:   none                                                                               *
@@ -2342,7 +2364,7 @@ static bool Init_Bootstrap_Mixfiles(void)
 /***********************************************************************************************
  * Init_Secondary_Mixfiles -- Register and cache secondary mixfiles.                           *
  *                                                                                             *
- *    This routine is used to register the mixfiles that are needed for main menu processing.  *
+ *    This routine is used to the mixfiles that are needed for main menu processing.  *
  *    Call this routine before the main menu is display and processed.                         *
  *                                                                                             *
  * INPUT:   none                                                                               *
@@ -3223,7 +3245,7 @@ void Title_Screen_Restore(bool force)
 /// nothing at all until the color schemes have been loaded.
 /// </summary>
 /// <param name="surface">The surface to print the version text upon.</param>
-void Draw_Version_Text(Surface * surface)
+void Draw_Version_Text(Surface * surface, Rect const & area)
 {
 	char version[128];
 	Rect rect;
@@ -3237,7 +3259,7 @@ void Draw_Version_Text(Surface * surface)
 
 	Cheat_Version_Suffix(version);
 
-	rect = surface->Get_Rect();
+	rect = area.Is_Valid() ? area : surface->Get_Rect();
 
 	Fancy_Text_Print(
 		"V%s",

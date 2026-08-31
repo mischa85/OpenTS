@@ -433,7 +433,14 @@ int ThemeClass::Play_Song(ThemeType theme)
 		if (theme != THEME_NONE && theme != THEME_QUIET) {
 			if (theme > THEME_NONE && Volume > 0) {
 				Audio.StreamLowImpact = true;
-				Current = Audio.File_Stream_Sample_Vol(Theme_File_Name(theme), Volume, true);
+				/*
+				**	A score may give the disc up rather than hold the game for it. Music is
+				**	the one thing the game goes on perfectly well without, so a track whose
+				**	bytes have not arrived starts late or stops early instead of costing a
+				**	frame. A disc whose bytes are at hand never withholds any, so this
+				**	changes nothing outside a browser reading its discs over a network.
+				*/
+				Current = Audio.File_Stream_Sample_Vol(Theme_File_Name(theme), Volume, true, true);
 				Audio.StreamLowImpact = false;
 
 				/*

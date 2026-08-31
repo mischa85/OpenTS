@@ -93,8 +93,8 @@ struct UserWindow
 	DWORD ExStyle;
 	RECT Rect;
 	std::string Text;
-	LONG UserData;
-	std::vector<LONG> Extra;
+	LONG_PTR UserData;
+	std::vector<LONG_PTR> Extra;
 	bool Visible;
 	bool Enabled;
 	bool NeedsPaint;
@@ -988,7 +988,8 @@ HWND CreateWindowExA(DWORD exstyle, LPCSTR classname, LPCSTR windowname, DWORD s
 	if (extrabytes < MINIMUM_WINDOW_EXTRA) {
 		extrabytes = MINIMUM_WINDOW_EXTRA;
 	}
-	window->Extra.assign((size_t)((extrabytes + 3) / 4), 0);
+	int const slot = (int)sizeof(LONG_PTR);
+	window->Extra.assign((size_t)((extrabytes + slot - 1) / slot), 0);
 
 	_Windows.push_back(window);
 
@@ -1610,7 +1611,7 @@ int MapWindowPoints(HWND from, HWND to, LPPOINT points, UINT count)
 */
 
 
-LONG GetWindowLongA(HWND window, int index)
+LONG_PTR GetWindowLongPtrA(HWND window, int index)
 {
 	UserWindow * entry = Window_Of(window);
 	if (entry == nullptr) {
@@ -1618,40 +1619,47 @@ LONG GetWindowLongA(HWND window, int index)
 	}
 
 	switch (index) {
-		case GWL_WNDPROC:	return((LONG)(ULONG_PTR)entry->Procedure);
-		case GWL_HINSTANCE:	return((LONG)(ULONG_PTR)entry->Instance);
-		case GWL_HWNDPARENT: return((LONG)(ULONG_PTR)(entry->Parent != nullptr ? Handle_Of(entry->Parent) : nullptr));
-		case GWL_STYLE:		return((LONG)entry->Style);
-		case GWL_EXSTYLE:	return((LONG)entry->ExStyle);
+		case GWL_WNDPROC:	return((LONG_PTR)entry->Procedure);
+		case GWL_HINSTANCE:	return((LONG_PTR)entry->Instance);
+		case GWL_HWNDPARENT: return((LONG_PTR)(entry->Parent != nullptr ? Handle_Of(entry->Parent) : nullptr));
+		case GWL_STYLE:		return((LONG_PTR)entry->Style);
+		case GWL_EXSTYLE:	return((LONG_PTR)entry->ExStyle);
 		case GWL_USERDATA:	return(entry->UserData);
-		case GWL_ID:		return((LONG)entry->ID);
+		case GWL_ID:		return((LONG_PTR)entry->ID);
 		default:			break;
 	}
 
-	if (index < 0 || (index % 4) != 0 || (unsigned int)(index / 4) >= entry->Extra.size()) {
+	int const slot = (int)sizeof(LONG_PTR);
+	if (index < 0 || (index % slot) != 0 || (unsigned int)(index / slot) >= entry->Extra.size()) {
 		return(0);
 	}
 
-	return(entry->Extra[(unsigned int)(index / 4)]);
+	return(entry->Extra[(unsigned int)(index / slot)]);
 }
 
 
-LONG SetWindowLongA(HWND window, int index, LONG value)
+LONG GetWindowLongA(HWND window, int index)
+{
+	return((LONG)GetWindowLongPtrA(window, index));
+}
+
+
+LONG_PTR SetWindowLongPtrA(HWND window, int index, LONG_PTR value)
 {
 	UserWindow * entry = Window_Of(window);
 	if (entry == nullptr) {
 		return(0);
 	}
 
-	LONG previous = GetWindowLongA(window, index);
+	LONG_PTR previous = GetWindowLongPtrA(window, index);
 
 	switch (index) {
 		case GWL_WNDPROC:
-			entry->Procedure = (WNDPROC)(ULONG_PTR)value;
+			entry->Procedure = (WNDPROC)value;
 			return(previous);
 
 		case GWL_HINSTANCE:
-			entry->Instance = (HINSTANCE)(ULONG_PTR)value;
+			entry->Instance = (HINSTANCE)value;
 			return(previous);
 
 		case GWL_STYLE:
@@ -1679,12 +1687,19 @@ LONG SetWindowLongA(HWND window, int index, LONG value)
 			break;
 	}
 
-	if (index < 0 || (index % 4) != 0 || (unsigned int)(index / 4) >= entry->Extra.size()) {
+	int const slot = (int)sizeof(LONG_PTR);
+	if (index < 0 || (index % slot) != 0 || (unsigned int)(index / slot) >= entry->Extra.size()) {
 		return(0);
 	}
 
-	entry->Extra[(unsigned int)(index / 4)] = value;
+	entry->Extra[(unsigned int)(index / slot)] = value;
 	return(previous);
+}
+
+
+LONG SetWindowLongA(HWND window, int index, LONG value)
+{
+	return((LONG)SetWindowLongPtrA(window, index, (LONG_PTR)value));
 }
 
 

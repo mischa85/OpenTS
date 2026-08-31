@@ -35,7 +35,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef _MSC_VER
 #include <new.h>
+#else
+#include <new>
+#endif
 
 
 /*

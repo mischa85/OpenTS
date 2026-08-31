@@ -50,7 +50,11 @@
 
 #include <cstdio>
 #include <cstring>
+#ifdef _WIN32
 #include <iphlpapi.h>
+#else
+#include "win32compat.h"
+#endif
 
 
 extern int WestwoodOnline_PortNumber;
@@ -367,7 +371,7 @@ bool UDPInterfaceClass::Open_Socket ( SOCKET )
 /// </remarks>
 void UDPInterfaceClass::Register_Local_Addresses()
 {
-	unsigned long size = 0;
+	ULONG size = 0;
 
 	if (GetAdaptersInfo(nullptr, &size) == ERROR_BUFFER_OVERFLOW) {
 

@@ -736,9 +736,15 @@ typedef struct tWAVEFORMATEX {
 #define GWL_ID			(-12)
 #define GWLP_WNDPROC	(-4)
 #define GWLP_USERDATA	(-21)
+#define GWLP_HINSTANCE	(-6)
+#define GWLP_HWNDPARENT	(-8)
+#define GWLP_ID			(-12)
 #define DWL_MSGRESULT	0
 #define DWL_DLGPROC		4
 #define DWL_USER		8
+#define DWLP_MSGRESULT	0
+#define DWLP_DLGPROC	((int)sizeof(LRESULT))
+#define DWLP_USER		((int)(DWLP_DLGPROC + sizeof(LONG_PTR)))
 
 #define SM_CXSCREEN			0
 #define SM_CYSCREEN			1
@@ -1705,6 +1711,10 @@ int ReleaseDC(HWND window, HDC dc);
 int FillRect(HDC dc, RECT const * rect, HBRUSH brush);
 LONG GetWindowLongA(HWND window, int index);
 LONG SetWindowLongA(HWND window, int index, LONG value);
+LONG_PTR GetWindowLongPtrA(HWND window, int index);
+LONG_PTR SetWindowLongPtrA(HWND window, int index, LONG_PTR value);
+#define GetWindowLongPtr	GetWindowLongPtrA
+#define SetWindowLongPtr	SetWindowLongPtrA
 BOOL SetWindowTextA(HWND window, LPCSTR text);
 int GetWindowTextA(HWND window, LPSTR text, int count);
 BOOL EnableWindow(HWND window, BOOL enable);

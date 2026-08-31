@@ -426,6 +426,7 @@ void Send_Statistics_Packet(void)
 	RawFileClass file;
 	file.Set_Name(path_to_exe);
 	file.Open();
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
 	HANDLE handle = file.Get_File_Handle();
 
 	if (handle != INVALID_HANDLE_VALUE) {
@@ -435,6 +436,7 @@ void Send_Statistics_Packet(void)
 			stats.Add_Field (FIELD_GAME_BUILD_DATE, (void*)&write_time, sizeof (write_time));
 		}
 	}
+#endif
 
 	/*
 	**	Build the player specific statistics

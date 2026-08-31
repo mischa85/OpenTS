@@ -43,7 +43,11 @@
 #include "voc.hh"
 
 #include <algorithm>
+#ifdef _MSC_VER
 #include <new.h>
+#else
+#include <new>
+#endif
 
 
 /***************************************************************************

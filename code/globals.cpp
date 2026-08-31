@@ -406,7 +406,12 @@ int LogicTriggerID;
 */
 unsigned int ScenarioCRC;
 
+/***************************************************************************
+**	The scenario the command line forces the game to start, and the battle
+**	it is played as part of. Debug_ForceScenario is what makes them count.
+*/
 char Debug_ScenarioName[128];
+char Debug_CampaignName[32];
 
 
 /***************************************************************************

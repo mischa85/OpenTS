@@ -36,7 +36,11 @@
 #include "listnode.h"
 
 #ifdef _WIN32
+#ifdef _WIN32
 #include <comdef.h>
+#else
+#include "win32compat.h"
+#endif
 #else
 #include "platform.h"
 #endif

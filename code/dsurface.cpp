@@ -76,7 +76,6 @@ unsigned short DSurface::HalfbrightMask = 0;
 unsigned short DSurface::QuarterbrightMask = 0;
 unsigned short DSurface::EighthbrightMask = 0;
 
-bool DSurface::AllowStretchBlits = true;
 int DSurface::PrimaryColorMode = COLORMODE_565;
 
 
@@ -111,6 +110,17 @@ DSurface::DSurface(int width, int height) :
 	GDIBuffer(NULL),
 	Pitch(0)
 {
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page has no GDI to allocate through. The pixels are what the surface is for, and
+	 * a plain allocation supplies them in the same 565 layout at the same pitch; what is
+	 * lost is the device context, which Is_GDI_Backed reports as absent.
+	 */
+	Pitch = width * 2;
+	GDIBuffer = new unsigned char[(size_t)Pitch * (size_t)height];
+	memset(GDIBuffer, 0, (size_t)Pitch * (size_t)height);
+#else
+
 	/*
 	 * BITMAPINFO carries room for a single color entry, but a bitfields bitmap is
 	 * described by three masks following the header, so the header is declared with
@@ -159,6 +169,7 @@ DSurface::DSurface(int width, int height) :
 	} else {
 		Pitch = width * 2;
 	}
+#endif
 }
 
 
@@ -178,6 +189,12 @@ DSurface::DSurface(int width, int height) :
  *=============================================================================================*/
 DSurface::~DSurface(void)
 {
+#if defined(__EMSCRIPTEN__)
+	delete [] (unsigned char *)GDIBuffer;
+	GDIBuffer = NULL;
+	return;
+#else
+
 	/*
 	 * GDI will not free a bitmap that is still selected into a context, so the one the
 	 * context started with has to go back first.
@@ -197,6 +214,7 @@ DSurface::~DSurface(void)
 	}
 
 	GDIBuffer = NULL;
+#endif
 }
 
 
@@ -474,48 +492,10 @@ bool DSurface::Blit_From(Rect const & dcliprect, Rect const & destrect, Surface 
 {
 	if (!dcliprect.Is_Valid() || !scliprect.Is_Valid() || !destrect.Is_Valid() || !sourcerect.Is_Valid()) return(false);
 
-	bool samesize = (sourcerect.Width == destrect.Width && sourcerect.Height == destrect.Height);
-
-	/*
-	 * The software blitter handles everything except a size change between two of these
-	 * surfaces, which GDI stretches instead.
-	 */
-	if (trans || !ssource.Is_GDI_Backed() || samesize) {
-		bool result = BASECLASS::Blit_From(dcliprect, destrect, ssource, scliprect, sourcerect, trans, unknown);
-		if (result && IsPrimary) {
-			Video_Mark_Dirty();
-		}
-		return(result);
-	}
-
-	DSurface const & source = (DSurface const &)ssource;
-
-	if (GDIDC == NULL || source.GDIDC == NULL) {
-		return(false);
-	}
-
-	Rect drect = destrect.Bias_To(dcliprect);
-	Rect srect = sourcerect.Bias_To(scliprect);
-
-	drect = Intersect(drect, Intersect(dcliprect, Get_Rect()));
-	if (!drect.Is_Valid()) return(false);
-
-	/*
-	 * Both sets of pixels are read and written directly elsewhere, so any drawing GDI
-	 * still holds has to land first.
-	 */
-	GdiFlush();
-
-	SetStretchBltMode(GDIDC, COLORONCOLOR);
-	bool result = StretchBlt(GDIDC, drect.X, drect.Y, drect.Width, drect.Height,
-		source.GDIDC, srect.X, srect.Y, srect.Width, srect.Height, SRCCOPY) != 0;
-
-	GdiFlush();
-
+	bool result = BASECLASS::Blit_From(dcliprect, destrect, ssource, scliprect, sourcerect, trans, unknown);
 	if (result && IsPrimary) {
 		Video_Mark_Dirty();
 	}
-
 	return(result);
 }
 

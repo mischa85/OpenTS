@@ -23,13 +23,14 @@
 #include "gamedlg.h"
 #include "globals.h"
 #include "init.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "misc.h"
 #include "video.h"
 #include "mixfile.h"
 #include "msgbox.h"
 #include "newmenu.h"
 #include "ownrdraw.h"
+#include "screenlayout.h"
 #include "sidebar.h"
 #include "sounddlg.h"
 #include "stimer.h"
@@ -67,10 +68,18 @@ void Main_Options_Dialog(void)
 	LONG in_rc;
 
 	while (true) {
-		do {
-			main_rc = -1;
-			main_handle = OwnerDraw::Begin_Dialog(IDD_OPT_MAIN, Main_Options_Dialog_Proc);
-		} while (main_handle == 0);
+		main_rc = -1;
+		main_handle = OwnerDraw::Begin_Dialog(IDD_OPT_MAIN, Main_Options_Dialog_Proc);
+
+		/*
+		 * Nothing about a dialog that could not be created changes between one attempt and
+		 * the next, so a failure ends the options screen rather than being retried.
+		 */
+		if (main_handle == 0) {
+			GameActive = old_game_active;
+			return;
+		}
+
 		SetWindowLongPtr(main_handle, GWLP_USERDATA, (LONG_PTR)&main_rc);
 
 		OwnerDraw::Move_Dialog(main_handle, -1, (HiddenSurface->Get_Height() - 400) / 2 + 147);
@@ -92,11 +101,13 @@ void Main_Options_Dialog(void)
 
 			case IDC_OPTMAIN_DISPLAY: {
 				while (true) {
-					do {
-						TempOptions = Options;
-						in_rc = -1;
-						in_handle = OwnerDraw::Begin_Dialog(IDD_OPT_DISPLAY, Display_Options_Dialog_Proc);
-					} while (in_handle == 0);
+					TempOptions = Options;
+					in_rc = -1;
+					in_handle = OwnerDraw::Begin_Dialog(IDD_OPT_DISPLAY, Display_Options_Dialog_Proc);
+					if (in_handle == 0) {
+						break;
+					}
+
 					SetWindowLongPtr(in_handle, GWLP_USERDATA, (LONG_PTR)&in_rc);
 					OwnerDraw::Display_Dialog(in_handle);
 
@@ -278,13 +289,10 @@ bool Change_Display_Mode(int width, int height)
 		SetWindowPos(MainWindow, NULL, x, y, newwidth, newheight, SWP_NOZORDER);
 	}
 
-	Rect temp = VisibleRect;
-	temp.X = ((Options.IsSidebarOnRight || Debug_Map) ? 0 : SidebarClass::SIDE_WIDTH);
-	temp.Y = 16;
-	temp.Width -= SidebarClass::SIDE_WIDTH;
-	temp.Height -= 16;
+	ScreenLayout const layout = Compute_Screen_Layout(VisibleRect);
+	Rect temp = layout.Tactical;
 
-	Allocate_Surfaces(VisibleRect, Rect(0, 0, temp.Width, VisibleRect.Height), Rect(0, 0, temp.Width, VisibleRect.Height), Rect(0, 0, SidebarClass::SIDE_WIDTH, VisibleRect.Height));
+	Allocate_Surfaces(layout.Hidden, layout.Composite, layout.Tile, layout.Sidebar);
 	LogicalSurface = HiddenSurface;
 
 	if (MouseCursor != NULL) {
