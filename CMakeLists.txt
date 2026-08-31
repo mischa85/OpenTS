@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
 
-project(OpenTS VERSION 0.2.0 LANGUAGES C CXX ASM_MASM)
+project(OpenTS VERSION 0.2.0 LANGUAGES C CXX)
 
 # A SemVer prerelease label, which project() cannot carry because it takes numbers only. Set it
 # to "beta1" and the version reads 0.1.0-beta1; leave it empty outside a prerelease series. The
@@ -11,8 +11,13 @@ set(OPENTS_VERSION_PRERELEASE "")
 # alone. Every other build names the commit it came from as well.
 option(OPENTS_OFFICIAL_BUILD "Build as an official release of the declared version" OFF)
 
-if(NOT MSVC OR MSVC_VERSION LESS 1930)
-    message(FATAL_ERROR "OpenTS requires the Visual Studio 2022 MSVC toolchain.")
+# Windows builds the full engine and requires the supported toolchain. Other platforms build
+# the dependencies and the test suite while the engine is ported; docs/PORTING.md records the
+# plan and status.
+if(WIN32)
+    if(NOT MSVC OR MSVC_VERSION LESS 1930)
+        message(FATAL_ERROR "OpenTS requires the Visual Studio 2022 MSVC toolchain.")
+    endif()
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -54,9 +59,32 @@ add_custom_target(OpenTSBuildStamp ALL
     VERBATIM
 )
 
+# Compile options shared by the test harnesses; the engine's own live in code/CMakeLists.txt.
+# The floating point choice mirrors the engine's /fp:precise intent on every toolchain.
+if(MSVC)
+    set(OPENTS_HARNESS_COMPILE_OPTIONS /EHsc /Zc:__cplusplus $<$<CONFIG:Debug>:/MTd> $<$<CONFIG:Release>:/MT>)
+    set(OPENTS_HARNESS_FP_OPTIONS /arch:SSE2 /fp:precise)
+else()
+    # -fms-extensions covers the tree's __declspec(property) accessors.
+    set(OPENTS_HARNESS_COMPILE_OPTIONS -fms-extensions)
+    set(OPENTS_HARNESS_FP_OPTIONS -ffp-contract=off)
+endif()
+
+# The CPU detection reads CPUID, so its harness only builds for an x86 processor.
+set(OPENTS_TARGET_IS_X86 FALSE)
+if(MSVC)
+    set(OPENTS_TARGET_IS_X86 TRUE)
+elseif(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64|i386")
+    set(OPENTS_TARGET_IS_X86 TRUE)
+elseif(NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i[3-6]86)$")
+    set(OPENTS_TARGET_IS_X86 TRUE)
+endif()
+
 add_subdirectory(thirdparty)
-add_subdirectory(code)
-add_subdirectory(code/language)
+if(WIN32)
+    add_subdirectory(code)
+    add_subdirectory(code/language)
+endif()
 
 enable_testing()
 add_subdirectory(tests)

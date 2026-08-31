@@ -1133,12 +1133,19 @@ CLSID const INIClass::Get_CLSID(char const * section, char const * entry, CLSID 
 	char buffer[128];
 
 	if (Get_String(section, entry, "", buffer, sizeof(buffer))) {
+#ifdef _WIN32
 		wchar_t olestr[128];
 		MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, buffer, -1, olestr, ARRAY_SIZE(olestr));
 		CLSID clsid;
 		if (SUCCEEDED(CLSIDFromString(olestr, &clsid))) {
 			return(clsid);
 		}
+#else
+		CLSID clsid;
+		if (Parse_GUID_Text(buffer, clsid)) {
+			return(clsid);
+		}
+#endif
 	}
 	return(defvalue);
 }
@@ -1156,6 +1163,7 @@ CLSID const INIClass::Get_CLSID(char const * section, char const * entry, CLSID 
 bool INIClass::Put_CLSID(char const * section, char const * entry, CLSID const & value)
 {
 	char buffer[128];
+#ifdef _WIN32
 	LPOLESTR olestr = NULL;
 
 	StringFromCLSID(value, &olestr);
@@ -1164,6 +1172,9 @@ bool INIClass::Put_CLSID(char const * section, char const * entry, CLSID const &
 		GetLastError();
 	}
 	SysFreeString(olestr);
+#else
+	Compose_GUID_Text(value, buffer, sizeof(buffer));
+#endif
 	return(Put_String(section, entry, buffer));
 }
 

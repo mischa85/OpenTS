@@ -36,7 +36,7 @@ static char const * const ConfigName = "OPENTS.INI";
 /*
  * The folders the configuration itself is looked for in, relative to the data directory.
  */
-static char const * const ConfigProbes[] = {"", "INI\\", "MIX\\"};
+static char const * const ConfigProbes[] = {"", "INI" PATH_SEP_STR, "MIX" PATH_SEP_STR};
 
 
 static std::string Trim_Path(std::string const & path)
@@ -70,7 +70,7 @@ static std::string Terminate_Path(std::string const & path)
 			return(path);
 
 		default:
-			return(path + '\\');
+			return(path + PATH_SEP_CHAR);
 	}
 }
 

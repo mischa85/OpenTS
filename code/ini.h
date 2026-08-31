@@ -35,7 +35,11 @@
 #include "index.h"
 #include "listnode.h"
 
+#ifdef _WIN32
 #include <comdef.h>
+#else
+#include "platform.h"
+#endif
 #include <cstdlib>
 
 class FileClass;

@@ -31,8 +31,28 @@
 
 #pragma once
 
+#ifdef _MSC_VER
 // Disable warning about exception handling not being enabled. It's used as part of STL - in a part of STL we don't use.
 #pragma warning(disable : 4530)
+#endif
+
+/*
+ * MSVC spellings the other toolchains lack. The calling-convention keywords matter only for
+ * the 32-bit Windows ABI, so elsewhere they say nothing.
+ */
+#ifndef _MSC_VER
+#include <strings.h>
+#define __cdecl
+#define __stdcall
+#define stricmp strcasecmp
+#define strnicmp strncasecmp
+char * strupr(char * string);
+
+// The MSVC <ctype.h> classification mask some inherited code compares character values to.
+#ifndef _CONTROL
+#define _CONTROL 0x20
+#endif
+#endif
 
 /*
 **	Define for debug memory allocation to include __FILE__ and __LINE__ for every memory allocation.

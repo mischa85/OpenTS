@@ -13,6 +13,10 @@
 
 #pragma once
 
+#if !defined(_MSC_VER) && !defined(__cdecl)
+#define __cdecl
+#endif
+
 void Get_CPU_Type(int & cpu_type, bool & mmx, char * vendor_id = 0, int vendor_id_length = 0);
 
 extern "C" {

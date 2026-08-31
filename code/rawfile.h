@@ -35,16 +35,21 @@
 
 #pragma once
 
+#include "platform.h"
 #include "wwfile.h"
 
 #include <cerrno>
 #include <climits>
 #include <cstddef>
 #include <cstdlib>
-#include <windows.h>
 
+#ifdef _WIN32
 #define NULL_HANDLE INVALID_HANDLE_VALUE
 #define HANDLE_TYPE HANDLE
+#else
+#define NULL_HANDLE (-1)
+#define HANDLE_TYPE int
+#endif
 #ifndef WWERROR
 #define WWERROR	-1
 #endif
@@ -195,7 +200,7 @@ inline RawFileClass::RawFileClass(void) :
 	Rights(READ),
 	BiasStart(0),
 	BiasLength(-1),
-	Handle(INVALID_HANDLE_VALUE),
+	Handle(NULL_HANDLE),
 	Filename(0),
 	Date(0),
 	Time(0),
@@ -221,5 +226,5 @@ inline RawFileClass::RawFileClass(void) :
  *=============================================================================================*/
 inline bool RawFileClass::Is_Open(void) const
 {
-	return(Handle != INVALID_HANDLE_VALUE);
+	return(Handle != NULL_HANDLE);
 }

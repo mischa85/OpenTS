@@ -19,6 +19,7 @@ add_executable(GameDirs
     "${CMAKE_SOURCE_DIR}/code/mpmath.cpp"
     "${CMAKE_SOURCE_DIR}/code/pipe.cpp"
     "${CMAKE_SOURCE_DIR}/code/pk.cpp"
+    "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
     "${CMAKE_SOURCE_DIR}/code/readline.cpp"
     "${CMAKE_SOURCE_DIR}/code/straw.cpp"
     "${CMAKE_SOURCE_DIR}/code/trim.cpp"
@@ -36,14 +37,19 @@ target_include_directories(GameDirs PRIVATE
 
 add_dependencies(GameDirs OpenTSBuildStamp)
 
-target_compile_definitions(GameDirs PRIVATE WIN32 _WINDOWS _MBCS NOMINMAX)
+target_compile_definitions(GameDirs PRIVATE NOMINMAX)
+if(WIN32)
+    target_compile_definitions(GameDirs PRIVATE WIN32 _WINDOWS _MBCS)
+endif()
 
-target_compile_options(GameDirs PRIVATE
-    $<$<CONFIG:Debug>:/MTd /EHsc /Zc:__cplusplus>
-    $<$<CONFIG:Release>:/MT /EHsc /Zc:__cplusplus>
-)
+target_compile_options(GameDirs PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
 
-target_link_libraries(GameDirs PRIVATE kernel32 user32 shell32)
+if(WIN32)
+    target_link_libraries(GameDirs PRIVATE kernel32 user32 shell32)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(GameDirs PRIVATE Threads::Threads)
+endif()
 
 set_target_properties(GameDirs PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

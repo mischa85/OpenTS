@@ -16,13 +16,20 @@
 #include "dbgprint.h"
 
 #include "opents_build.h"
-#include "win.h"
+#include "platform.h"
 
+#ifdef _WIN32
 #include <shellapi.h>
+#include <conio.h>
+#else
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/utsname.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
-#include <conio.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -40,20 +47,30 @@ static char const DebugTruncationNotice[] = "\n*** Log size limit reached. Nothi
 
 static constexpr size_t DEBUG_MESSAGE_MAX = 4096;
 static constexpr unsigned DEBUG_LOG_MAX_AGE_DAYS = 14;
-static constexpr unsigned __int64 DEBUG_LOG_MAX_BYTES = 64ui64 * 1024ui64 * 1024ui64;
-static constexpr unsigned __int64 DEBUG_LOG_NOTICE_RESERVE = sizeof(DebugTruncationNotice) - 1;
-static constexpr unsigned __int64 DEBUG_LOG_BUDGET = DEBUG_LOG_MAX_BYTES - DEBUG_LOG_NOTICE_RESERVE;
+static constexpr unsigned long long DEBUG_LOG_MAX_BYTES = 64ULL * 1024ULL * 1024ULL;
+static constexpr unsigned long long DEBUG_LOG_NOTICE_RESERVE = sizeof(DebugTruncationNotice) - 1;
+static constexpr unsigned long long DEBUG_LOG_BUDGET = DEBUG_LOG_MAX_BYTES - DEBUG_LOG_NOTICE_RESERVE;
 
+#ifdef _WIN32
 static SRWLOCK DebugLock = SRWLOCK_INIT;
 static DWORD DebugLockOwner = 0;
+static HANDLE DebugFile = INVALID_HANDLE_VALUE;
+static HANDLE DebugConsole = INVALID_HANDLE_VALUE;
+#define NULL_LOG_HANDLE INVALID_HANDLE_VALUE
+#else
+static pthread_mutex_t DebugLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t DebugLockOwner;
+static bool DebugLockOwned = false;
+static int DebugFile = -1;
+static int DebugConsole = -1;
+#define NULL_LOG_HANDLE (-1)
+#endif
 static bool DebugInitDone = false;
 static bool AtLineStart = true;
 static bool ConsoleActive = false;
-static HANDLE DebugFile = INVALID_HANDLE_VALUE;
-static HANDLE DebugConsole = INVALID_HANDLE_VALUE;
 static char DebugDirectory[MAX_PATH];
 static char DebugFileName[MAX_PATH];
-static unsigned __int64 DebugBytesWritten = 0;
+static unsigned long long DebugBytesWritten = 0;
 
 /// <summary>
 /// Reports whether the command line asks for the debug console. The game's own parser runs
@@ -62,6 +79,7 @@ static unsigned __int64 DebugBytesWritten = 0;
 /// </summary>
 static bool Command_Line_Requests_Console(void)
 {
+#ifdef _WIN32
 	int argc = 0;
 	LPWSTR * argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
@@ -89,6 +107,27 @@ static bool Command_Line_Requests_Console(void)
 
 	LocalFree(argv);
 	return(requested);
+#else
+	int argc = 0;
+	char const * const * argv = Platform_Command_Line_Arguments(&argc);
+
+	// Index zero is the executable path, which may itself look like an option.
+	for (int index = 1; index < argc; index++) {
+		char const * token = argv[index];
+
+		if (token[0] != '-' || (token[1] != 'X' && token[1] != 'x')) {
+			continue;
+		}
+
+		for (char const * code = token + 2; *code != '\0'; code++) {
+			if (*code == 'C' || *code == 'c') {
+				return(true);
+			}
+		}
+	}
+
+	return(false);
+#endif
 }
 
 
@@ -117,14 +156,14 @@ bool Delete_Files_Older_Than(char const * directory, char const * pattern, unsig
 	cutoff.LowPart = now_stamp.dwLowDateTime;
 	cutoff.HighPart = now_stamp.dwHighDateTime;
 
-	unsigned __int64 const age = (unsigned __int64)days * 24ui64 * 60ui64 * 60ui64 * 10000000ui64;
+	unsigned long long const age = (unsigned long long)days * 24ULL * 60ULL * 60ULL * 10000000ULL;
 	if (cutoff.QuadPart < age) {
 		return(false);
 	}
 	cutoff.QuadPart -= age;
 
 	char search[MAX_PATH];
-	snprintf(search, sizeof(search), "%s\\%s", directory, pattern);
+	snprintf(search, sizeof(search), "%s" PATH_SEP_STR "%s", directory, pattern);
 
 	WIN32_FIND_DATA found;
 	HANDLE search_handle = FindFirstFile(search, &found);
@@ -146,7 +185,7 @@ bool Delete_Files_Older_Than(char const * directory, char const * pattern, unsig
 		}
 
 		char victim[MAX_PATH];
-		snprintf(victim, sizeof(victim), "%s\\%s", directory, found.cFileName);
+		snprintf(victim, sizeof(victim), "%s" PATH_SEP_STR "%s", directory, found.cFileName);
 		DeleteFile(victim);
 
 	} while (FindNextFile(search_handle, &found));
@@ -166,6 +205,12 @@ static void Init_Console_Locked(void)
 		return;
 	}
 
+#ifndef _WIN32
+	// A POSIX process already has its standard streams; the console sink is simply them.
+	DebugConsole = STDOUT_FILENO;
+	ConsoleActive = true;
+	return;
+#else
 	if (!AllocConsole()) {
 		return;
 	}
@@ -218,6 +263,7 @@ static void Init_Console_Locked(void)
 	}
 
 	ConsoleActive = true;
+#endif
 }
 
 
@@ -241,7 +287,11 @@ static void Init_Locked(void)
 	char dir[_MAX_DIR];
 
 	// The log belongs beside the executable, which is not yet the current directory.
+#ifdef _WIN32
 	if (GetModuleFileName(GetModuleHandle(NULL), path_to_exe, sizeof(path_to_exe)) != 0) {
+#else
+	if (Platform_Executable_Path(path_to_exe, sizeof(path_to_exe))) {
+#endif
 		_splitpath(path_to_exe, drive, dir, NULL, NULL);
 		snprintf(DebugDirectory, sizeof(DebugDirectory), "%s%sDebug", drive, dir);
 	}
@@ -258,6 +308,7 @@ static void Init_Locked(void)
 
 		Delete_Files_Older_Than(DebugDirectory, "DEBUG_*.LOG", DEBUG_LOG_MAX_AGE_DAYS);
 
+#ifdef _WIN32
 		snprintf(DebugFileName, sizeof(DebugFileName), "%s\\DEBUG_%s.LOG", DebugDirectory, timestamp);
 		DebugFile = CreateFile(DebugFileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
 										CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -269,8 +320,19 @@ static void Init_Locked(void)
 			DebugFile = CreateFile(DebugFileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
 											CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
 		}
+#else
+		snprintf(DebugFileName, sizeof(DebugFileName), "%s/DEBUG_%s.LOG", DebugDirectory, timestamp);
+		DebugFile = open(DebugFileName, O_WRONLY | O_CREAT | O_EXCL, 0644);
 
-		if (DebugFile == INVALID_HANDLE_VALUE) {
+		// A second process started in the same second must not disturb the first one's log.
+		if (DebugFile < 0) {
+			snprintf(DebugFileName, sizeof(DebugFileName), "%s/DEBUG_%s_%u.LOG",
+						DebugDirectory, timestamp, (unsigned)GetCurrentProcessId());
+			DebugFile = open(DebugFileName, O_WRONLY | O_CREAT | O_EXCL, 0644);
+		}
+#endif
+
+		if (DebugFile == NULL_LOG_HANDLE) {
 			DebugFileName[0] = '\0';
 		}
 	}
@@ -293,6 +355,7 @@ static void Init_Locked(void)
 /// </summary>
 static void Write_Text_Locked(char const * text, size_t length)
 {
+#ifdef _WIN32
 	DWORD actual;
 
 	if (DebugFile != INVALID_HANDLE_VALUE) {
@@ -317,6 +380,24 @@ static void Write_Text_Locked(char const * text, size_t length)
 	if (ConsoleActive && DebugConsole != INVALID_HANDLE_VALUE) {
 		WriteConsole(DebugConsole, text, (DWORD)length, &actual, NULL);
 	}
+#else
+	if (DebugFile != NULL_LOG_HANDLE) {
+
+		// The notice is paid for out of the reserve, so the file never passes its limit.
+		if (DebugBytesWritten + length > DEBUG_LOG_BUDGET) {
+			write(DebugFile, DebugTruncationNotice, (size_t)DEBUG_LOG_NOTICE_RESERVE);
+			close(DebugFile);
+			DebugFile = NULL_LOG_HANDLE;
+		} else {
+			write(DebugFile, text, length);
+			DebugBytesWritten += length;
+		}
+	}
+
+	if (ConsoleActive && DebugConsole != NULL_LOG_HANDLE) {
+		write(DebugConsole, text, length);
+	}
+#endif
 }
 
 
@@ -396,9 +477,10 @@ R"ART(
 				started.wHour, started.wMinute, started.wSecond);
 	Write_Message_Locked(line, false);
 
+	char system[64] = "unknown";
+#ifdef _WIN32
 	// Windows answers GetVersionEx with 6.2 for want of a compatibility manifest, so the real
 	// build number has to come from RtlGetVersion.
-	char system[64] = "unknown";
 	HMODULE ntdll = GetModuleHandle("ntdll.dll");
 	if (ntdll != NULL) {
 		typedef LONG (WINAPI * RtlGetVersionType)(PRTL_OSVERSIONINFOW);
@@ -414,6 +496,12 @@ R"ART(
 			}
 		}
 	}
+#else
+	struct utsname names;
+	if (uname(&names) == 0) {
+		snprintf(system, sizeof(system), "%s %s", names.sysname, names.release);
+	}
+#endif
 
 	snprintf(line, sizeof(line), "System   : %s\n", system);
 	Write_Message_Locked(line, false);
@@ -421,6 +509,7 @@ R"ART(
 	// The arguments only. The executable path usually carries the account name, and re-joining
 	// the arguments loses the shell's original quoting, which a diagnostic can live without.
 	char options[256] = "(none)";
+#ifdef _WIN32
 	int argc = 0;
 	LPWSTR * argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
@@ -436,6 +525,20 @@ R"ART(
 		}
 		LocalFree(argv);
 	}
+#else
+	int argc = 0;
+	char const * const * argv = Platform_Command_Line_Arguments(&argc);
+
+	size_t used = 0;
+	for (int index = 1; index < argc; index++) {
+		int const written = snprintf(options + used, sizeof(options) - used, "%s%s",
+												used == 0 ? "" : " ", argv[index]);
+		if (written <= 0 || size_t(written) >= sizeof(options) - used) {
+			break;
+		}
+		used += size_t(written);
+	}
+#endif
 
 	snprintf(line, sizeof(line), "Options  : %s\n", options);
 	Write_Message_Locked(line, false);
@@ -449,6 +552,7 @@ R"ART(
 /// </summary>
 static void Emit(char const * buffer, bool with_prefix)
 {
+#ifdef _WIN32
 	DWORD const self = GetCurrentThreadId();
 
 	// A fault raised inside a logging call brings the handler back here on the same thread,
@@ -468,6 +572,23 @@ static void Emit(char const * buffer, bool with_prefix)
 
 	DebugLockOwner = 0;
 	ReleaseSRWLockExclusive(&DebugLock);
+#else
+	// A fault raised inside a logging call brings the handler back here on the same thread,
+	// where taking the lock again would deadlock. Such a message is dropped.
+	if (DebugLockOwned && pthread_equal(DebugLockOwner, pthread_self())) {
+		return;
+	}
+
+	pthread_mutex_lock(&DebugLock);
+	DebugLockOwner = pthread_self();
+	DebugLockOwned = true;
+
+	Init_Locked();
+	Write_Message_Locked(buffer, with_prefix);
+
+	DebugLockOwned = false;
+	pthread_mutex_unlock(&DebugLock);
+#endif
 }
 
 
@@ -476,6 +597,7 @@ static void Emit(char const * buffer, bool with_prefix)
 /// </summary>
 static void Init_Once(bool with_console)
 {
+#ifdef _WIN32
 	AcquireSRWLockExclusive(&DebugLock);
 	DebugLockOwner = GetCurrentThreadId();
 
@@ -486,6 +608,19 @@ static void Init_Once(bool with_console)
 
 	DebugLockOwner = 0;
 	ReleaseSRWLockExclusive(&DebugLock);
+#else
+	pthread_mutex_lock(&DebugLock);
+	DebugLockOwner = pthread_self();
+	DebugLockOwned = true;
+
+	Init_Locked();
+	if (with_console) {
+		Init_Console_Locked();
+	}
+
+	DebugLockOwned = false;
+	pthread_mutex_unlock(&DebugLock);
+#endif
 }
 
 
@@ -520,7 +655,11 @@ void Debug_Console_Hold(void)
 	}
 
 	DebugString("Press any key to close this window.\n");
+#ifdef _WIN32
 	_getch();
+#else
+	getchar();
+#endif
 }
 
 
@@ -595,11 +734,16 @@ char const * Last_Error_Text(unsigned long error)
 {
 	static thread_local char message_buffer[256];
 
+#ifdef _WIN32
 	if (FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, error,
 							MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 							message_buffer, sizeof(message_buffer), NULL) == 0) {
 		message_buffer[0] = '\0';
 	}
+#else
+	// strerror_r's signature differs between glibc and the BSDs; copying strerror sidesteps it.
+	snprintf(message_buffer, sizeof(message_buffer), "%s", strerror((int)error));
+#endif
 
 	return(message_buffer);
 }

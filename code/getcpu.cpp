@@ -43,7 +43,30 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef _MSC_VER
 #include <intrin.h>
+
+static void Cpu_Id(int regs[4], int leaf)
+{
+	__cpuid(regs, leaf);
+}
+#else
+#include <cpuid.h>
+
+static void Cpu_Id(int regs[4], int leaf)
+{
+	unsigned int eax = 0;
+	unsigned int ebx = 0;
+	unsigned int ecx = 0;
+	unsigned int edx = 0;
+
+	__get_cpuid(leaf, &eax, &ebx, &ecx, &edx);
+	regs[0] = (int)eax;
+	regs[1] = (int)ebx;
+	regs[2] = (int)ecx;
+	regs[3] = (int)edx;
+}
+#endif
 
 /***********************************************************************************************
  * Get_CPU_Type -- Find out what kind of CPU we are running on                                 *
@@ -93,7 +116,7 @@ bool __cdecl Detect_MMX_Availability(void)
 
 	char cputype = 4;
 
-	__cpuid(regs, 0);
+	Cpu_Id(regs, 0);
 	int const maxleaf = regs[0];
 
 	std::memcpy(&VendorID[0], &regs[1], 4);
@@ -103,7 +126,7 @@ bool __cdecl Detect_MMX_Availability(void)
 	VendorID[13] = '\0';
 
 	if (maxleaf >= 1) {
-		__cpuid(regs, 1);
+		Cpu_Id(regs, 1);
 		cputype = (char)((regs[0] & 0x0F00) >> 8);
 	}
 

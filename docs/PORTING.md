@@ -81,8 +81,8 @@ subsystems are touched:
 
 | Stage | State |
 | --- | --- |
-| 1. Build scaffolding | not started |
-| 2. Foundation | not started |
+| 1. Build scaffolding | done — non-Windows configures; bgfx and the tests build |
+| 2. Foundation | done — CTest green on macOS arm64 and x86_64; Linux expected but unverified |
 | 3. Codecs | not started |
 | 4. Object model and saves | not started |
 | 5. Platform backend | not started |

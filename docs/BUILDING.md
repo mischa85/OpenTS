@@ -18,7 +18,24 @@
 | Configurations | Debug and Release |
 
 Other generators, compilers, architectures, and configurations are not
-supported by the current tree.
+supported by the current tree for the engine itself.
+
+## macOS and Linux
+
+A native port is in progress; [Porting](PORTING.md) records the plan and
+status. On macOS and Linux the tree configures with Clang or GCC and any
+generator, and builds the vendored renderer and the test suite:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The engine executable and `Language.dll` remain Windows-only until enough
+subsystems are ported. The `cpudetect` harness reads CPUID, so it only builds
+when the target processor is x86. A green test run is not a support claim for
+the engine.
 
 Install Visual Studio 2022 with the **Desktop development with C++** workload,
 a Windows SDK, CMake 3.23 or newer, and Git for Windows.

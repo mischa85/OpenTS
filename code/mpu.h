@@ -31,6 +31,10 @@
 
 #pragma once
 
+#if !defined(_MSC_VER) && !defined(__cdecl)
+#define __cdecl
+#endif
+
 
 // Get_CPU_Clock reads the time stamp counter via the RDTSC intrinsic, available on every
 // processor the supported minimum hardware covers (SSE2, so a Pentium 4 or Athlon 64

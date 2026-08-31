@@ -3,6 +3,7 @@
 add_executable(LogStress
     "${CMAKE_CURRENT_SOURCE_DIR}/logstress.cpp"
     "${CMAKE_SOURCE_DIR}/code/dbgprint.cpp"
+    "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
 )
 
 target_compile_features(LogStress PRIVATE cxx_std_20)
@@ -15,14 +16,19 @@ target_include_directories(LogStress PRIVATE
 
 add_dependencies(LogStress OpenTSBuildStamp)
 
-target_compile_definitions(LogStress PRIVATE WIN32 _WINDOWS _MBCS NOMINMAX)
+target_compile_definitions(LogStress PRIVATE NOMINMAX)
+if(WIN32)
+    target_compile_definitions(LogStress PRIVATE WIN32 _WINDOWS _MBCS)
+endif()
 
-target_compile_options(LogStress PRIVATE
-    $<$<CONFIG:Debug>:/MTd /EHsc /Zc:__cplusplus>
-    $<$<CONFIG:Release>:/MT /EHsc /Zc:__cplusplus>
-)
+target_compile_options(LogStress PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
 
-target_link_libraries(LogStress PRIVATE kernel32 user32 shell32)
+if(WIN32)
+    target_link_libraries(LogStress PRIVATE kernel32 user32 shell32)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(LogStress PRIVATE Threads::Threads)
+endif()
 
 set_target_properties(LogStress PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

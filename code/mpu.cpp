@@ -34,7 +34,11 @@
 
 #include "mpu.h"
 
-#include "win.h"
+#include "platform.h"
+
+#ifndef _MSC_VER
+#include <x86intrin.h>
+#endif
 
 #include <math.h>
 
@@ -134,12 +138,18 @@ static unsigned long TSC_High;
 /// <remarks>Only call this routine on a processor that supports the RDTSC opcode.</remarks>
 void RDTSC(void)
 {
+#ifdef _MSC_VER
 	_asm
 	{
 		ASM_RDTSC;
 		mov	TSC_Low, eax
 		mov	TSC_High, edx
 	}
+#else
+	unsigned long long const stamp = __rdtsc();
+	TSC_Low = (unsigned long)stamp;
+	TSC_High = (unsigned long)(stamp >> 32);
+#endif
 }
 
 
@@ -216,8 +226,12 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
+#ifdef _MSC_VER
 		ASM_RDTSC;
 		_asm	mov	stamp0, EAX
+#else
+		stamp0 = (unsigned int)__rdtsc();
+#endif
 
 		t0.LowPart = t1.LowPart;		// Reset Initial Time
 		t0.HighPart = t1.HighPart;
@@ -230,8 +244,12 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
+#ifdef _MSC_VER
 		ASM_RDTSC;
 		_asm	mov	stamp1, EAX
+#else
+		stamp1 = (unsigned int)__rdtsc();
+#endif
 
 
 		cycles = stamp1 - stamp0;					// # of cycles passed between reads

@@ -15,7 +15,16 @@
 
 #include "sun.h"
 
+#ifdef _WIN32
 #include <sal.h>
+#else
+#ifndef _Printf_format_string_
+#define _Printf_format_string_
+#endif
+#ifndef __cdecl
+#define __cdecl
+#endif
+#endif
 
 void Debug_Init(void);
 void Debug_Init_Console(void);

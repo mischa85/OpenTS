@@ -6,6 +6,9 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32.")
 endif()
 
+# Declared here rather than by project() because only the engine's own sources carry MASM.
+enable_language(ASM_MASM)
+
 #
 # ---------------------------------------------------------
 # Directories that build as their own project

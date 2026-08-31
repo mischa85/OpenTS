@@ -12,11 +12,33 @@
 // same family and vendor the instruction does, and that MMX and CMOV are reported available
 // unconditionally, as required by the supported minimum hardware. Needs no game data.
 
-#include <windows.h>
-
 #include <cstdio>
 #include <cstring>
+
+#ifdef _MSC_VER
 #include <intrin.h>
+
+static void Cpu_Id(int regs[4], int leaf)
+{
+	__cpuid(regs, leaf);
+}
+#else
+#include <cpuid.h>
+
+static void Cpu_Id(int regs[4], int leaf)
+{
+	unsigned int eax = 0;
+	unsigned int ebx = 0;
+	unsigned int ecx = 0;
+	unsigned int edx = 0;
+
+	__get_cpuid(leaf, &eax, &ebx, &ecx, &edx);
+	regs[0] = (int)eax;
+	regs[1] = (int)ebx;
+	regs[2] = (int)ecx;
+	regs[3] = (int)edx;
+}
+#endif
 
 #include "getcpu.h"
 #include "mpu.h"
@@ -43,7 +65,7 @@ void Check(bool condition, char const * what)
 int Reference_Family(void)
 {
 	int regs[4];
-	__cpuid(regs, 1);
+	Cpu_Id(regs, 1);
 	return((regs[0] & 0x0F00) >> 8);
 }
 
@@ -51,7 +73,7 @@ int Reference_Family(void)
 int Reference_Feature_Edx(void)
 {
 	int regs[4];
-	__cpuid(regs, 1);
+	Cpu_Id(regs, 1);
 	return(regs[3]);
 }
 
@@ -61,7 +83,7 @@ int Reference_Feature_Edx(void)
 int main(void)
 {
 	int regs[4];
-	__cpuid(regs, 0);
+	Cpu_Id(regs, 0);
 
 	char vendor[16];
 	std::memcpy(&vendor[0], &regs[1], 4);
