@@ -27,9 +27,11 @@
 #include "globals.h"
 #include "goptions.h"
 #include "hsv.h"
+#include "init.h"
 #include "keyboard.h"
 #include "language/language.h"
 #include "mainloop.h"
+#include "movies.h"
 #include "misc.h"
 #include "msgroute.h"
 #include "vidscale.h"
@@ -6775,6 +6777,16 @@ HWND OwnerDraw::Begin_Dialog(int id, DLGPROC proc)
 	LPCDLGTEMPLATE templ = (LPCDLGTEMPLATE)Fetch_Resource(MAKEINTRESOURCE(id), (LPCSTR)RT_DIALOG);
 	if (templ == NULL) {
 		return(NULL);
+	}
+
+	/*
+	**	The first dialog of a stack lands on whatever the shell last drew, which is its
+	**	design-sized page. The backdrop is rebuilt filled, so every dialog over it sits on
+	**	the picture at the size the screen shows. Later dialogs of the stack leave the
+	**	pixels alone, since their parents have already painted over that backdrop.
+	*/
+	if (g_DialogCount == 0 && !ScenarioActive && !Movie_Is_Playing() && HiddenSurface != NULL) {
+		Title_Screen_Restore(true);
 	}
 
 	int idx = g_DialogCount;
