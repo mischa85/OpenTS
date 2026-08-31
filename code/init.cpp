@@ -5462,8 +5462,9 @@ bool Prep_For_Side(SideType side)
 			SideCDMix = new MFCD(name, &FastKey);
 		}
 		if (SideCDMix == NULL) {
-			DebugString("     FAILED!\n");
-			return(false);
+			// The freeware release ships no CD-resident side archives, so running
+			// without one has to be playable rather than fatal.
+			DebugString("     %s not found; continuing without it.\n", name);
 		}
 	}
 
