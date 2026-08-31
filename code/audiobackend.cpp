@@ -365,6 +365,7 @@ void Service_Device(AudioBackendStream * stream)
 	alGetSourcei(stream->Source, AL_SOURCE_STATE, &state);
 
 	if (state != AL_PLAYING && remaining == 0 && stream->PendingCount > 0) {
+		DebugString("Audio backend: stream %p underran and restarted\n", (void *)stream);
 		alSourcePlay(stream->Source);
 	}
 }
