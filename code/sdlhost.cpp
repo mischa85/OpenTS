@@ -18,6 +18,7 @@
 #include "browser.h"
 #include "_keyboar.h"
 #include "keyboard.h"
+#include "vidscale.h"
 #include "video.h"
 #include "win.h"
 #include "wwmouse.h"
@@ -239,8 +240,17 @@ void Point_To_Game(int windowx, int windowy, int & gamex, int & gamey)
 	int height = 1;
 	SDL_GetWindowSize(_Window, &width, &height);
 
-	gamex = windowx * _CanvasWidth / (width > 0 ? width : 1);
-	gamey = windowy * _CanvasHeight / (height > 0 ? height : 1);
+	POINT point;
+	point.x = windowx * _CanvasWidth / (width > 0 ? width : 1);
+	point.y = windowy * _CanvasHeight / (height > 0 ? height : 1);
+
+	// The engine reads these as frame positions, so the frame's own place in the
+	// canvas is applied here, as the browser host does.
+	Window_Point_To_Game(point);
+	Clamp_To_Game(point);
+
+	gamex = (int)point.x;
+	gamey = (int)point.y;
 }
 
 
@@ -487,15 +497,17 @@ BrowserDisplayPolicy Browser_Display_Policy(void)
 }
 
 
+// A nonzero size here asks for a fixed frame that stops following the window,
+// so no override is reported.
 int Browser_Display_Width(void)
 {
-	return(Browser_Screen_Width());
+	return(0);
 }
 
 
 int Browser_Display_Height(void)
 {
-	return(Browser_Screen_Height());
+	return(0);
 }
 
 
@@ -612,9 +624,23 @@ void Browser_End_Text_Input(void)
 }
 
 
+// The host's mouse position is already a frame position, so finding the cursor skips
+// WWMouseClass's own conversion, as the browser host's mouse does.
+class SDLMouseClass : public WWMouseClass
+{
+	public:
+		SDLMouseClass(HWND window) : WWMouseClass(window) {}
+
+		virtual int Get_Mouse_X(void) const override {return(Browser_Mouse_X());}
+		virtual int Get_Mouse_Y(void) const override {return(Browser_Mouse_Y());}
+		virtual Point2D Get_Mouse_Point(void) const override {return(Point2D(Browser_Mouse_X(), Browser_Mouse_Y()));}
+		virtual bool Is_Hovering(void) const override {return(Browser_Mouse_Is_Hovering());}
+};
+
+
 Mouse * Browser_Create_Mouse(HWND window)
 {
-	return(new WWMouseClass(window));
+	return(new SDLMouseClass(window));
 }
 
 
