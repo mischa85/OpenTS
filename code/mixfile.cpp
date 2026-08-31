@@ -120,8 +120,12 @@ MixFileClass::MixFileClass(char const * filename, PKey const * key) :
 {
 	CCFileClass file(filename);		// Working file object.
 	Filename = strdup(file.File_Name());
-	FileStraw fstraw(file);
+	/*
+	**	Declared source-last so it is destroyed first: its destructor is what unlinks it
+	**	from the decrypter's internal chain, which otherwise dangles while it is torn down.
+	*/
 	PKStraw pstraw(PKStraw::DECRYPT, CryptRandom);
+	FileStraw fstraw(file);
 	Straw * straw = &fstraw;
 
 	if (!file.Is_Available()) return;
@@ -533,8 +537,14 @@ bool MixFileClass::Offset(char const * filename, void ** realptr, MixFileClass *
 	**	Create the key block that will be used to binary search for the file.
 	*/
 
-	/// Can't call strupr on a const string.
-	int crc = (CRCEngine()(strupr((char *)filename), strlen(filename))); //Calculate_CRC(strupr((char *)filename), strlen(filename));
+	/*
+	**	The names in a mixfile header are stored by the CRC of their uppercase form. The
+	**	caller's string is often a literal, so the uppercasing works on a copy.
+	*/
+	char keyname[_MAX_PATH];
+	snprintf(keyname, sizeof(keyname), "%s", filename);
+	strupr(keyname);
+	int crc = (CRCEngine()(keyname, strlen(keyname)));
 
 	SubBlock key;
 	key.CRC = crc;
