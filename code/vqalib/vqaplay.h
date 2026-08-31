@@ -403,22 +403,22 @@ void VQA_Reset(VQAHandle *vqa);
 //VQAHandle *VQA_Alloc(void);
 //void VQA_Init(VQAHandle *, long (*)());
 /* File routines. */
-long VQA_Open(char const *, _VQAConfig *, VQAHandle **vqa);
+VQAErrorType VQA_Open(char const *, _VQAConfig *, VQAHandle **vqa);
 void VQA_Free(VQAHandle *vqa);
 void VQA_Close(VQAHandle *vqa);
 long VQA_Play(VQAHandle *vqa, long, int flags);
 long VQA_SeekFrame(VQAHandle *vqa, long framenum, long fromwhere);
 long VQA_SetStop(VQAHandle *vqa, long stop);
-long VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
-long VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
+VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
 
-long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2);
+VQAErrorType VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2);
 
-long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned int width, unsigned int height, long xpos, long ypos);
-long VQA_ResetLastFrameNum(VQAHandle *vqa);
+VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned int width, unsigned int height, long xpos, long ypos);
+VQAErrorType VQA_ResetLastFrameNum(VQAHandle *vqa);
 
 /* Information/statistics access routines. */
-long VQA_GetBlockInfo(VQAHandle *vqa, long & blockw, long & blockh, long & clrmode);
+VQAErrorType VQA_GetBlockInfo(VQAHandle *vqa, long & blockw, long & blockh, long & clrmode);
 
 #endif /* VQAPLAY_H */
 
