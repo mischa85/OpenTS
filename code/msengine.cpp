@@ -22,6 +22,7 @@
 #include "msgloop.h"
 #include "mssfx.h"
 #include "rect.h"
+#include "screenlayout.h"
 #include "surface.h"
 #include "win.h"
 
@@ -29,6 +30,13 @@
 
 #include <algorithm>
 #include <climits>
+
+
+/*
+ * How many animation engines are alive. Each is built by the screen it drives and destroyed
+ * with it, so the count is how many engine driven screens are on the display.
+ */
+static int _engine_count = 0;
 
 
 /// <summary>
@@ -43,6 +51,8 @@ MSEngine::MSEngine(void)
 	Rects.Resize(20);
 	Anims.Clear();
 	Sounds.Clear();
+
+	_engine_count++;
 }
 
 
@@ -65,12 +75,29 @@ MSEngine::~MSEngine(void)
 	Anims.Clear();
 
 	Rects.Clear();
+
+	_engine_count--;
 }
 
 
 // Set when the whole display is to be rebuilt from the alternate surface on the next
 // advance, which is how the screen comes back after a dialog has covered it.
 static bool _RebuildFromAlternate = false;
+
+
+/// <summary>
+/// Is a screen driven by an animation engine on the display?
+/// </summary>
+/// <remarks>
+/// An engine places its anims against the surfaces the screen came up on and its own loop
+/// draws neither them nor the backdrop beneath them a second time, so replacing those
+/// surfaces would leave the screen with nothing to put back.
+/// </remarks>
+/// <returns>bool; Is one of the shell screens up?</returns>
+bool MSEngine::Is_Screen_Up(void)
+{
+	return(_engine_count > 0);
+}
 
 
 /// <summary>
@@ -192,7 +219,8 @@ void MSEngine::Advance(Surface * surface)
 	}
 
 	for (int i = 0; i < Anims.Count(); i++) {
-		Rect rect;
+		// An anim with nothing to update leaves this alone, so it starts as no region at all.
+		Rect rect(0, 0, 0, 0);
 		if (Anims[i]->Advance(surface, rect) == true) {
 			delete Anims[i];
 			Anims.Delete_Index(i);
@@ -318,12 +346,15 @@ void MSEngine::Add_Update_Rect(Rect const & rect)
 /// The pending list is emptied as a result.
 /// </summary>
 /// <param name="surface">The surface holding the freshly drawn frame.</param>
+/// <remarks>The regions are in the shell design space, which a screen that has claimed one
+/// is magnified out of on its way to the screen. A screen that has not claimed one has a
+/// design space the size of the frame, so its regions reach the screen unchanged.</remarks>
 void MSEngine::Blit_All(Surface * surface)
 {
 	if (RectCount > 0) {
 
 		for (int i = 0; i < RectCount; i++) {
-			VisibleSurface->Blit_From(Rects[i], *surface, Rects[i]);
+			Blit_Shell(*surface, Rects[i]);
 		}
 
 		RectCount = 0;
@@ -344,7 +375,7 @@ void MSEngine::Blit_Rect(Surface * surface, Rect const & rect)
 {
 	if (rect.Is_Valid()) {
 
-		VisibleSurface->Blit_From(rect, *surface, rect);
+		Blit_Shell(*surface, rect);
 
 		Video_Present_If_Dirty();
 	}

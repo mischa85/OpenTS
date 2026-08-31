@@ -49,7 +49,7 @@
 
 #include <cstdio>
 #include <cstring>
-#include <sys\timeb.h>
+#include <sys/timeb.h>
 
 
 /*

@@ -114,17 +114,17 @@ class DSurface : public XSurface
 
 		/*
 		 * This surface owns a device context, so GetDC yields one that draws on these
-		 * same pixels.
+		 * same pixels. A page has no GDI, so there the pixels are a plain allocation and
+		 * the callers that draw text through a device context stand down; the guard at
+		 * Tactical::Draw_Screen_Text is written for exactly that.
 		 */
+#if defined(__EMSCRIPTEN__)
+		virtual bool Is_GDI_Backed(void) const override {return(false);}
+#else
 		virtual bool Is_GDI_Backed(void) const override {return(true);}
+#endif
 
 		virtual bool Can_Blit(void) const;
-
-		/*
-		 * The movie player scales to the full screen only when this is true. Surfaces
-		 * stretch in software now, so it always is.
-		 */
-		static bool AllowStretchBlits;
 
 		/*
 		 * The bit layout that the primary surface packs its color guns into. The

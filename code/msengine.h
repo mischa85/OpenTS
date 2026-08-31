@@ -43,6 +43,8 @@ class MSEngine
 		void Wait_Delay(int delay);
 		void Wait_For_Focus(void);
 
+		static bool Is_Screen_Up(void);
+
 		bool Add_Sound_Effect(char const * name, char const * file_name);
 		void Play_Sound_Effect(char const * name, int volume);
 

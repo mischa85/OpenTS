@@ -68,10 +68,9 @@ MillisecondTimerClass::~MillisecondTimerClass(void)
 
 /// <summary>
 /// Fetches the current time, expressed in milliseconds.
-/// This routine is used every time the timer is read. The processor's own cycle counter
-/// supplies the value when the machine is new enough to have one, since it is both cheaper
-/// and finer grained than the system timer. Otherwise the Windows multimedia timer is
-/// consulted instead.
+/// This routine is used every time the timer is read. The performance counter supplies the
+/// value when the machine has one, since it is finer grained than the system timer.
+/// Otherwise the Windows multimedia timer is consulted instead.
 /// </summary>
 /// <returns>Returns with the current time in milliseconds.</returns>
 MillisecondTimerClass::operator double () const
@@ -82,7 +81,11 @@ MillisecondTimerClass::operator double () const
 	if (cpu_type == -1) {
 		Get_CPU_Type(cpu_type, has_mmx, NULL, 0);
 	}
-	/// On extremely old CPUs (80486 and older) the TSC and rdtsc instruction don't exist.
+
+	/*
+	 * The family check is left over from the cycle counter this once read, which an 80486
+	 * and older did not have. The performance counter carries no such requirement.
+	 */
 	if (Frequency != 1.0 && cpu_type > 4) {
 		unsigned int high;
 		unsigned int low;

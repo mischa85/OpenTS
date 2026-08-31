@@ -27,6 +27,12 @@ struct VQHandle;
 
 typedef DynamicVectorClass<MSAnim *> MS_ANIM_LIST;
 
+/*
+ * An anim that has a backdrop to commit puts it on AlternateSurface, which is what its
+ * siblings then restore themselves from. That surface is looked up as it is drawn to
+ * rather than kept, because a resolution change destroys and rebuilds every surface the
+ * engine owns while a menu is up.
+ */
 class MSAnim
 {
 	public:
@@ -213,12 +219,6 @@ class MSVQAnim : public MSAnim
 		 * NULL and the anim falls back on its still picture alone.
 		 */
 		VQHandle * Movie;
-
-		/*
-		 * Pointer to the surface the movie is played onto, and the one the still picture is
-		 * committed to once the movie has ended.
-		 */
-		Surface * TargetSurface;
 
 		/*
 		 * Pointer to the list of anims this one shares the screen with. Every frame the movie
@@ -455,13 +455,9 @@ class MSPCXAnim : public MSAnim
 		virtual bool Has_Finished(void) const override;
 		virtual void Restore(Rect const & rect) override;
 
-	public:
-		/*
-		 * Pointer to the surface the picture is committed to. This is the backdrop the other
-		 * anims restore themselves from, so the picture becomes part of the scene.
-		 */
-		Surface * TargetSurface;
+		bool Dim_Lettering(MSPCXAnim const & alternate);
 
+	public:
 		/*
 		 * Pointer to the list of anims this one shares the screen with. They are asked to
 		 * repair themselves over the picture once it has been put up.

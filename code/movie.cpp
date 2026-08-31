@@ -101,12 +101,19 @@ void Play_Movie(char const * name, ThemeType theme, bool clrscrn_after, bool str
 
 		bool dostretch = (stretch == true && Options.StretchMovies == true);
 
-		if (DSurface::AllowStretchBlits == true && dostretch == true) {
+		if (dostretch == true) {
 			if (vqa->InitialRect.Width < VisibleRect.Width && vqa->InitialRect.Height < VisibleRect.Height) {
-				float ratio = ((float)VisibleRect.Width / (float)vqa->InitialRect.Width);
-				vqa->StretchRect.Width = VisibleRect.Width;
+				/*
+				**	The movie grows by whichever of the two ratios it fits inside, so that a
+				**	screen wider than the movie leaves a margin at the sides rather than
+				**	pushing the top and bottom of the picture off the display.
+				*/
+				float across = ((float)VisibleRect.Width / (float)vqa->InitialRect.Width);
+				float down = ((float)VisibleRect.Height / (float)vqa->InitialRect.Height);
+				float ratio = across < down ? across : down;
+				vqa->StretchRect.Width = (int)(vqa->InitialRect.Width * ratio);
 				vqa->StretchRect.Height = (int)(vqa->InitialRect.Height * ratio);
-				vqa->StretchRect.X = 0;
+				vqa->StretchRect.X = (VisibleRect.Width - vqa->StretchRect.Width) / 2;
 				vqa->StretchRect.Y = (VisibleRect.Height - vqa->StretchRect.Height) / 2;
 				DebugString("Stretching movie %dx%d -> %dx%d\n", vqa->InitialRect.Width, vqa->InitialRect.Height, vqa->StretchRect.Width, vqa->StretchRect.Height);
 			}

@@ -103,6 +103,7 @@ class GraphicMenu
 		void Add_Item(GraphicMenuItem * item);
 
 		void Set_Item_Enabled(int item_id, bool enabled);
+		void Set_Item_Visible(int item_id, bool visible);
 		int Presentation(void);
 		GraphicMenuItem * Get_Item_Under_Mouse(Point2D const & mouse);
 		GraphicMenuItem * Get_Item_For_Key(KeyNumType key);
@@ -135,6 +136,13 @@ class GraphicMenu
 		 * let it play out before drawing over it.
 		 */
 		MSAnim * CurrentAnim;
+
+		/*
+		 * This is the size of the backdrop the items were placed against, and so the size of
+		 * the design space the page is magnified out of while it is up. It is empty until a
+		 * backdrop supplies one, which leaves the page drawn at the size of the frame.
+		 */
+		Point2D LayoutSize;
 
 		/*
 		 * These are the items the player may pick from. The menu owns them and destroys

@@ -51,6 +51,7 @@
 #include "_palette.h"
 #include "_surface.h"
 #include "_timer.h"
+#include "browser.h"
 #include "conquer.h"
 #include "convert.h"
 #include "data.h"
@@ -61,7 +62,7 @@
 #include "goptions.h"
 #include "houstype.h"
 #include "keyboard.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "misc.h"
 #include "mixfile.h"
 #include "movie.h"
@@ -900,6 +901,15 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 	int key = 0;
 	int index = 0;
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * Nothing but Return ends this, and a device whose keyboard is drawn on its screen shows
+	 * one only while something that takes text has the focus. Saying so here is what keeps the
+	 * hall of fame from being where a touch-only game stops for good.
+	 */
+	Browser_Begin_Text_Input();
+#endif
+
 	do {
 
 		Timing();
@@ -973,6 +983,10 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 		Call_Back_Delay(1);
 
 	} while (key != KN_RETURN);
+
+#if defined(__EMSCRIPTEN__)
+	Browser_End_Text_Input();
+#endif
 }
 
 
@@ -1284,16 +1298,19 @@ int ScoreFontClass::String_Width(const char * string)
 /// <returns>Returns with the width in pixels that the character occupies.</returns>
 int ScoreFontClass::Char_Width(char ch)
 {
-	char out[1];
-
 	if (ch == 32) {
 		return(8);
 	}
 
-	CharToOemBuff(&ch, out, sizeof(out));
+	/*
+	   Converted in place, so a host that cannot perform the conversion leaves the
+	   character as it was given rather than an indeterminate byte.
+	*/
+	char out = ch;
+	CharToOemBuff(&out, &out, sizeof(out));
 
 	int frame;
-	frame = std::max((out[0] & 0xFF) - 33, 0);
+	frame = std::max((out & 0xFF) - 33, 0);
 	frame = 3 * std::min(frame, 216);
 
 	return(ShapePtr->Get_Rect(frame + 2).Width);
@@ -1335,11 +1352,11 @@ void ScoreFontClass::Print_Char(Surface *surf, char ch, int x, int y, int v, boo
 /// <param name="brightness_frame">The brightness frame to draw the glyphs with.</param>
 void ScoreFontClass::Print_String(Surface *surf, const char * string, int x, int y, int brightness_frame)
 {
-	unsigned char buf[2];
 	while (*string != '\0') {
 		if (*string != 32) {
-			CharToOemBuff(string, (LPSTR)buf, sizeof(char));
-			int frame = 3 * std::min(std::max(buf[0] - 33, 0), 216);
+			unsigned char character = (unsigned char)*string;
+			CharToOemBuff((LPCSTR)&character, (LPSTR)&character, sizeof(character));
+			int frame = 3 * std::min(std::max(character - 33, 0), 216);
 
 			Draw_Shape(*surf, *Drawer, ShapePtr, frame + brightness_frame, Point2D(x - ShapePtr->Get_Rect(frame + 2).X, y), surf->Get_Rect(), SHAPE_WIN_REL);
 		}

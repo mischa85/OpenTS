@@ -405,7 +405,7 @@ Point2D WWFontClass::Print(char const * string, Surface & surface, Rect const & 
 //	int ypos = point.Y + cliprect.Y;
 
 	int xspacing = FontXSpacing + Raw_Width()/FUDGEDIV;
-	int yspacing = FontYSpacing + Raw_Width()/FUDGEDIV;
+	int yspacing = FontYSpacing + Raw_Height()/FUDGEDIV;
 
 	// This font palette assumes that the font will be used as defined by converter.
 	static unsigned char const fontpalette[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};

@@ -96,6 +96,14 @@ class Mouse {
 		virtual Point2D Get_Mouse_Point(void) const = 0;
 
 		/*
+		**	Is a pointer resting at that position? A mouse leaves one wherever it stops, so
+		**	whatever hovering drives -- the tooltip, the edge scroll, the placement cursor
+		**	that follows the pointer about -- may read the position with no event behind it.
+		**	A device that only ever reports where it was touched leaves nothing there.
+		*/
+		virtual bool Is_Hovering(void) const {return(true);}
+
+		/*
 		**	Converts O/S screen coordinates into game coordinates.
 		*/
 		virtual void Convert_Coordinate(int & x, int & y) const = 0;

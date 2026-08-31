@@ -19,6 +19,7 @@
 #include "dsurface.h"
 #include "goptions.h"
 #include "scheme.h"
+#include "screenlayout.h"
 #include "wwfont.h"
 
 #include "color.hh"
@@ -155,7 +156,7 @@ void CCToolTip::Draw(const ToolTipText * text)
 			surface = CompositeSurface;
 		} else if (UseSidebarSurface == true && point.X >= offset) {
 			surface = SidebarSurface;
-			point.X -= offset;
+			point = Screen_To_Sidebar(point);
 			Map.IsToBlitSidebar = true;
 		}
 	} else {

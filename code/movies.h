@@ -100,6 +100,8 @@ struct VQHandle
 };
 
 
+bool Movie_Holds_A_Surface(void);
+
 extern VQHandle *CurrentVQ;
 
 extern DynamicVectorClass<VQHandle *> IngameVQ;

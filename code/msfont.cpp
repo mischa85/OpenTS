@@ -374,8 +374,8 @@ void MSFont::Draw_String(Surface * surface, unsigned char const * string, int x,
 			y += FontHeight;
 		} else {
 			if (*string > ' ') {
-				unsigned char character;
-				CharToOemBuff((LPCSTR)string, (LPSTR)&character, 1);
+				unsigned char character = *string;
+				CharToOemBuff((LPCSTR)&character, (LPSTR)&character, 1);
 
 				int index = (0 >= character - 33) ? 0 : character - 33;
 				index = (216 <= index) ? 216 : index;

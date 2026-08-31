@@ -21,6 +21,12 @@
 #include "win.h"
 #include "xmouse.h"
 
+#if defined(__EMSCRIPTEN__)
+#include "browser.h"
+#include "win32window.h"
+#include <vector>
+#endif
+
 #include <cstring>
 
 
@@ -64,6 +70,20 @@ static int Cursor_Scale(void)
 	VideoScaleInfo const & scale = Video_Get_Scale_Info();
 	float smaller = scale.ScaleX < scale.ScaleY ? scale.ScaleX : scale.ScaleY;
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The frame is scaled in device pixels, but a page measures a cursor image in CSS
+	 * pixels and multiplies it up by the display ratio itself. Scaling by the device
+	 * factor would apply that ratio a second time.
+	 */
+	int const devicewidth = Browser_Canvas_Width();
+	int const csswidth = Browser_Canvas_CSS_Width();
+
+	if (devicewidth > 0 && csswidth > 0) {
+		smaller = smaller * (float)csswidth / (float)devicewidth;
+	}
+#endif
+
 	int result = (int)(smaller + 0.5f);
 	if (result < 1) result = 1;
 	if (result > 8) result = 8;
@@ -98,6 +118,24 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 		return(NULL);
 	}
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A page will not draw a cursor past a size of its own, and shows nothing rather than
+	 * a clipped one, so an image that would exceed it is built at whatever whole scale
+	 * still fits.
+	 */
+	int limit = Win32_Window_Max_Cursor_Size();
+
+	while (scale > 1 && (width > limit || height > limit)) {
+		scale--;
+		width = shape->Get_Width() * scale;
+		height = shape->Get_Height() * scale;
+	}
+
+	std::vector<unsigned long> pixels((size_t)width * (size_t)height, 0);
+	unsigned long * bits = pixels.data();
+#else
+
 	BITMAPINFO info;
 	memset(&info, '\0', sizeof(info));
 	info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -107,14 +145,17 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	info.bmiHeader.biBitCount = 32;
 	info.bmiHeader.biCompression = BI_RGB;
 
-	void * bits = NULL;
-	HBITMAP color = CreateDIBSection(NULL, &info, DIB_RGB_COLORS, &bits, NULL, 0);
+	void * surface = NULL;
+	HBITMAP color = CreateDIBSection(NULL, &info, DIB_RGB_COLORS, &surface, NULL, 0);
 
 	if (color == NULL) {
 		return(NULL);
 	}
 
-	memset(bits, '\0', width * height * 4);
+	memset(surface, '\0', width * height * 4);
+
+	unsigned long * bits = (unsigned long *)surface;
+#endif
 
 	// The shapes are palette indices and the primary is 565, so the drawer's table is
 	// what turns one into the other.
@@ -135,13 +176,26 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 			unsigned long argb = 0xFF000000UL | (red << 16) | (green << 8) | blue;
 
 			for (int suby = 0; suby < scale; suby++) {
-				unsigned long * row = (unsigned long *)bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
+				unsigned long * row = bits + ((rect.Y + y) * scale + suby) * width + (rect.X + x) * scale;
 				for (int subx = 0; subx < scale; subx++) {
 					row[subx] = argb;
 				}
 			}
 		}
 	}
+
+	int cursor_hotx = hotx * scale;
+	int cursor_hoty = hoty * scale;
+	if (cursor_hotx < 0) cursor_hotx = 0;
+	if (cursor_hoty < 0) cursor_hoty = 0;
+	if (cursor_hotx >= width) cursor_hotx = width - 1;
+	if (cursor_hoty >= height) cursor_hoty = height - 1;
+
+#if defined(__EMSCRIPTEN__)
+	// The pixels are the same ones Windows would have composited; the canvas takes them
+	// with the hotspot directly rather than through a bitmap and an icon.
+	return(Win32_Window_Create_Cursor(bits, width, height, cursor_hotx, cursor_hoty));
+#else
 
 	// A color cursor carries its transparency in the alpha channel, but Windows still
 	// wants a mask bitmap alongside it.
@@ -150,13 +204,6 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	memset(mask_bits, '\0', mask_pitch * height);
 	HBITMAP mask = CreateBitmap(width, height, 1, 1, mask_bits);
 	delete [] mask_bits;
-
-	int cursor_hotx = hotx * scale;
-	int cursor_hoty = hoty * scale;
-	if (cursor_hotx < 0) cursor_hotx = 0;
-	if (cursor_hoty < 0) cursor_hoty = 0;
-	if (cursor_hotx >= width) cursor_hotx = width - 1;
-	if (cursor_hoty >= height) cursor_hoty = height - 1;
 
 	ICONINFO icon;
 	icon.fIcon = FALSE;
@@ -169,6 +216,7 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	DeleteObject(mask);
 	DeleteObject(color);
 	return(cursor);
+#endif
 }
 
 
@@ -185,6 +233,54 @@ static void Flush_Cursor_Cache(void)
 
 	_CursorCacheCount = 0;
 	_CurrentCursor = NULL;
+}
+
+
+/// <summary>
+/// Answers whether the pointer is drawn even where the caller has not asked for it.
+/// </summary>
+/// <remarks>
+/// A page registers no window class, so nothing would draw the pointer while the mouse is
+/// released to a dialog and the game's own cursor stands in for the class cursor.
+/// </remarks>
+static bool Cursor_Stands_In_For_Class(void)
+{
+#if defined(__EMSCRIPTEN__)
+	return(true);
+#else
+	return(false);
+#endif
+}
+
+
+/// <summary>
+/// Draws the pointer the game has chosen.
+/// </summary>
+/// <remarks>
+/// The game's own hide only counts while it holds the mouse. Once the mouse has been
+/// released the pointer belongs to the window class, and Windows keeps drawing it whatever
+/// the game's visibility state says.
+/// </remarks>
+static void Apply_Current_Cursor(void)
+{
+	bool const held = (MouseCursor != NULL && MouseCursor->Is_Captured());
+
+	if (held && !_CursorVisible) {
+#if defined(__EMSCRIPTEN__)
+		/*
+		 * Windows draws nothing for the null cursor and only puts the class cursor back
+		 * once the game declines the next WM_SETCURSOR. A page raises no such message, so
+		 * the two are separate things here: a null falls back to the page's own pointer,
+		 * and this is the cursor that means the game asked for none.
+		 */
+		SetCursor(Win32_Window_Blank_Cursor());
+#else
+		SetCursor(NULL);
+#endif
+		return;
+	}
+
+	SetCursor(_CurrentCursor);
 }
 
 
@@ -247,8 +343,8 @@ void Win_Cursor_Set(ShapeSet const * shape, int frame, int hotx, int hoty, bool 
 
 	_CurrentCursor = cursor;
 
-	if (apply) {
-		SetCursor(_CursorVisible ? _CurrentCursor : NULL);
+	if (apply || Cursor_Stands_In_For_Class()) {
+		Apply_Current_Cursor();
 	}
 }
 
@@ -261,7 +357,7 @@ void Win_Cursor_Set_Visible(bool visible)
 	_CursorVisible = visible;
 
 	if (MouseCursor != NULL && MouseCursor->Is_Captured()) {
-		SetCursor(visible ? _CurrentCursor : NULL);
+		Apply_Current_Cursor();
 	}
 }
 
@@ -277,8 +373,20 @@ bool Win_Cursor_Handle_Set_Cursor(void)
 		return(false);
 	}
 
-	SetCursor(_CursorVisible ? _CurrentCursor : NULL);
+	Apply_Current_Cursor();
 	return(true);
+}
+
+
+/// <summary>
+/// Draws the pointer the game last chose, whether or not the game holds the mouse.
+/// </summary>
+/// <remarks>
+/// This is what stands in for the window class cursor Windows would put back on its own.
+/// </remarks>
+void Win_Cursor_Apply(void)
+{
+	Apply_Current_Cursor();
 }
 
 

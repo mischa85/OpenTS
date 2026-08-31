@@ -20,6 +20,7 @@
 #include "vqa.h"
 #include "vqoption.h"
 #include "win.h"
+#include "win32timer.h"
 #include "video.h"
 
 
@@ -27,6 +28,15 @@ DynamicVectorClass<char const *> Movies;
 
 VQHandle *CurrentVQ = NULL;
 int MovieInt1 = 0;
+
+/*
+** How many movies are holding one of the engine's drawing surfaces. A handle keeps the
+** surface it was created on from Movie_Create until Movie_Destroy -- across a whole full
+** screen movie, and between the frames the radar and the mission screen step their movies
+** along -- so anything that would replace those surfaces has to wait for this to fall to
+** zero. Movie_Is_Playing answers a narrower question: whether a movie has the screen now.
+*/
+static int _LiveMovies = 0;
 
 
 /// <summary>
@@ -174,6 +184,7 @@ VQHandle * Movie_Create(char const * name, Surface * surface, Rect rect1, Rect r
 		handle->DrawSurface = surface;
 		handle->VQA->Set_Draw_Buffer(NULL, surface->Stride() / surface->Bytes_Per_Pixel(), surface->Get_Height());
 		handle->IsInitialized = true;
+		_LiveMovies++;
 		return(handle);
 	}
 	return(NULL);
@@ -192,9 +203,20 @@ void Movie_Destroy(VQHandle * handle)
 			handle->VQA->Close_And_Free_VQA();
 			delete handle->VQA;
 			handle->VQA = NULL;
+			_LiveMovies--;
 		}
 		handle->IsInitialized = false;
 	}
+}
+
+
+/// <summary>
+/// Is any movie holding one of the engine's drawing surfaces?
+/// </summary>
+/// <returns>bool; Would replacing the drawing surfaces pull one out from under a movie?</returns>
+bool Movie_Holds_A_Surface(void)
+{
+	return(_LiveMovies > 0);
 }
 
 
@@ -283,6 +305,15 @@ bool Movie_Advance_Frame(VQHandle * handle, bool &finished)
 		return(false);
 	}
 	CurrentVQ = handle;
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A movie stepped alongside the game has no playback loop of its own, so nothing else
+	 * runs the multimedia timer that carries its sound track. The player reads its time off
+	 * the play cursor that timer keeps ahead of, and a cursor that stops moving stops the
+	 * movie.
+	 */
+	Win32_Timer_Service();
+#endif
 	bool res = handle->VQA->Advance_Frame(finished);
 	CurrentVQ = NULL;
 	return(res);

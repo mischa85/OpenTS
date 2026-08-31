@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "conquer.hh"
 #include "crate.hh"
 #include "land.hh"
 #include "rtti.hh"
@@ -50,6 +51,7 @@ unsigned int Disk_Space_Available(void);
 void Emergency_Exit(void);
 
 void Main_Game(int argc, char * argv[]);
+GameFrameType Game_Frame(void);
 
 void Special_Dialog(void);
 
