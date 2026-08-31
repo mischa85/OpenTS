@@ -325,6 +325,7 @@ long VQAClass::CacheHandler(long action, void * buffer, long nbytes)
 
 		case VQACMD_READ:
 			if (Cache.file_buffer_pos + nbytes > Cache.file_size) {
+				DebugString("VQA: cache read of %ld bytes past the end at %ld of %ld\n", nbytes, (long)Cache.file_buffer_pos, (long)Cache.file_size);
 				rc = 1;
 				return(rc);
 			} else {
@@ -385,7 +386,9 @@ bool VQAClass::Open_And_Load_Buffers(void)
 	// Open the VQA file, allocate the buffers for this VQ instance, and pre-
 	// load the buffers.
 	//
-	if (VQA_Open(Filename, &Config, &Handle) != VQAERR_NONE) {
+	long rc = VQA_Open(Filename, &Config, &Handle);
+	if (rc != VQAERR_NONE) {
+		DebugString("VQA: %s failed to open, error %ld\n", Filename, rc);
 		IsOpen = false;
 		return(false);
 	}
@@ -872,13 +875,16 @@ long VQAClass::CCFileHandler(long action, void * buffer, long nbytes)
 		**	Any error code returned will be remapped by VQA library into
 		**	VQAERR_READ.
 		*/
-		case VQACMD_READ:
-			if (FileHandle.Read(buffer, nbytes) != nbytes) {
+		case VQACMD_READ: {
+			long got = FileHandle.Read(buffer, nbytes);
+			if (got != nbytes) {
+				DebugString("VQA: read of %ld bytes came back %ld on %s\n", nbytes, got, FileHandle.File_Name());
 				error = 1;
 			} else {
 				error = 0;
 			}
 			break;
+		}
 
 		/*
 		**	VQACMD_WRITE is analogous to VQACMD_READ.
@@ -999,13 +1005,16 @@ long VQAClass::MixFileHandler(long action, void * buffer, long nbytes)
 		**	Any error code returned will be remapped by VQA library into
 		**	VQAERR_READ.
 		*/
-		case VQACMD_READ:
-			if (FileHandle.Read(buffer, nbytes) != nbytes) {
+		case VQACMD_READ: {
+			long got = FileHandle.Read(buffer, nbytes);
+			if (got != nbytes) {
+				DebugString("VQA: read of %ld bytes came back %ld on %s\n", nbytes, got, FileHandle.File_Name());
 				error = 1;
 			} else {
 				error = 0;
 			}
 			break;
+		}
 
 		/*
 		**	VQACMD_WRITE is analogous to VQACMD_READ.
