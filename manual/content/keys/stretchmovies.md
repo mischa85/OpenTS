@@ -11,4 +11,6 @@ The flag reaches the full screen movie player alone, and only where that player'
 
 A stretched movie grows by whichever of the two ratios it fits inside and is centered, so a display wider or taller than the movie's own shape leaves a margin rather than pushing the picture off the edge. The flag takes effect on every display; there is no display that refuses it.
 
+The browser build omits it as `yes` rather than `no`, because the frame there is the browser window rather than a resolution anyone picked. Writing the key still decides it there as it does anywhere.
+
 The display options screen carries the same switch and stores it as the screen is accepted; leaving the options screen behind it writes the setting back to `sun.ini`.

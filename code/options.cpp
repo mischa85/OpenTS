@@ -393,6 +393,16 @@ void OptionsClass::Load_Settings(void)
 	ScreenHeight = ConfigINI.Get_Int("Video", "ScreenHeight", ScreenHeight);
 	DebugString("Resolution = %d X %d\n", ScreenWidth, ScreenHeight);
 
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * The frame in a browser is the page's canvas rather than a resolution anyone picked, so
+	 * a movie at its own size is a small picture in the middle of the window whatever the
+	 * window is, and the display options that carry this switch are not reachable there. The
+	 * setting still decides it wherever the file names it.
+	 */
+	StretchMovies = true;
+#endif
+
 	StretchMovies = ConfigINI.Get_Bool("Video", "StretchMovies", StretchMovies);
 	DebugString("StretchMovies is %s\n", StretchMovies == true ? "ON" : "OFF");
 
