@@ -305,7 +305,7 @@ bool Movie_Advance_Frame(VQHandle * handle, bool &finished)
 		return(false);
 	}
 	CurrentVQ = handle;
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A movie stepped alongside the game has no playback loop of its own, so nothing else
 	 * runs the multimedia timer that carries its sound track. The player reads its time off

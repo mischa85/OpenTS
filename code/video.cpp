@@ -68,7 +68,7 @@ static unsigned int _PresentInterval = 16;
 // that the engine's own present provoked.
 static bool _Presenting = false;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 // The animation frame the last present went out on. A page composites once per frame
 // whatever the engine does, and the engine reaches its present hook many times between
 // two of them, so this is what a refresh rate stands in for here.
@@ -108,7 +108,7 @@ static const int FRAME_MIN_HEIGHT = 400;
 /// </summary>
 static void Update_Present_Interval(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * The page decides when a frame is composited, and there is no device context to ask
 	 * how often that is. Presentation is paced against the animation frame instead.
@@ -152,7 +152,7 @@ static void Update_Scale_Info(void)
 	_ScaleInfo.GameWidth = VideoModeWidth;
 	_ScaleInfo.GameHeight = VideoModeHeight;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	client.left = 0;
 	client.top = 0;
 	client.right = Browser_Canvas_Width();
@@ -201,7 +201,7 @@ static void Update_Scale_Info(void)
 }
 
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 /// <summary>
 /// Brings a size the page asked for into a frame the engine can render.
@@ -388,7 +388,7 @@ void Video_Service_Display(void)
 	}
 }
 
-#endif	// __EMSCRIPTEN__
+#endif	// not _WIN32
 
 
 /// <summary>
@@ -422,7 +422,7 @@ bool Video_Init(HWND window)
 		return(true);
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * There is no window. The drawing target is the page's canvas, whose size the page
 	 * decides and reports back, so the handle the caller passed carries nothing.
@@ -537,7 +537,7 @@ bool Video_Set_Mode(int width, int height)
 		return(false);
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A resolution the player chose out of the display options settles whether the frame
 	 * goes on following the window. The size the window already is means yes, since that
@@ -576,7 +576,7 @@ void Video_On_Resize(int width, int height)
 		return;
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * The frame is presented onto the canvas, never onto the window the engine believes it
 	 * has, so a size reported by that window means nothing here.
@@ -658,7 +658,7 @@ void Video_Present_If_Dirty(void)
 		return;
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * One present per animation frame. The engine reaches here from every wait it has,
 	 * which is many times more often than the page composites, and each present is a

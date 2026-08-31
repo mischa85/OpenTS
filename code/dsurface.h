@@ -118,7 +118,7 @@ class DSurface : public XSurface
 		 * the callers that draw text through a device context stand down; the guard at
 		 * Tactical::Draw_Screen_Text is written for exactly that.
 		 */
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		virtual bool Is_GDI_Backed(void) const override {return(false);}
 #else
 		virtual bool Is_GDI_Backed(void) const override {return(true);}

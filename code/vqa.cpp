@@ -50,7 +50,7 @@ intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, long action, void * buffer, l
 
 bool VQA_Message_Handler(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * The player's loop is the only thing running while a movie plays, and it comes through
 	 * here once per pass, so this is the movie's whole service point: the audio timer is run
@@ -207,7 +207,7 @@ VQAClass::VQAClass(char const * filename, int flags, VQA_SURF_LOCK_CALLBACK surf
 
 	Config.AudioHandler = Stream_Audio_Handler;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * Twice the block the player was written around, because the block is also what sizes
 	 * the sound buffer it plays out of: two of them. A page's output has to be handed

@@ -16,7 +16,7 @@
 #include "audio.h"
 #include "soundint.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "win32compat.h"
 
 /*

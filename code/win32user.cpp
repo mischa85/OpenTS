@@ -36,7 +36,7 @@
 
 #include "win32user.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "browser.h"
 #include "data.h"
@@ -45,7 +45,9 @@
 #include "vidscale.h"
 #include "win32ctrl.h"
 
+#if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
+#endif
 
 #include <cstring>
 #include <deque>
@@ -3032,6 +3034,19 @@ int MessageBoxA(HWND, LPCSTR text, LPCSTR caption, UINT type)
 	static_assert(IDOK == 1 && IDCANCEL == 2 && IDABORT == 3 && IDRETRY == 4, "message box results");
 	static_assert(IDIGNORE == 5 && IDYES == 6 && IDNO == 7, "message box results");
 
+#if !defined(__EMSCRIPTEN__)
+	/*
+	** The text already reached the log above; without a surface of its own to ask on, the
+	** box answers what confirming would have.
+	*/
+	switch (type & 0x0000000FL) {
+		case MB_YESNO:
+		case MB_YESNOCANCEL:
+			return(IDYES);
+		default:
+			return(IDOK);
+	}
+#else
 	EM_ASM({
 		var previous = document.getElementById("opents-messagebox");
 		if (previous) previous.remove();
@@ -3106,6 +3121,7 @@ int MessageBoxA(HWND, LPCSTR text, LPCSTR caption, UINT type)
 	** when the player dismisses it without choosing.
 	*/
 	return(answer > 0 ? answer : cancelled);
+#endif
 }
 
 

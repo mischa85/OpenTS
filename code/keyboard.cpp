@@ -227,7 +227,7 @@ bool WWKeyboardClass::Put_Key_Message(unsigned short vk_key, bool release)
 	**	would be incompatible with the dos version.
 	*/
 	if (!Is_Mouse_Key(vk_key)) {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		/*
 		 * A page reports the modifiers with the event they belong to rather than keeping a
 		 * key state array to be asked after the fact, so the platform layer holds them.
@@ -318,7 +318,7 @@ char WWKeyboardClass::To_ASCII(unsigned short key)
 		return('\0');
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * There is no keyboard layout to consult here. What a key produces is known only to
 	 * the browser, which reports it with the event, so the platform layer recorded it as
@@ -396,7 +396,7 @@ bool WWKeyboardClass::Down(unsigned short key)
 {
 	key &= 0xFF;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A page has no way to be asked what is held down, so the platform layer tracks it
 	 * from the events. Buttons are never swapped: the browser has already applied whatever
@@ -827,7 +827,7 @@ int WWKeyboardClass::Noop(void) const
 }
 
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 /// <summary>
 /// Records a key the page reported.

@@ -524,7 +524,7 @@ void Main_Game(int argc, char * argv[])
  *=============================================================================================*/
 void Call_Back(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * Several of the engine's waits spin on this routine alone -- an audio stream
 	 * finishing, mostly -- and never reach the message handler. On a page the thread has

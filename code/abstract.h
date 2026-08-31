@@ -39,7 +39,7 @@
 #include "house.hh"
 #include "rtti.hh"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "win32compat.h"
 #else
 #ifdef _WIN32

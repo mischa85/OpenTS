@@ -110,7 +110,7 @@ DSurface::DSurface(int width, int height) :
 	GDIBuffer(NULL),
 	Pitch(0)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A page has no GDI to allocate through. The pixels are what the surface is for, and
 	 * a plain allocation supplies them in the same 565 layout at the same pitch; what is
@@ -189,7 +189,7 @@ DSurface::DSurface(int width, int height) :
  *=============================================================================================*/
 DSurface::~DSurface(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	delete [] (unsigned char *)GDIBuffer;
 	GDIBuffer = NULL;
 	return;

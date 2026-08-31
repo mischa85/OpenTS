@@ -174,7 +174,7 @@ bool Is_Suspended(void)
 /// </summary>
 void Service_Suspension(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	// GameInFocus follows the page's visibility here, so this parks until the tab is shown
 	// again. There is nothing to sleep on: the yield is the wait.
 	Browser_Yield();
@@ -220,7 +220,7 @@ bool Main_Loop(void)
 	**	at all; Is_Suspended() is the state it consults.
 	*/
 	if (!GameInFocus && Session.Type != GAME_NORMAL && Session.Type != GAME_SKIRMISH) {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		Browser_Yield();
 #else
 		Sleep(10);
@@ -612,7 +612,7 @@ void Service_Frame(void)
 				TacticalMap->AI();
 				Map.Render();
 			} else {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 				Browser_Yield();
 #else
 				Sleep(0);
@@ -622,7 +622,7 @@ void Service_Frame(void)
 				return;
 			}
 		}
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		Browser_Yield();
 #else
 		Sleep(0);
@@ -640,7 +640,7 @@ void Service_Frame(void)
 				return;
 			}
 		}
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		/*
 		 * The rest of a frame is what this pass is burning, and the page's own animation
 		 * frame is a better measure of one than any sleep. This is the hottest of the

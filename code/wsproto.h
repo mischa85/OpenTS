@@ -38,7 +38,7 @@
 /*
 **	Include standard Winsock 1.0 header file.
 */
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "winsockcompat.h"
 #else
 #ifdef _WIN32

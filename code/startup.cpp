@@ -526,9 +526,9 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 		return(EXIT_SUCCESS);
 	}
 
-	// The common controls carry the Win32 front end, which a page has no way to load and
-	// the browser build does not reach.
-#if !defined(__EMSCRIPTEN__)
+	// The common controls carry the Win32 front end. Off Windows they are the substitute's
+	// own and there is no library to version-check.
+#ifdef _WIN32
 	if (GetDllVersion("comctl32.dll") < PACKVERSION(4, 70)) {
 		sprintf(buffer, Fetch_String(TXT_DLL_INVALID), "comctl32.dll", 4, 70, "comctl32.dll");
 		MessageBox(NULL, buffer, Fetch_String(TXT_SHORT_TITLE), MB_ICONERROR);
@@ -672,7 +672,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 
 		AlphaBuffer = new ABuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y));
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		// The page reports where the pointer is over the canvas; there is no cursor to ask
 		// after, so the browser's mouse reads that instead of the operating system.
 		MouseCursor = Browser_Create_Mouse(MainWindow);
@@ -691,7 +691,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 			**	installs nothing and copies nothing, so there is no setup for it to cover;
 			**	it plays there only for someone who asks for it by name.
 			*/
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 			bool const wanted = false;
 #else
 			bool const wanted = true;

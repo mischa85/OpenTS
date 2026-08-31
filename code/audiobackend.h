@@ -18,7 +18,9 @@
 
 #pragma once
 
-#ifdef __EMSCRIPTEN__
+#ifndef _WIN32
+
+#include "win32compat.h"
 
 struct AudioBackendStream;
 
@@ -28,6 +30,7 @@ struct AudioBackendStream;
 ** leaves the engine running against silent streams rather than against nothing.
 */
 bool Audio_Backend_Init(void);
+LPDIRECTSOUND Audio_Create_Sound_Object(void);
 void Audio_Backend_Shutdown(void);
 
 /*

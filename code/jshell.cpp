@@ -61,7 +61,7 @@ void __cdecl Fatal(char const * message, ...)
 	vsnprintf(_text, sizeof(_text), message, va);
 	va_end(va);
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	fprintf(stderr, "OpenTS: fatal error: %s\n", _text);
 	fflush(stderr);
 	abort();

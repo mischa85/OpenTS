@@ -35,11 +35,13 @@
 
 #include "win32compat.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "browser.h"
 
+#if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
+#endif
 
 #include <sys/statvfs.h>
 
@@ -78,6 +80,10 @@ static unsigned long long _EstimateTotal = 0;
 /// because it replaces the virtual filesystem with the host's rather than mounting it.</remarks>
 static bool Filesystem_Reports_Its_Own_Space(char const * path)
 {
+#if !defined(__EMSCRIPTEN__)
+	(void)path;
+	return(true);
+#else
 	int answers = EM_ASM_INT({
 		try {
 			if (typeof FS !== "object" || FS === null) return 0;
@@ -91,6 +97,7 @@ static bool Filesystem_Reports_Its_Own_Space(char const * path)
 	}, path);
 
 	return(answers != 0);
+#endif
 }
 
 
@@ -110,6 +117,10 @@ static bool Filesystem_Reports_Its_Own_Space(char const * path)
 /// </remarks>
 static bool Sample_Page_Storage(void)
 {
+#if !defined(__EMSCRIPTEN__)
+	// There is no page to ask; the filesystem already answered.
+	return(false);
+#else
 	if (_EstimateSampled) {
 		return(_EstimateValid);
 	}
@@ -172,6 +183,7 @@ static bool Sample_Page_Storage(void)
 	_EstimateValid = (_EstimateTotal > 0);
 
 	return(_EstimateValid);
+#endif
 }
 
 

@@ -669,7 +669,7 @@ int STDMETHODCALLTYPE LocomotionClass::Apparent_Speed(void)
 /// Unlike the other interface identifiers, this one is defined in the locomotion module.
 #define INITGUID
 #undef DEFINE_GUID
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "guidcompat.h"
 #else
 #ifdef _WIN32

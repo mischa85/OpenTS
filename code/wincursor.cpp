@@ -21,7 +21,7 @@
 #include "win.h"
 #include "xmouse.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "browser.h"
 #include "win32window.h"
 #include <vector>
@@ -70,7 +70,7 @@ static int Cursor_Scale(void)
 	VideoScaleInfo const & scale = Video_Get_Scale_Info();
 	float smaller = scale.ScaleX < scale.ScaleY ? scale.ScaleX : scale.ScaleY;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * The frame is scaled in device pixels, but a page measures a cursor image in CSS
 	 * pixels and multiplies it up by the display ratio itself. Scaling by the device
@@ -118,7 +118,7 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 		return(NULL);
 	}
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A page will not draw a cursor past a size of its own, and shows nothing rather than
 	 * a clipped one, so an image that would exceed it is built at whatever whole scale
@@ -191,7 +191,7 @@ static HCURSOR Build_Cursor(ShapeSet const * shape, int frame, int hotx, int hot
 	if (cursor_hotx >= width) cursor_hotx = width - 1;
 	if (cursor_hoty >= height) cursor_hoty = height - 1;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	// The pixels are the same ones Windows would have composited; the canvas takes them
 	// with the hotspot directly rather than through a bitmap and an icon.
 	return(Win32_Window_Create_Cursor(bits, width, height, cursor_hotx, cursor_hoty));
@@ -245,7 +245,7 @@ static void Flush_Cursor_Cache(void)
 /// </remarks>
 static bool Cursor_Stands_In_For_Class(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	return(true);
 #else
 	return(false);
@@ -266,7 +266,7 @@ static void Apply_Current_Cursor(void)
 	bool const held = (MouseCursor != NULL && MouseCursor->Is_Captured());
 
 	if (held && !_CursorVisible) {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		/*
 		 * Windows draws nothing for the null cursor and only puts the class cursor back
 		 * once the game declines the next WM_SETCURSOR. A page raises no such message, so

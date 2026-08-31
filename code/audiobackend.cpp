@@ -17,7 +17,21 @@
 
 #include "audiobackend.h"
 
-#ifdef __EMSCRIPTEN__
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+
+// No native audio output exists yet; the servicing hooks the engine calls stay callable
+// and silence stays silent. docs/PORTING.md stage 5 tracks the native backend.
+#include "audiobackend.h"
+
+void Audio_Backend_Service(void) {}
+
+
+LPDIRECTSOUND Audio_Create_Sound_Object(void)
+{
+	return(nullptr);
+}
+
+#elif defined(__EMSCRIPTEN__)
 
 #include "dbgprint.h"
 #include "dsaudio.h"

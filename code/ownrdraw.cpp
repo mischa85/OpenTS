@@ -45,7 +45,7 @@
 #include "vox.h"
 #include "windlg.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "win32compat.h"
 #include "win32gdi.h"
 #else
@@ -149,7 +149,7 @@ void ODDrawCharRemap(Surface & dst_surf, const char *text, int max_chars, Rect c
  */
 static HDC OD_Surface_DC(Surface & surface)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	return(Win32_GDI_Surface_DC(surface));
 #else
 	return(((DSurface &)surface).GetDC());
@@ -159,7 +159,7 @@ static HDC OD_Surface_DC(Surface & surface)
 
 static void OD_Release_Surface_DC(Surface & surface, HDC hdc)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	(void)surface;
 	DeleteDC(hdc);
 #else

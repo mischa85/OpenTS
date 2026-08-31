@@ -312,7 +312,7 @@ bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate )
 		/*
 		**	Create the direct sound object
 		*/
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		SoundObject = Audio_Create_Sound_Object();
 		res = (SoundObject != NULL) ? DS_OK : DSERR_NODRIVER;
 #else
@@ -2048,7 +2048,7 @@ void DSAudio::Sound_Callback(void)
 		*/
 		//Sound_Timer_Callback(0,0,0,0,0);
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 		/*
 		 * A page runs the engine on one thread and has no multimedia timer, so the pass
 		 * that the sound timer drives on Windows is taken here, on the caller the game

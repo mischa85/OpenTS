@@ -44,7 +44,7 @@ bool Video_Set_Mode(int width, int height);
 void Video_On_Resize(int width, int height);
 void Video_On_Display_Change(void);
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 /*
  * A page sizes the canvas itself and resizes it whenever it likes, so the frame follows

@@ -756,8 +756,16 @@ WindowsVersionInfo::WindowsVersionInfo(void) :
 
 	version_info.dwOSVersionInfoSize = sizeof( version_info );
 
+#ifndef _WIN32
+	// The host is not Windows, so there is no version to read and neither the Win9x nor the
+	// WinNT flag is set. Everything below reads zeroes, which is what "not Windows" means to
+	// the code that branches on it.
+	memset( &version_info, 0, sizeof( version_info ) );
+	version_info.dwOSVersionInfoSize = sizeof( version_info );
+#else
 	int result = GetVersionEx( &version_info );
 	assert( result != 0 );
+#endif
 
 	//--------------------------------------------------------------------------
 	// Save the major/minor version numbers
@@ -909,7 +917,7 @@ void Center_Window_Within_Window(HWND window, HWND parent)
 void Prefetch_Audio_Buffer(char *src, int size)
 {
 
-	int n1 = (unsigned short)src % AUD_FILL_SIZE;
+	int n1 = (unsigned short)(ULONG_PTR)src % AUD_FILL_SIZE;
 	int n2 = size - n1;
 	char *ptr = src + n1;
 

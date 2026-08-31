@@ -901,7 +901,7 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 	int key = 0;
 	int index = 0;
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * Nothing but Return ends this, and a device whose keyboard is drawn on its screen shows
 	 * one only while something that takes text has the focus. Saying so here is what keeps the
@@ -984,7 +984,7 @@ void ScoreClass::Input_Name(char str[], int xpos, int ypos)
 
 	} while (key != KN_RETURN);
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	Browser_End_Text_Input();
 #endif
 }

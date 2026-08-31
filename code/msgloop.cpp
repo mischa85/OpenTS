@@ -44,7 +44,7 @@
 #include "vector.h"
 #include "video.h"
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 #include "win32user.h"
 #endif
 
@@ -101,7 +101,7 @@ bool (*Message_Intercept_Handler)(MSG &msg) = NULL;
  *=============================================================================================*/
 void Windows_Message_Handler(void)
 {
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A page delivers its events as they happen and it owns the thread the engine is
 	 * borrowing. So this routine has two jobs here that it does not have on Windows: turn
@@ -192,7 +192,7 @@ void Windows_Message_Handler(void)
 	 */
 	Video_Present_If_Dirty();
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 	/*
 	 * A page resizes its canvas whenever it likes, and matching the frame to it replaces
 	 * every drawing surface the engine owns. This is the one pump that the movie player and
