@@ -405,7 +405,10 @@ The project version is declared once, by `project(OpenTS VERSION ...)` in the
 top-level `CMakeLists.txt`, with any SemVer prerelease label alongside it in
 `OPENTS_VERSION_PRERELEASE`, because `project()` accepts numbers only. Both must
 match the development entry of the manual's release registry, which
-`python manual/tools/manage.py check` enforces.
+`python manual/tools/manage.py check` enforces. That tool runs on its own pinned
+Python and packages rather than on whatever `python` resolves to; the
+[manual's README](../manual/README.md) owns setting it up, and
+`manage.py doctor` reports what is missing.
 
 Each build writes two generated headers from that version and the repository
 state:
