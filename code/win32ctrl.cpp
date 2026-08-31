@@ -84,7 +84,7 @@ struct ControlState
 	int PageSize;
 
 	std::vector<std::string> Items;
-	std::vector<LONG> ItemData;
+	std::vector<LONG_PTR> ItemData;
 	std::vector<char> Selected;
 	int CurrentSelection;
 	int TopIndex;
@@ -858,7 +858,7 @@ static LRESULT CALLBACK List_Box_Proc(HWND window, UINT message, WPARAM wparam, 
 			if ((int)wparam < 0 || (int)wparam >= count) {
 				return(LB_ERR);
 			}
-			state->ItemData[wparam] = (LONG)lparam;
+			state->ItemData[wparam] = lparam;
 			return(0);
 
 		case LB_GETITEMDATA:
@@ -1094,7 +1094,7 @@ static LRESULT CALLBACK Combo_Box_Proc(HWND window, UINT message, WPARAM wparam,
 			if ((int)wparam < 0 || (int)wparam >= count) {
 				return(CB_ERR);
 			}
-			state->ItemData[wparam] = (LONG)lparam;
+			state->ItemData[wparam] = lparam;
 			return(0);
 
 		case CB_GETITEMDATA:
