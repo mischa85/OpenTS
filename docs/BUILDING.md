@@ -204,10 +204,10 @@ it can read (`code/isohttp.cpp:84`, `:152`). Under node the same list can be
 named through the `OPENTS_IMAGE` environment variable.
 
 Opening an image the browser has read before costs no request. The one thing the
-server has to be asked — how long the image is, and what it calls this version of
-it — is written to `localStorage` under the location made absolute, and a launch
-that names the same locations opens every image out of that record instead
-(`ISOProbeClass`, `code/isohttp.h:183`). A location the browser holds no record
+server has to be asked — how long the image is — is written to `localStorage`
+under the location made absolute, and a launch that names the same locations opens
+every image out of that record instead (`ISOProbeClass`, `code/isohttp.h:183`).
+A location the browser holds no record
 for is probed exactly as before, so adding a disc to `?image=` or moving the
 images asks about the ones that moved and nothing else. `OpenTS_Iso_Probes` and
 `OpenTS_Iso_Recalls` report which of the two each image took, and the page's
@@ -215,17 +215,37 @@ status line says `discs known` when nothing was asked. A host with no such
 storage — node, a private window, a browser told to keep nothing — reports
 holding nothing, and every launch probes.
 
-Two things ride on that record besides the length. The round trip and rate the
-last run measured of the same location are seeded into `ISOLinkClass`, so the
-first read is fetched at the size the link was last found to want rather than at
-the floor. And what it gives up — an image replaced at a location that did not
-change — is checked for fifteen seconds after the image opens, by a `fetch`
-nothing waits on (`ISOHttpSourceClass::Watch`). A mismatch drops the record and
-sets `OpenTS_State.isoStale`; the run carries on with what it holds, and the next
-launch probes, finds a signature the stored blocks do not answer to, and clears
-them. A read the server refuses before then re-establishes the image on the spot
-(`ISOHttpSourceClass::Revive`), which is what catches an image that changed
-length.
+The round trip and rate the last run measured of the same location ride on that
+record too, and are seeded into `ISOLinkClass`, so the first read is fetched at
+the size the link was last found to want rather than at the floor.
+
+The stored blocks are keyed on the location made absolute and the image's length,
+and on nothing else (`ISOBlockIndexClass::Signature`, `code/isohttp.h:52`). What
+is deliberately not part of that key is the server's `ETag`, which is not a hash
+of the content: these images are a 1999 game on discs that will not be reissued,
+so a tag that moves is a mirror re-ingesting an item or a cache regenerating its
+own far more often than it is a new file, and a key carrying one discarded a
+store worth about two gigabytes every time that happened. Two Tiberian Sun images
+of exactly equal length that are not the same image is not a case worth insuring
+against at that price.
+
+What the key gives up is checked for by the length instead. Fifteen seconds after
+an image opens out of a record, a `fetch` nothing waits on asks the server how
+long it is (`ISOHttpSourceClass::Watch`); a length that disagrees drops the record
+and sets `OpenTS_State.isoStale`, the run carries on with what it holds, and the
+next launch probes, finds a signature the stored blocks do not answer to, and
+clears them. A read the server refuses before then re-establishes the image on
+the spot (`ISOHttpSourceClass::Revive`), and if the length it now reports is the
+length that was believed, the store stays where it is and the read fails on its
+own account. Between them the two cover both directions: `Revive` catches an
+image that was shortened or withdrawn, and `Watch` catches one that grew, which
+answers every range the engine asks of it and would otherwise be misread for the
+rest of the run.
+
+Because the key changed, a browser holding blocks from a build before this one
+finds a record written under the old signature, refuses it, and clears those
+blocks once — the ordinary path a record written for another image takes
+(`ISOBlockIndexClass::Adopt`), counted by `OpenTS_Iso_Store_Discarded`.
 
 Every read is synchronous, so one the caches miss stops the engine until the server
 answers. A single reader is exempt. `ISODeferredReadClass` (`code/iso9660.h:81`)

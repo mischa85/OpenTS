@@ -133,17 +133,17 @@ EM_JS(void, ISO_Http_Identity, (char const * url, char * identity, int size), {
 
 
 /*
-** The one request that establishes what is being read. It answers the image's length and
-** whatever the server calls this version of it, which together with the location above are
-** what identify the image to a later run.
+** The one request that establishes what is being read. It answers the image's length, which
+** together with the location above is what identifies the image to a later run.
 **
-** The validator carries what a redirect cannot: a node serving a different file answers
-** with a different entity tag or date, and the length differs besides, so the image is
-** identified by what it is rather than by which node handed it over.
+** What it deliberately does not read is the entity tag. A tag is whatever the server chose
+** to say and not a statement about the bytes: a mirror re-ingesting an item, a second mirror
+** of the same disc, or a content delivery network regenerating its tags all change it while
+** the image stays the file it always was. These images are a 1999 game on discs nobody is
+** going to reissue, so the realistic event is a tag that moved under bytes that did not, and
+** treating that as a new image throws away a store that is worth gigabytes to refetch.
 */
-EM_JS(double, ISO_Http_Probe, (char const * url, char * validator, int validatorsize), {
-	HEAPU8[validator] = 0;
-
+EM_JS(double, ISO_Http_Probe, (char const * url), {
 	try {
 		var request = new XMLHttpRequest();
 		request.open("GET", UTF8ToString(url), false);
@@ -156,16 +156,6 @@ EM_JS(double, ISO_Http_Probe, (char const * url, char * validator, int validator
 
 		var total = range.split("/")[1];
 		if (!total || total === "*") return -1;
-
-		var tag = request.getResponseHeader("ETag") || request.getResponseHeader("Last-Modified") || "";
-		var count = 0;
-
-		while (count < tag.length && count + 1 < validatorsize) {
-			var code = tag.charCodeAt(count);
-			HEAPU8[validator + count] = (code > 126 || code < 32) ? 63 : code;
-			count++;
-		}
-		HEAPU8[validator + count] = 0;
 
 		return parseFloat(total);
 	} catch (error) {
@@ -226,8 +216,8 @@ EM_JS(void, ISO_Probe_Forget, (char const * key), {
 
 
 /*
-** Asks, once the run is under way, whether the image a record described is still the image
-** the server has.
+** Asks, once the run is under way, whether the image a record described is still as long as
+** the record said.
 **
 ** It is the whole of what is given up by not probing, put back where it costs nothing: an
 ** ordinary fetch, started from a timer well after the engine has its data, waited on by
@@ -237,10 +227,16 @@ EM_JS(void, ISO_Probe_Forget, (char const * key), {
 ** because the alternative is to throw away a store the game is reading out of on the
 ** strength of one late answer.
 **
+** The length is the whole of the comparison, because it is the whole of what identifies the
+** image beside its location. It is also the one form of replacement a read cannot be relied
+** on to expose: a shortened image refuses a range and is caught on the spot by Revive, while
+** an image that grew answers every range the engine asks for and would be misread to the end
+** of the run.
+**
 ** Headers a caller cannot read are not evidence of anything. A cross-origin answer with no
 ** Content-Range to read is left alone rather than treated as a changed image.
 */
-EM_JS(void, ISO_Probe_Watch, (char const * key, char const * url, double length, char const * validator, double delay), {
+EM_JS(void, ISO_Probe_Watch, (char const * key, char const * url, double length, double delay), {
 	var state = globalThis.__opentsIsoProbe;
 
 	if (state === undefined) {
@@ -253,7 +249,6 @@ EM_JS(void, ISO_Probe_Watch, (char const * key, char const * url, double length,
 	state.watched[slot] = true;
 
 	var where = UTF8ToString(url);
-	var named = UTF8ToString(validator);
 	var total = length;
 
 	var timer = setTimeout(function () {
@@ -266,9 +261,7 @@ EM_JS(void, ISO_Probe_Watch, (char const * key, char const * url, double length,
 
 				var said = range.split("/")[1];
 				if (!said || said === "*") return;
-
-				var tag = answer.headers.get("ETag") || answer.headers.get("Last-Modified") || "";
-				if (parseFloat(said) === total && tag === named) return;
+				if (parseFloat(said) === total) return;
 
 				try { localStorage.removeItem(slot); } catch (error) {}
 
@@ -1354,16 +1347,18 @@ ISOBlockIndexClass::ISOBlockIndexClass(void) :
 
 /// <summary>Builds the key that says which image a stored block belongs to.</summary>
 /// <remarks>
-/// The length alone would let an image of the same size be read as this one, and a run that
-/// serves one image's sectors as another's corrupts game data in a way that looks like
-/// anything but a cache. So whatever the server will say about the version -- an entity tag,
-/// a modification date -- is part of the key, and a server that says nothing leaves the key
-/// resting on the location and the length, which is the weakest form this takes: a run then
-/// believes stored blocks whenever the same location still answers with the same number of
-/// bytes. That is the assumption a browser's own cache makes of such a server, and the
-/// location is the same one either way, so nothing here is believed that it would not be.
+/// Where the image was asked for and how long it is, and nothing else. The pair distinguishes
+/// the case that can actually corrupt a run -- this location now serves a different file --
+/// and both halves are properties of the file rather than of the server: a length does not
+/// churn, and the location is the one the page named rather than whichever node a pool
+/// redirected an individual request to.
+///
+/// What deliberately does not appear is the server's entity tag. A tag is not a hash of the
+/// content, so a tag that moves is far more often a mirror re-ingesting an item or a cache
+/// regenerating its own than it is a new file, and a key carrying one would discard the
+/// whole store every time that happened.
 /// </remarks>
-std::string ISOBlockIndexClass::Signature(char const * location, std::uint64_t length, char const * validator)
+std::string ISOBlockIndexClass::Signature(char const * location, std::uint64_t length)
 {
 	if (location == nullptr || *location == '\0' || length == 0) return(std::string());
 
@@ -1374,9 +1369,6 @@ std::string ISOBlockIndexClass::Signature(char const * location, std::uint64_t l
 	char count[32];
 	std::snprintf(count, sizeof(count), "%llu", (unsigned long long)length);
 	key += count;
-
-	key += '|';
-	if (validator != nullptr) key += validator;
 
 	/*
 	**	The key is a line of the stored record, so anything that would end that line, and
@@ -1594,14 +1586,14 @@ ISOProbeClass::ISOProbeClass(void) :
 
 /// <summary>Takes on a stored record.</summary>
 /// <remarks>
-/// The validator comes last and takes the rest of the line, since it is the one field
-/// whose contents are the server's to choose and a separator inside it would otherwise
-/// have to be escaped. Everything before it is a number the record wrote itself.
+/// Every field is a number the record wrote itself. The line ends with a separator and
+/// whatever follows it is ignored, which is where a build that keyed the store on the
+/// server's entity tag wrote that tag; a record either build wrote is still read by the
+/// other rather than being thrown away for a field neither decides anything on.
 /// </remarks>
 bool ISOProbeClass::Decode(char const * text)
 {
 	Length = 0;
-	Validator.clear();
 	Trip = 0.0;
 	Rate = 0.0;
 
@@ -1630,7 +1622,6 @@ bool ISOProbeClass::Decode(char const * text)
 	Length = (std::uint64_t)length;
 	Trip = std::strtod(field[2].c_str(), nullptr);
 	Rate = std::strtod(field[3].c_str(), nullptr);
-	Validator = line.substr(cursor);
 
 	if (!(Trip > 0.0)) Trip = 0.0;
 	if (!(Rate > 0.0)) Rate = 0.0;
@@ -1647,8 +1638,6 @@ std::string ISOProbeClass::Encode(void) const
 		(unsigned long long)Length, Trip, Rate);
 
 	std::string record(head);
-
-	record += Validator;
 
 	/*
 	**	The record is written and read a byte at a time, so it is held to plain printable
@@ -2412,11 +2401,8 @@ ISOHttpSourceClass::~ISOHttpSourceClass(void)
 /// <summary>Asks the server what the image is, and keeps the answer.</summary>
 bool ISOHttpSourceClass::Probe(void)
 {
-	std::vector<char> validator(ISOBlockIndexClass::SIGNATURE_MAX);
-	validator[0] = '\0';
-
 	double const began = emscripten_get_now();
-	double const length = ISO_Http_Probe(Url.c_str(), validator.data(), (int)validator.size());
+	double const length = ISO_Http_Probe(Url.c_str());
 
 	_Probes++;
 
@@ -2432,7 +2418,6 @@ bool ISOHttpSourceClass::Probe(void)
 	_LinkTrip = Link.Trip();
 
 	Length = (std::uint64_t)length;
-	Validator = validator.data();
 
 	Learn();
 	return(true);
@@ -2447,7 +2432,6 @@ void ISOHttpSourceClass::Learn(void)
 	ISOProbeClass known;
 
 	known.Length = Length;
-	known.Validator = Validator;
 	known.Trip = Link.Trip();
 	known.Rate = Link.Rate();
 
@@ -2495,7 +2479,6 @@ bool ISOHttpSourceClass::Open(char const * url)
 	if (FromRecord) {
 		_Recalls++;
 		Length = known.Length;
-		Validator = known.Validator;
 		Link.Seed(known.Trip, known.Rate);
 		_LinkTrip = Link.Trip();
 		_LinkRate = Link.Rate();
@@ -2503,14 +2486,13 @@ bool ISOHttpSourceClass::Open(char const * url)
 	} else if (!Probe()) {
 		Url.clear();
 		Location.clear();
-		Validator.clear();
 		return(false);
 	}
 
 	Meter = Account_For_Image(Url.c_str());
 	_Open.push_back(this);
 
-	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length, Validator.c_str());
+	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length);
 	Slot = ISOBlockIndexClass::Store_Slot(Location.c_str());
 
 	Watch();
@@ -2523,8 +2505,7 @@ void ISOHttpSourceClass::Watch(void)
 {
 	if (!FromRecord || Location.empty()) return;
 
-	ISO_Probe_Watch(Probe_Key(Location).c_str(), Url.c_str(), (double)Length,
-		Validator.c_str(), WATCH_DELAY);
+	ISO_Probe_Watch(Probe_Key(Location).c_str(), Url.c_str(), (double)Length, WATCH_DELAY);
 }
 
 
@@ -2541,10 +2522,9 @@ bool ISOHttpSourceClass::Revive(void)
 	ISO_Probe_Forget(Probe_Key(Location).c_str());
 
 	std::uint64_t const believed = Length;
-	std::string const named = Validator;
 
 	if (!Probe()) return(false);
-	if (Length == believed && Validator == named) return(false);
+	if (Length == believed) return(false);
 
 	/*
 	**	A different image, so the blocks held under this slot are another file's sectors and
@@ -2552,7 +2532,7 @@ bool ISOHttpSourceClass::Revive(void)
 	**	being served; the slot itself is cleared when the store is next opened and the record
 	**	in it turns out to have been written for something else.
 	*/
-	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length, Validator.c_str());
+	Signature = ISOBlockIndexClass::Signature(Location.c_str(), Length);
 	Store_Discard();
 	Index.Reset(Signature);
 	StoreState = STORE_UNTRIED;
@@ -2576,7 +2556,6 @@ void ISOHttpSourceClass::Close(void)
 
 	Url.clear();
 	Location.clear();
-	Validator.clear();
 	Signature.clear();
 	Slot.clear();
 	Removals.clear();

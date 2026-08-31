@@ -433,26 +433,22 @@ void Check_Several_Images(void)
 */
 void Check_Block_Index(void)
 {
-	std::string const key = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"abc\"");
+	std::string const key = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096);
 
 	Check(!key.empty(), "an image that can be identified has a key");
-	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"abc\"") == key,
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096) == key,
 		"the same image answers to the same key");
-	Check(ISOBlockIndexClass::Signature("http://host/other.iso", 4096, "\"abc\"") != key,
+	Check(ISOBlockIndexClass::Signature("http://host/other.iso", 4096) != key,
 		"a different URL is a different image");
-	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 8192, "\"abc\"") != key,
+	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 8192) != key,
 		"a different length is a different image");
-	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"xyz\"") != key,
-		"a server that names a new version names a different image");
-	Check(ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "") != key,
-		"and a server that names none is not the same as one that does");
 
-	Check(ISOBlockIndexClass::Signature(nullptr, 4096, "").empty()
-		&& ISOBlockIndexClass::Signature("", 4096, "").empty()
-		&& ISOBlockIndexClass::Signature("http://host/opents-data.iso", 0, "").empty(),
+	Check(ISOBlockIndexClass::Signature(nullptr, 4096).empty()
+		&& ISOBlockIndexClass::Signature("", 4096).empty()
+		&& ISOBlockIndexClass::Signature("http://host/opents-data.iso", 0).empty(),
 		"an image that cannot be identified has no key, and so no store");
 
-	std::string const flattened = ISOBlockIndexClass::Signature("http://host/x.iso", 1, "a\nb\tc\x80");
+	std::string const flattened = ISOBlockIndexClass::Signature("http://host/x\ny\tz\x80.iso", 1);
 	Check(flattened.find('\n') == std::string::npos && flattened.find('\t') == std::string::npos,
 		"a key carries nothing that would end the line it is stored on");
 
@@ -500,7 +496,7 @@ void Check_Block_Index(void)
 		&& restored.Holds(3) && restored.Holds(9) && restored.Holds(4),
 		"and reports the same blocks it was written with");
 
-	std::string const other = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 4096, "\"xyz\"");
+	std::string const other = ISOBlockIndexClass::Signature("http://host/opents-data.iso", 8192);
 
 	Check(!restored.Adopt(record.c_str(), other), "a record written for another image is refused");
 	Check(restored.Count() == 0 && !restored.Holds(3), "and leaves no block behind to be served");
@@ -765,47 +761,42 @@ void Check_Probe_Record(void)
 	ISOProbeClass written;
 
 	written.Length = 710277120;
-	written.Validator = "\"58f20419\"";
 	written.Trip = 42.5;
 	written.Rate = 1234.75;
 
 	ISOProbeClass read;
 
 	Check(read.Decode(written.Encode().c_str()), "a written record reads back");
-	Check(read.Length == written.Length && read.Validator == written.Validator,
-		"as the image it was written for");
+	Check(read.Length == written.Length, "as the image it was written for");
 	Check(read.Trip > 42.0 && read.Trip < 43.0 && read.Rate > 1234.0 && read.Rate < 1235.0,
 		"and as what the link to it was measured to cost");
 
 	Check(!read.Decode(""), "an empty record is not a record");
 	Check(!read.Decode(nullptr), "and neither is nothing at all");
-	Check(!read.Decode("something-else|4096|0.000|0.000|\"abc\""),
+	Check(!read.Decode("something-else|4096|0.000|0.000|"),
 		"a record this build cannot read is refused");
-	Check(!read.Decode("opents-probe-1|0|0.000|0.000|\"abc\""),
+	Check(!read.Decode("opents-probe-1|0|0.000|0.000|"),
 		"and so is one naming an image of no length");
 	Check(!read.Decode("opents-probe-1|4096|0.000"), "and one that stops part way through");
-	Check(read.Length == 0 && read.Validator.empty(),
-		"none of which leaves anything behind to be believed");
+	Check(read.Length == 0, "none of which leaves anything behind to be believed");
 
 	/*
-	**	The validator is whatever the server chose to call the file, so it is the last field
-	**	and takes the rest of the line rather than being escaped into one.
+	**	The line ends with a separator and whatever a build wrote after it. A build that
+	**	keyed the store on the server's entity tag wrote the tag there, and its records are
+	**	still every bit as good: the length and the two figures are all this one decides on.
 	*/
-	ISOProbeClass odd;
+	Check(read.Decode("opents-probe-1|710277120|42.500|1234.750|\"58f20419\"")
+		&& read.Length == 710277120,
+		"a record written with a server's entity tag after it is read for the image it names");
+	Check(read.Trip > 42.0 && read.Trip < 43.0 && read.Rate > 1234.0 && read.Rate < 1235.0,
+		"and for what it measured of the link, with the tag ignored");
+	Check(read.Decode("opents-probe-1|4096|0.000|0.000|W/\"a|b\"") && read.Length == 4096,
+		"a tag carrying the separator does not divide the record it trails");
 
-	odd.Length = 4096;
-	odd.Validator = "W/\"a|b\"";
+	std::string const record = written.Encode();
 
-	Check(read.Decode(odd.Encode().c_str()) && read.Validator == "W/\"a|b\"",
-		"a validator carrying the separator is read back whole");
-
-	ISOProbeClass rough;
-
-	rough.Length = 4096;
-	rough.Validator = "one\ntwo";
-
-	Check(read.Decode(rough.Encode().c_str()) && read.Validator.find('\n') == std::string::npos,
-		"and one carrying a line end is flattened rather than written");
+	Check(record.find('|') != std::string::npos && record[record.size() - 1] == '|',
+		"and a record written here still ends where such a build reads its last field");
 }
 
 
@@ -864,6 +855,22 @@ void Check_Probe_Recall(void)
 	source.Close();
 
 	/*
+	**	A tag that moved under bytes that did not is the event this is built to survive. The
+	**	server calls the image something else, its length is the length it always was, and the
+	**	run opens out of the record without a request and onto the very blocks it stored, so a
+	**	mirror re-ingesting an item costs nothing rather than the whole image again.
+	*/
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"a-tag-that-moved\"");
+
+	Asked_Reset();
+	Check(source.Open(image) && Asked() == 0,
+		"an image whose entity tag moved opens without asking the server");
+	Check(source.Recalled() && source.Store_Key() == slot && source.Store_Signature() == signature,
+		"onto the blocks the run before it stored");
+
+	source.Close();
+
+	/*
 	**	And this is the whole of what not asking gives up: an image replaced under a
 	**	location that did not change is read as the image that was there before. What
 	**	notices it is the check the run makes long after it has its data, which drops the
@@ -879,13 +886,32 @@ void Check_Probe_Recall(void)
 	Stop_Serving();
 
 	/*
+	**	A read the server will not answer is asked about rather than believed, and the length
+	**	is what settles it. A server answering with the length the record holds still has this
+	**	image, whatever it now calls it, so the read fails on its own account and every block
+	**	stored for the image stays stored and stays served.
+	*/
+	Serve_Changed(page, total, "\"a-tag-that-moved\"");
+
+	unsigned char scrap[2048];
+
+	Check(source.Open(image) && source.Recalled(), "the image opens out of the record");
+
+	Asked_Reset();
+	Check(!source.Read_At(0, scrap, sizeof(scrap)), "a read the server refuses fails");
+	Check(Asked() > 1, "having asked the server what the image is");
+	Check(source.Total_Size() == (std::uint64_t)total && source.Store_Signature() == signature,
+		"which answers that it is the image it always was, so its blocks are still believed");
+
+	source.Close();
+	Stop_Serving();
+
+	/*
 	**	Until a read the server will not answer says so. A range refused is the first
 	**	evidence a run that asked nothing has that what it believed is wrong, and asking
 	**	then is what re-establishes the image and lets go of the blocks held for the old one.
 	*/
 	Serve_Changed(page, total + 65536.0, "\"5f000000\"");
-
-	unsigned char scrap[2048];
 
 	Check(source.Open(image) && source.Recalled(),
 		"the image opens again out of the record that is now wrong");
@@ -966,43 +992,44 @@ void Check_Image_Identity(void)
 	source.Close();
 
 	/*
-	**	What the redirect stopped carrying, the validator and the length still do. A node
-	**	answering with something else is a different image and is caught as one.
+	**	And neither does the entity tag, which is the same problem one step further out. A tag
+	**	is not a hash of the bytes: a mirror re-ingesting the item, a second mirror of the same
+	**	disc, a cache regenerating its own tags -- each of them answers with a tag nobody has
+	**	seen before for a file that has not changed since 1999. Keying on it discarded the
+	**	whole store every time that happened, which on three images is about two gigabytes.
 	*/
 	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "\"5f000000\"");
 
-	Check(source.Open(image), "an image the server names a new version of opens");
-	Check(source.Store_Key() == slot, "in the slot the old version is held in");
-	Check(source.Store_Signature() != signature, "and is not the image whose blocks are stored there");
+	Check(source.Open(image), "an image the server has given a new entity tag opens");
+	Check(source.Store_Key() == slot, "in the slot the tag it had before is held in");
+	Check(source.Store_Signature() == signature, "and is the same image, so nothing stored is given up");
 
 	source.Close();
 
-	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total + 65536.0, "\"58f20419\"");
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "");
 
-	Check(source.Open(image) && source.Store_Key() == slot && source.Store_Signature() != signature,
-		"an image that has changed length is caught the same way");
+	Check(source.Open(image) && source.Store_Signature() == signature,
+		"and a server that stops naming a version at all changes nothing either");
 
 	source.Close();
 
 	/*
-	**	A server naming no version at all leaves the key resting on the location and the
-	**	length. Two images still keep slots of their own, which is what stops one disc's
-	**	sectors being served as another's.
+	**	The length is what is left, and it is what says this location now serves another file.
 	*/
-	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total, "");
+	Serve_From_Node(page, "https://node-one.example/items/ts1.iso", total + 65536.0, "\"58f20419\"");
 
-	Check(source.Open(image) && !source.Store_Signature().empty(),
-		"an image no server names a version of is still identified");
-
-	std::string const unnamed = source.Store_Signature();
-
-	Check(unnamed != signature, "differently from the same image with a version named");
+	Check(source.Open(image) && source.Store_Key() == slot && source.Store_Signature() != signature,
+		"an image that has changed length is not the image whose blocks are stored there");
 
 	source.Close();
 
+	/*
+	**	Two images still keep slots of their own, which is what stops one disc's sectors being
+	**	served as another's however alike the two answers are.
+	*/
 	Check(source.Open("https://mirror.example/download/ts2.iso"), "a second disc opens");
-	Check(source.Store_Key() != slot && source.Store_Signature() != unnamed,
-		"and is held in a slot of its own however alike the two answers are");
+	Check(source.Store_Key() != slot && source.Store_Signature() != signature,
+		"and is held in a slot of its own");
 
 	source.Close();
 

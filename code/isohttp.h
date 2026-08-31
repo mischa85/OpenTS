@@ -71,10 +71,10 @@ class ISOBlockIndexClass
 		/// <param name="location">Where the image was asked for, made absolute. Never the URL
 		/// a redirect ended at, which names a node rather than an image.</param>
 		/// <param name="length">The image's length in bytes.</param>
-		/// <param name="validator">What the server calls this version of it -- an entity tag
-		/// or a modification date -- or an empty string when it names none.</param>
 		/// <returns>The key, or an empty string when the image cannot be identified.</returns>
-		static std::string Signature(char const * location, std::uint64_t length, char const * validator);
+		/// <remarks>Nothing the server chooses to say about the file takes part in this. An
+		/// entity tag is not a hash of the content, and these images do not change.</remarks>
+		static std::string Signature(char const * location, std::uint64_t length);
 
 		/// <summary>Builds the key the store holds one image's blocks and record under.</summary>
 		/// <param name="location">Where the image was asked for, made absolute.</param>
@@ -169,9 +169,9 @@ class ISOBlockIndexClass
  * A probe costs a round trip before the engine has read a byte, and three discs cost three
  * of them, one after another, because the transport is synchronous. Nothing it answers
  * changes while the location it was asked of does not: an image is a file on a server, and
- * a run that has already been told how long it is and what the server calls it has been
- * told everything the next run would ask. So the answer is kept, and a launch whose
- * locations are unchanged is not a launch that has to ask again.
+ * a run that has already been told how long it is has been told everything the next run
+ * would ask. So the answer is kept, and a launch whose locations are unchanged is not a
+ * launch that has to ask again.
  *
  * The estimates of what the link costs ride along with it. They are the reason the probe
  * was worth its round trip beyond the length -- without them the first file is read as
@@ -193,15 +193,15 @@ class ISOProbeClass
 		std::string Encode(void) const;
 
 		std::uint64_t Length;
-		std::string Validator;
 
 		// What the link to this image last measured, in milliseconds and in bytes a
 		// millisecond. Either may be zero, which is a run that never measured one.
 		double Trip;
 		double Rate;
 
-		// Long enough for the length, the two figures, and whatever a server chooses to
-		// call a version of a file. The location is the key rather than a field of it.
+		// Long enough for the length, the two figures, and the trailing field an earlier
+		// build wrote a server's entity tag into and this one ignores. The location is the
+		// key rather than a field of it.
 		static constexpr std::size_t RECORD_MAX = 1024;
 };
 
@@ -546,8 +546,8 @@ class ISOReadRunsClass
  * kept under the location it was asked of, in a store that answers without a wait, so a
  * launch whose locations are unchanged reads its record instead of the server and the first
  * thing that touches the network is the engine's own first read. What that gives up is
- * noticing an image that changed under a location that did not, which is checked for well
- * after the run is under way rather than in front of it -- see Watch.
+ * noticing an image that changed length under a location that did not, which is checked for
+ * well after the run is under way rather than in front of it -- see Watch.
  */
 class ISOHttpSourceClass : public ISOBlockSourceClass
 {
@@ -716,11 +716,14 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		/// asking about again whatever the answer turns out to be.</remarks>
 		bool Revive(void);
 
-		/// <summary>Asks, once the run is under way, whether the image still is what was believed.</summary>
+		/// <summary>Asks, once the run is under way, whether the image is still as long as
+		/// the record said.</summary>
 		/// <remarks>Only where the image was opened out of a record, since a probe has just
 		/// established the same thing. It asks without waiting and acts on nothing in this
 		/// run: what it can do is drop the record, so that the next launch probes, finds a
-		/// signature the stored blocks do not answer to, and clears them.</remarks>
+		/// signature the stored blocks do not answer to, and clears them. It is what catches
+		/// an image that grew, which Revive cannot: every range the engine asks of such an
+		/// image is answered, so nothing else in the run would ever notice.</remarks>
 		void Watch(void);
 
 		bool Store_Ready(void);
@@ -744,7 +747,6 @@ class ISOHttpSourceClass : public ISOBlockSourceClass
 		// from a different node each time does not change it. Everything the browser keeps
 		// about the image -- the blocks, and the record describing them -- is found by it.
 		std::string Location;
-		std::string Validator;
 
 		std::uint64_t Length;
 		std::vector<BlockType> Cache;
