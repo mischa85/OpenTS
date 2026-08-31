@@ -33,6 +33,7 @@ unsigned int Seed = 0;
 
 int Failures = 0;
 int Checked = 0;
+int Skipped = 0;
 
 
 unsigned int Next_Random(void)
@@ -95,55 +96,49 @@ void Check(SosGoldenCase const & test, char const * what, long long expected, lo
 
 void Run_Case(SosGoldenCase const & test)
 {
-	Fill_Source(test.Seed);
-	std::memset(DestStore, GUARD, sizeof(DestStore));
-
-	if (test.Codec == 2) {
-		_VQA_SOS_COMPRESS_INFO info;
-		std::memset(&info, 0, sizeof(info));
-		VQA_sosCODECInitStream(&info);
-
-		VQA_sosCODECDecompressData(SourceStore, DestStore, (unsigned short)test.BitSize, (unsigned short)test.Channels, (unsigned long)test.Bytes, &info);
-
-		Check(test, "hash", (long long)test.Hash, (long long)Dest_Hash(test.Bytes));
-		Check(test, "predicted", test.Predicted, info.dwPredicted);
-		Check(test, "index", test.Index, info.wIndex);
-		Check(test, "predicted2", test.Predicted2, info.dwPredicted2);
-		Check(test, "index2", test.Index2, info.wIndex2);
-		Checked++;
+	// The unified decoder covers only what the engine feeds it: 16 bit samples in whole
+	// source bytes per channel. The assembly's 8 bit path and odd-tail handling have no
+	// caller left, so those recordings are not replayed.
+	if (test.BitSize != 16 || (test.Bytes % (4 * test.Channels)) != 0) {
+		Skipped++;
 		return;
 	}
+
+	Fill_Source(test.Seed);
+	std::memset(DestStore, GUARD, sizeof(DestStore));
 
 	_SOS_COMPRESS_INFO info;
 	std::memset(&info, 0, sizeof(info));
 	info.wBitSize = (short)test.BitSize;
 	info.wChannels = (short)test.Channels;
-
-	if (test.Codec == 0) {
-		sosCODECInitStream(&info);
-	} else {
-		General_sosCODECInitStream(&info);
-	}
+	sosCODECInitStream(&info);
 
 	info.wBitSize = (short)test.BitSize;
 	info.wChannels = (short)test.Channels;
 	info.lpSource = (char *)(SourceStore + test.SourceAlign);
 	info.lpDest = (char *)DestStore;
 
-	unsigned long returned = 0;
-
-	if (test.Codec == 0) {
-		returned = sosCODECDecompressData(&info, (unsigned long)test.Bytes);
+	unsigned int returned;
+	if (test.Codec == 2) {
+		returned = sosCODECDecompressDataPlanar(&info, (unsigned int)test.Bytes);
 	} else {
-		returned = General_sosCODECDecompressData(&info, (unsigned long)test.Bytes);
+		returned = sosCODECDecompressData(&info, (unsigned int)test.Bytes);
 	}
 
 	Check(test, "hash", (long long)test.Hash, (long long)Dest_Hash(test.Bytes));
-	Check(test, "return", (long long)test.Returned, (long long)returned);
-	Check(test, "predicted", test.Predicted, info.dwPredicted);
-	Check(test, "index", test.Index, info.wIndex);
-	Check(test, "predicted2", test.Predicted2, info.dwPredicted2);
-	Check(test, "index2", test.Index2, info.wIndex2);
+	if (test.Codec != 2) {
+		Check(test, "return", (long long)test.Returned, (long long)returned);
+	}
+	// Both assembly decoders kept their step index pre-multiplied by the 32 byte table
+	// stride; those recordings carry that scaling, the C++ keeps the plain index.
+	int const scale = (test.Codec == 1) ? 1 : 32;
+
+	Check(test, "predicted", test.Predicted, info.Channels[0].dwPredicted);
+	Check(test, "index", test.Index, (long long)info.Channels[0].wIndex * scale);
+	if (test.Channels == 2) {
+		Check(test, "predicted2", test.Predicted2, info.Channels[1].dwPredicted);
+		Check(test, "index2", test.Index2, (long long)info.Channels[1].wIndex * scale);
+	}
 	Checked++;
 }
 
@@ -156,11 +151,11 @@ namespace {
 // reached zero and ran away through both buffers. They must now decode nothing and return.
 void Check_Runaway_Inputs(void)
 {
-	int const bits[] = {8, 8, 16, 16, 8, 16};
-	int const channels[] = {1, 2, 1, 2, 2, 2};
-	int const bytes[] = {0, 0, 0, 0, 3, 2};
+	int const bits[] = {16, 16, 16, 16};
+	int const channels[] = {1, 2, 1, 2};
+	int const bytes[] = {0, 0, 3, 2};
 
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < 4; i++) {
 		Fill_Source(999u);
 		std::memset(DestStore, GUARD, sizeof(DestStore));
 
@@ -168,13 +163,13 @@ void Check_Runaway_Inputs(void)
 		std::memset(&info, 0, sizeof(info));
 		info.wBitSize = (short)bits[i];
 		info.wChannels = (short)channels[i];
-		General_sosCODECInitStream(&info);
+		sosCODECInitStream(&info);
 		info.wBitSize = (short)bits[i];
 		info.wChannels = (short)channels[i];
 		info.lpSource = (char *)SourceStore;
 		info.lpDest = (char *)DestStore;
 
-		General_sosCODECDecompressData(&info, (unsigned long)bytes[i]);
+		sosCODECDecompressData(&info, (unsigned int)bytes[i]);
 
 		bool untouched = true;
 		for (int b = 0; b < 256; b++) {
@@ -185,7 +180,7 @@ void Check_Runaway_Inputs(void)
 		}
 
 		if (!untouched) {
-			std::printf("FAILED General_sosCODEC %d bit %d channel %d bytes wrote to the destination\n",
+			std::printf("FAILED sosCODEC %d bit %d channel %d bytes wrote to the destination\n",
 				bits[i], channels[i], bytes[i]);
 			Failures++;
 		}
@@ -206,7 +201,7 @@ int main(void)
 	Check_Runaway_Inputs();
 
 	std::printf("%-52s %s\n", "SOS ADPCM decode matches the recorded assembly", Failures == 0 ? "ok" : "FAILED");
-	std::printf("checked %d cases, %d mismatches\n", Checked, Failures);
+	std::printf("checked %d cases, skipped %d outside the decoder's domain, %d mismatches\n", Checked, Skipped, Failures);
 
 	return(Failures == 0 ? 0 : 1);
 }
