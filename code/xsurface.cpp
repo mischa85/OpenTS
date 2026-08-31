@@ -54,6 +54,7 @@
 
 #include <cassert>
 #include <utility>
+#include <vector>
 
 /***********************************************************************************************
  * XSurface::Draw_Line -- Draws a line upon the surface.                                       *
@@ -799,7 +800,7 @@ bool XSurface::Fill_Rect(Rect const & fillrect, int color)
 /// <param name="color">The longword value to store. A 16 bit color must be doubled into
 /// both halves of it.</param>
 /// <returns>Returns with a pointer to just past the last longword written.</returns>
-static void *surface_quick_fill(void *buf, int count, int color)
+static void * surface_quick_fill(void * buf, int count, int color)
 {
 	unsigned int * ptr = (unsigned int *)buf;
 
@@ -1277,6 +1278,9 @@ bool XSurface::Blit_From(Rect const & dcliprect, Rect const & destrect, Surface 
 	*/
 	if (Blit_Clip(drect, dcliprect, srect, scliprect)) {
 
+		if (drect.Width != srect.Width || drect.Height != srect.Height) {
+			return(Blit_Scaled(*this, drect, source, srect, trans));
+		}
 		if (trans) {
 			return(Blit_Trans(*this, drect, source, srect));
 		}
@@ -1634,6 +1638,90 @@ bool XSurface::Blit_Trans(Surface & dest, Rect const & destrect, Surface const &
 		return(Bit_Blit(dest, destrect, source, sourcerect, BlitTrans<unsigned char>()));
 	}
 	return(Bit_Blit(dest, destrect, source, sourcerect, BlitTrans<unsigned short>()));
+}
+
+
+/*
+ * Resamples the rows of a scaling blit, once the surfaces are locked and the pixel type is
+ * known. Both axes step a 16.16 fixed point accumulator, so a destination pixel costs an
+ * add and a shift rather than a division.
+ */
+template<class T>
+static bool Scaled_Rows(Surface & dest, void * dbuffer, Rect const & drect, Surface const & source, void const * sbuffer, Rect const & srect, bool trans)
+{
+	BlitPlain<T> plain;
+	BlitTrans<T> transparent;
+	Blitter const & blitter = trans ? (Blitter const &)transparent : (Blitter const &)plain;
+
+	std::vector<T> row(drect.Width);
+
+	int xstep = (srect.Width << 16) / drect.Width;
+	int ystep = (srect.Height << 16) / drect.Height;
+
+	char * to = (char *)dbuffer;
+	int line = 0;
+	int taken = -1;
+
+	for (int y = 0; y < drect.Height; y++) {
+
+		/*
+		**	An enlarged image repeats source rows, so a row is gathered only when the one
+		**	beneath the destination changes.
+		*/
+		if ((line >> 16) != taken) {
+			taken = line >> 16;
+			T const * from = (T const *)(((char const *)sbuffer) + taken * source.Stride());
+			int column = 0;
+			for (int x = 0; x < drect.Width; x++) {
+				row[x] = from[column >> 16];
+				column += xstep;
+			}
+		}
+
+		blitter.BlitForward(to, row.data(), drect.Width);
+		to += dest.Stride();
+		line += ystep;
+	}
+
+	return(true);
+}
+
+
+/// <summary>
+/// Blits a rectangle onto a destination rectangle of a different size.
+/// The source is resampled by nearest neighbor, so the artwork keeps its own pixels rather
+/// than having them blended away, and each destination row is written by the same blitter a
+/// matching blit would have used.
+/// </summary>
+/// <param name="dest">The destination surface.</param>
+/// <param name="destrect">The destination rectangle within the surface.</param>
+/// <param name="source">The source surface.</param>
+/// <param name="sourcerect">The source rectangle to resample from.</param>
+/// <param name="trans">Is this a transparent pixel aware blit request?</param>
+/// <returns>bool; Was the blit performed?</returns>
+/// <remarks>The rectangles are scaled as they stand. Clipping either one against a smaller
+/// window beforehand changes the scale the other is drawn at, which is why Blit_Clip asks
+/// for boundary clipping to have happened first.</remarks>
+bool XSurface::Blit_Scaled(Surface & dest, Rect const & destrect, Surface const & source, Rect const & sourcerect, bool trans)
+{
+	Rect drect = destrect;
+	Rect srect = sourcerect;
+	bool overlapped = false;
+	void * dbuffer = NULL;
+	void * sbuffer = NULL;
+
+	if (!Prep_For_Blit(dest, drect, source, srect, overlapped, dbuffer, sbuffer)) {
+		return(false);
+	}
+
+	bool result = dest.Bytes_Per_Pixel() == 1
+		? Scaled_Rows<unsigned char>(dest, dbuffer, drect, source, sbuffer, srect, trans)
+		: Scaled_Rows<unsigned short>(dest, dbuffer, drect, source, sbuffer, srect, trans);
+
+	dest.Unlock();
+	source.Unlock();
+
+	return(result);
 }
 
 
