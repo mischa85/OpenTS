@@ -326,12 +326,18 @@ harnesses without further configuration:
 ctest --test-dir build-wasm
 ```
 
-Seventeen tests are registered there: `iso9660`, `lcw`, `lcwstream`,
+Eighteen tests are registered there: `iso9660`, `lcw`, `lcwstream`,
 `lcwuncomp`, `soscodec`, `vqacodec`, `voxel`, `lighting`, `win32file`,
-`resources`, `win32process`, `win32user`, `win32window`, `com`, `audiobackend`,
-`timer`, and `isohttp`. The last three exercise the WebAssembly target's own
-layers and build only there; an MSVC configuration registers the rest with
-`logstress` alongside. None of them reads game data.
+`resources`, `win32process`, `win32user`, `win32window`, `com`, `save`,
+`audiobackend`, `timer`, and `isohttp`. The last three exercise the WebAssembly
+target's own layers and build only there; an MSVC configuration registers the
+rest with `logstress` alongside. None of them reads game data.
+
+`save` drives the compound file a saved game is written into. It builds
+`code/docfile.cpp` on both targets, so the same writer and reader are checked in
+both places, and under MSVC it additionally reads what it wrote with OLE and
+reads what OLE wrote with `docfile.cpp` — the interchange that decides whether a
+save crosses between the two builds, and that only Windows can establish.
 
 ### What has been run
 
@@ -367,8 +373,9 @@ Chrome 151 on a macOS host, from the same three disc images over HTTP:
   **This was not run in a real browser that lacks JSPI**, Safari included.
 - `NONE` loaded through `?jspi=ignore`, started, read the discs, and then wedged
   the tab, which is what that configuration means.
-- `ctest --test-dir` passed 17 of 17 against the `JSPI` and the `ASYNCIFY` build
-  directories alike.
+- `ctest --test-dir` passed against the `JSPI` and the `ASYNCIFY` build
+  directories alike: 17 of 17 then, and 18 of 18 on August 31, 2026 once `save`
+  was registered.
 
 Not established, and not to be read into the above:
 
@@ -377,12 +384,14 @@ Not established, and not to be read into the above:
   advances the play cursors off the wall clock when the page will not start
   audio (`code/audiobackend.cpp:226`). An advancing cursor is therefore not
   evidence of a sound, and nobody has confirmed hearing one.
-- **Saving and loading.** `StgCreateDocfile` and `StgOpenStorage` report
-  `E_NOTIMPL` (`code/win32compat.cpp:2676`, `:2677`), so `Save_Game` writes
-  nothing and returns false (`code/saveload.cpp:937`) and `Load_Game` returns
-  false before it opens a stream (`code/saveload.cpp:1184`). A save would in any
-  case land on the in-memory filesystem the tab discards
-  (`code/win32disk.cpp:27`).
+- **Saving and loading.** The container is implemented and covered:
+  `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
+  `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and the
+  `save` harness passes here. Nothing past the container is established. No save
+  has been written by `Save_Game` or read back by `Load_Game`
+  (`code/saveload.cpp`) in a browser, the dialog that reaches them is dead for
+  the reason the next entry gives, and a save lands on the in-memory filesystem
+  the tab discards (`code/win32disk.cpp:28`).
 - **The owner-draw Win32 front end.** `code/win32user.cpp` is a real in-process
   window manager, but the dialog-template entry points are still stubs
   (`code/win32compat.cpp:2613`–`:2615`), so `OwnerDraw::Begin_Dialog` returns

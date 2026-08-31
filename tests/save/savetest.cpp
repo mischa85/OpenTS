@@ -14,6 +14,11 @@
 // Every file it touches it creates itself, in a scratch directory named by the first
 // argument, so it reads no game data and leaves nothing behind.
 //
+// The reader is also given a container this writer would never have produced, assembled here
+// byte by byte, so that what it follows is the geometry a file records rather than the one it
+// would have written. That is the only check of the reader against a foreign layout that runs
+// on every target.
+//
 // On Windows it does the check that matters most and that only Windows can do: it writes a
 // file with docfile.cpp and reads it with OLE, and writes one with OLE and reads it with
 // docfile.cpp. A save written in a browser is only worth carrying to a desktop if those two
@@ -74,6 +79,45 @@ static std::vector<unsigned char> Pattern(std::size_t length, unsigned int seed)
 	}
 
 	return(data);
+}
+
+
+static std::vector<unsigned char> Read_Whole_File(char const * path)
+{
+	std::vector<unsigned char> data;
+
+	HANDLE const file = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL, NULL);
+	if (file == INVALID_HANDLE_VALUE) return(data);
+
+	DWORD const size = GetFileSize(file, NULL);
+
+	if (size != INVALID_FILE_SIZE && size > 0) {
+		data.resize(size);
+
+		DWORD got = 0;
+		if (!ReadFile(file, data.data(), size, &got, NULL) || got != size) data.clear();
+	}
+
+	CloseHandle(file);
+
+	return(data);
+}
+
+
+static bool Write_Whole_File(char const * path, std::vector<unsigned char> const & data)
+{
+	HANDLE const file = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL, NULL);
+	if (file == INVALID_HANDLE_VALUE) return(false);
+
+	DWORD written = 0;
+	bool const ok = (WriteFile(file, data.data(), (DWORD)data.size(), &written, NULL) != FALSE)
+		&& written == data.size();
+
+	CloseHandle(file);
+
+	return(ok);
 }
 
 
@@ -267,6 +311,300 @@ static void Test_Rewrite(void)
 		read == first.size() && memcmp(got.data(), first.data(), first.size()) == 0);
 
 	stream->Release();
+	storage->Release();
+}
+
+
+/*
+** savever.cpp creates each of its streams without STGM_CREATE, so the default disposition has
+** to be the one that refuses a name already there rather than the one that empties it. A
+** sub-storage is refused outright, which is what docfile.h says it does instead of half
+** supporting one.
+*/
+static void Test_Storage_Rules(void)
+{
+	std::string const path = Scratch_Path("rules.sav");
+	IStorage * storage = nullptr;
+
+	if (FAILED(DocFile_Create(path.c_str(), STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE, &storage))) {
+		Check("rules: create", false);
+		return;
+	}
+
+	IStream * stream = nullptr;
+	Check_Result("rules: a new name is created without STGM_CREATE",
+		storage->CreateStream(L"Version", STGM_SHARE_EXCLUSIVE | STGM_READWRITE, 0, 0, &stream), S_OK);
+	if (stream != nullptr) stream->Release();
+
+	stream = nullptr;
+	Check_Result("rules: a name already there is refused without STGM_CREATE",
+		storage->CreateStream(L"Version", STGM_SHARE_EXCLUSIVE | STGM_READWRITE, 0, 0, &stream),
+		STG_E_FILEALREADYEXISTS);
+	Check("rules: the refusal hands back nothing", stream == nullptr);
+
+	IStorage * nested = nullptr;
+	Check_Result("rules: a sub-storage is refused",
+		storage->CreateStorage(L"Nested", STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE, 0, 0, &nested),
+		STG_E_UNIMPLEMENTEDFUNCTION);
+	Check("rules: the refused sub-storage hands back nothing", nested == nullptr);
+
+	storage->Release();
+}
+
+
+/*
+** Get_Savefile_Info opens every save the load dialog lists for writing and only reads it, so a
+** storage that was opened and not changed has to leave the file exactly as it found it.
+*/
+static void Test_Untouched_Update(void)
+{
+	std::string const path = Scratch_Path("untouched.sav");
+	IStorage * storage = nullptr;
+
+	if (FAILED(DocFile_Create(path.c_str(), STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE, &storage))) {
+		Check("untouched: create", false);
+		return;
+	}
+
+	Check("untouched: write", Write_Samples(storage));
+	storage->Release();
+
+	std::vector<unsigned char> const before = Read_Whole_File(path.c_str());
+	Check("untouched: the file is there to compare against", !before.empty());
+
+	storage = nullptr;
+	if (FAILED(DocFile_Open(path.c_str(), STGM_SHARE_EXCLUSIVE | STGM_READWRITE, &storage))) {
+		Check("untouched: reopened for writing", false);
+		return;
+	}
+
+	Check_Samples("untouched", storage);
+	storage->Release();
+
+	Check("untouched: reading through a writable storage rewrites nothing",
+		Read_Whole_File(path.c_str()) == before);
+}
+
+
+static void Put_U16_At(unsigned char * into, unsigned int value)
+{
+	into[0] = (unsigned char)(value & 0xFF);
+	into[1] = (unsigned char)((value >> 8) & 0xFF);
+}
+
+
+static void Put_U32_At(unsigned char * into, unsigned int value)
+{
+	into[0] = (unsigned char)(value & 0xFF);
+	into[1] = (unsigned char)((value >> 8) & 0xFF);
+	into[2] = (unsigned char)((value >> 16) & 0xFF);
+	into[3] = (unsigned char)((value >> 24) & 0xFF);
+}
+
+
+/*
+** A directory entry carries its name as UTF-16 followed by a terminator, and the byte count
+** at 0x40 counts the terminator with it.
+*/
+static void Put_Entry_Name(unsigned char * entry, OLECHAR const * name)
+{
+	unsigned int length = 0;
+
+	while (name[length] != 0) {
+		Put_U16_At(entry + length * 2, (unsigned int)(unsigned short)name[length]);
+		length++;
+	}
+
+	Put_U16_At(entry + 0x40, (length + 1) * 2);
+}
+
+
+/*
+** A container no writer here would produce, assembled byte by byte: the sectors of its largest
+** stream run backwards, its directory is two sectors that do not adjoin, and a sub-storage
+** holds a stream of its own. The reader has to follow what the file records, take the three
+** streams the root holds, and leave the sub-storage's out of them.
+*/
+static void Test_Foreign_Container(void)
+{
+	unsigned int const SECTOR = 512;
+	unsigned int const FREE = 0xFFFFFFFFu;
+	unsigned int const ENDCHAIN = 0xFFFFFFFEu;
+	unsigned int const FATSEC = 0xFFFFFFFDu;
+	unsigned int const NONE = 0xFFFFFFFFu;
+	unsigned int const SECTORS = 13;
+
+	std::vector<unsigned char> image((std::size_t)(SECTORS + 1) * SECTOR, 0);
+	unsigned char * const header = image.data();
+	unsigned char * const body = image.data() + SECTOR;
+
+	auto sector = [body](unsigned int which) -> unsigned char * {
+		return(body + (std::size_t)which * SECTOR);
+	};
+
+	/*
+	** Entries 0 to 3 live in sector 11 and entries 4 to 7 in sector 10, which the directory
+	** chain visits in that order.
+	*/
+	auto entry = [&sector](unsigned int index) -> unsigned char * {
+		return(sector((index < 4) ? 11u : 10u) + (std::size_t)(index % 4) * 128);
+	};
+
+	/*
+	** A stream exactly at the cutoff, so it takes whole sectors, laid down in reverse.
+	*/
+	std::vector<unsigned char> const deep = Pattern(4096, 11);
+	std::vector<unsigned char> const tiny = Pattern(100, 12);
+	std::vector<unsigned char> const buried = Pattern(50, 13);
+
+	for (unsigned int block = 0; block < 8; block++) {
+		memcpy(sector(7 - block), &deep[(std::size_t)block * SECTOR], SECTOR);
+	}
+
+	/*
+	** The mini stream, which the root owns: two mini sectors of the small stream and then one
+	** belonging to the sub-storage.
+	*/
+	memcpy(sector(8), tiny.data(), tiny.size());
+	memcpy(sector(8) + 128, buried.data(), buried.size());
+
+	for (unsigned int slot = 0; slot < 128; slot++) Put_U32_At(sector(9) + slot * 4, FREE);
+	Put_U32_At(sector(9) + 0 * 4, 1);
+	Put_U32_At(sector(9) + 1 * 4, ENDCHAIN);
+	Put_U32_At(sector(9) + 2 * 4, ENDCHAIN);
+
+	for (unsigned int index = 0; index < 8; index++) {
+		unsigned char * const at = entry(index);
+
+		at[0x42] = 0;
+		at[0x43] = 1;
+		Put_U32_At(at + 0x44, NONE);
+		Put_U32_At(at + 0x48, NONE);
+		Put_U32_At(at + 0x4C, NONE);
+		Put_U32_At(at + 0x74, ENDCHAIN);
+	}
+
+	Put_Entry_Name(entry(0), L"Root Entry");
+	entry(0)[0x42] = 5;
+	Put_U32_At(entry(0) + 0x4C, 2);
+	Put_U32_At(entry(0) + 0x74, 8);
+	Put_U32_At(entry(0) + 0x78, 192);
+
+	Put_Entry_Name(entry(1), L"Deep");
+	entry(1)[0x42] = 2;
+	Put_U32_At(entry(1) + 0x74, 7);
+	Put_U32_At(entry(1) + 0x78, (unsigned int)deep.size());
+
+	Put_Entry_Name(entry(2), L"Tiny");
+	entry(2)[0x42] = 2;
+	Put_U32_At(entry(2) + 0x44, 1);
+	Put_U32_At(entry(2) + 0x48, 3);
+	Put_U32_At(entry(2) + 0x74, 0);
+	Put_U32_At(entry(2) + 0x78, (unsigned int)tiny.size());
+
+	Put_Entry_Name(entry(3), L"Zero");
+	entry(3)[0x42] = 2;
+	Put_U32_At(entry(3) + 0x48, 4);
+	Put_U32_At(entry(3) + 0x78, 0);
+
+	Put_Entry_Name(entry(4), L"Nested");
+	entry(4)[0x42] = 1;
+	Put_U32_At(entry(4) + 0x4C, 5);
+
+	Put_Entry_Name(entry(5), L"Buried");
+	entry(5)[0x42] = 2;
+	Put_U32_At(entry(5) + 0x74, 2);
+	Put_U32_At(entry(5) + 0x78, (unsigned int)buried.size());
+
+	for (unsigned int slot = 0; slot < 128; slot++) Put_U32_At(sector(12) + slot * 4, FREE);
+	for (unsigned int which = 7; which > 0; which--) Put_U32_At(sector(12) + which * 4, which - 1);
+	Put_U32_At(sector(12) + 0 * 4, ENDCHAIN);
+	Put_U32_At(sector(12) + 8 * 4, ENDCHAIN);
+	Put_U32_At(sector(12) + 9 * 4, ENDCHAIN);
+	Put_U32_At(sector(12) + 10 * 4, ENDCHAIN);
+	Put_U32_At(sector(12) + 11 * 4, 10);
+	Put_U32_At(sector(12) + 12 * 4, FATSEC);
+
+	unsigned char const signature[8] = { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 };
+
+	memcpy(header, signature, sizeof(signature));
+	Put_U16_At(header + 0x18, 0x003E);
+	Put_U16_At(header + 0x1A, 3);
+	Put_U16_At(header + 0x1C, 0xFFFE);
+	Put_U16_At(header + 0x1E, 9);
+	Put_U16_At(header + 0x20, 6);
+	Put_U32_At(header + 0x2C, 1);
+	Put_U32_At(header + 0x30, 11);
+	Put_U32_At(header + 0x38, 4096);
+	Put_U32_At(header + 0x3C, 9);
+	Put_U32_At(header + 0x40, 1);
+	Put_U32_At(header + 0x44, ENDCHAIN);
+	Put_U32_At(header + 0x48, 0);
+
+	for (unsigned int slot = 0; slot < 109; slot++) {
+		Put_U32_At(header + 0x4C + slot * 4, (slot == 0) ? 12u : FREE);
+	}
+
+	std::string const path = Scratch_Path("foreign.sav");
+
+	if (!Write_Whole_File(path.c_str(), image)) {
+		Check("foreign: the container was written", false);
+		return;
+	}
+
+	Check_Result("foreign: it is recognized as a storage", DocFile_Is_Storage_File(path.c_str()), S_OK);
+
+	IStorage * storage = nullptr;
+	Check_Result("foreign: it opens", DocFile_Open(path.c_str(), STGM_SHARE_DENY_WRITE, &storage), S_OK);
+	if (storage == nullptr) return;
+
+	struct ExpectedType {
+		OLECHAR const * Name;
+		std::vector<unsigned char> const * Data;
+	};
+
+	ExpectedType const expected[] = { { L"Deep", &deep }, { L"Tiny", &tiny } };
+
+	for (ExpectedType const & wanted : expected) {
+		IStream * stream = nullptr;
+
+		if (FAILED(storage->OpenStream(wanted.Name, NULL, STGM_SHARE_EXCLUSIVE, 0, &stream))) {
+			Check("foreign: a root stream is readable", false);
+			continue;
+		}
+
+		std::vector<unsigned char> got(wanted.Data->size() + 1, 0);
+		ULONG read = 0;
+
+		stream->Read(got.data(), (ULONG)got.size(), &read);
+		stream->Release();
+
+		Check("foreign: a root stream reads back whole",
+			read == wanted.Data->size() && memcmp(got.data(), wanted.Data->data(), wanted.Data->size()) == 0);
+	}
+
+	IStream * stream = nullptr;
+	Check_Result("foreign: an empty stream is there",
+		storage->OpenStream(L"Zero", NULL, STGM_SHARE_EXCLUSIVE, 0, &stream), S_OK);
+
+	if (stream != nullptr) {
+		STATSTG statstg;
+
+		memset(&statstg, 0, sizeof(statstg));
+		stream->Stat(&statstg, STATFLAG_NONAME);
+		Check("foreign: the empty stream is empty", statstg.cbSize.QuadPart == 0);
+		stream->Release();
+	}
+
+	stream = nullptr;
+	Check_Result("foreign: a sub-storage's stream is not one of the root's",
+		storage->OpenStream(L"Buried", NULL, STGM_SHARE_EXCLUSIVE, 0, &stream), STG_E_FILENOTFOUND);
+	Check("foreign: the sub-storage's stream hands back nothing", stream == nullptr);
+
+	stream = nullptr;
+	Check_Result("foreign: the sub-storage itself is not a stream",
+		storage->OpenStream(L"Nested", NULL, STGM_SHARE_EXCLUSIVE, 0, &stream), STG_E_FILENOTFOUND);
+
 	storage->Release();
 }
 
@@ -490,7 +828,8 @@ static void Test_Against_OLE(void)
 static void Clean_Up(void)
 {
 	char const * const leftovers[] = {
-		"roundtrip.sav", "rewrite.sav", "plain.dat", "version.sav", "ours.sav", "theirs.sav"
+		"roundtrip.sav", "rewrite.sav", "rules.sav", "untouched.sav", "foreign.sav", "plain.dat",
+		"version.sav", "ours.sav", "theirs.sav"
 	};
 
 	for (char const * name : leftovers) {
@@ -513,6 +852,9 @@ int main(int argc, char ** argv)
 
 	Test_Round_Trip();
 	Test_Rewrite();
+	Test_Storage_Rules();
+	Test_Untouched_Update();
+	Test_Foreign_Container();
 	Test_Not_A_Storage();
 	Test_Version_Strings();
 #if !defined(__EMSCRIPTEN__)

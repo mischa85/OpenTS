@@ -55,6 +55,7 @@ The out-of-line half started as one file and has since split by subject:
 | `code/win32window.cpp` | The canvas: its size, the pointer position, and the cursor |
 | `code/win32timer.cpp` | The clocks, `Sleep`, and the multimedia timers as main-loop polls |
 | `code/win32disk.cpp` | Free-space reporting, from `navigator.storage.estimate` in a page |
+| `code/docfile.cpp` | The compound file the storage entry points answer out of; built on every target, so its bytes can be held against OLE's |
 
 ### Layout
 
@@ -203,12 +204,14 @@ would try to suspend outside the promising boundary and trap
   of the language library, so what is missing is the template-to-window step.
   The consequences per caller are recorded in
   [Building OpenTS](BUILDING.md#what-has-been-run).
-- **The save container.** `StgCreateDocfile` and `StgOpenStorage` report
-  `E_NOTIMPL` (`code/win32compat.cpp:2676`, `:2677`). Saving and loading fail
-  cleanly and nothing persists. [C.3](WASM-PORT.md#c3-com-and-what-it-means-for-the-save-format)
-  sizes the decision behind it, and that decision is unchanged: the COM
-  activation the substitute now provides answers the object-factory half of the
-  problem, not the container half.
+- **Storage that outlives the tab.** The container half is no longer missing:
+  `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
+  `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and
+  `tests/save` holds its writer and its reader to the layout Microsoft publishes
+  as MS-CFB. [C.3](WASM-PORT.md#c3-com-and-what-it-means-for-the-save-format)
+  sizes the decision behind it. What a page still has nowhere to put is the
+  result: a save is written into the in-memory filesystem, which the tab
+  discards when it closes (`code/win32disk.cpp:28`).
 - **The mouse cursor.** `code/wincursor.cpp:180` routes the Emscripten build to
   `Win32_Window_Create_Cursor`, which encodes the frame as a PNG data URL for
   `canvas.style.cursor` (`code/win32window.cpp:541`). The pointer a player sees
