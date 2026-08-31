@@ -114,6 +114,14 @@ Each of these says so where it is defined.
   `code/win32user.cpp` supplies. `CreateDialogParam` and `DialogBoxParam` reach
   it. What each individual dialog then does is recorded in
   [Building OpenTS](BUILDING.md#what-has-been-run).
+- **Message boxes.** `MessageBoxA` (`code/win32user.cpp:2937`) lays the question
+  out in the page and waits on the engine's own yield, rather than calling
+  `confirm()` and stopping the page; `MessageBoxIndirectA` (`:3066`) is the same
+  box from a parameter block, which is how `Main_Game` reports a failed
+  `Init_Game` (`code/conquer.cpp:408`). Naming a disc image the server does not
+  carry, as in `?image=TS3.iso`, mounts nothing and is how that report is
+  reached deliberately. Without the yield scaffold there is nothing to wait on,
+  and both report the box cancelled instead.
 - **The filesystem.** The Win32 file API over POSIX, with a case-insensitive
   fallback when the exact spelling is missing, and directory enumeration, so
   `FindFirstFile` answers. It also mounts an ISO 9660 volume, lazily, on the

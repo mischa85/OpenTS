@@ -3045,4 +3045,32 @@ int MessageBoxA(HWND, LPCSTR text, LPCSTR caption, UINT type)
 	return(answer > 0 ? answer : cancelled);
 }
 
+
+/// <summary>
+/// Puts a message box on the page from a parameter block.
+/// </summary>
+/// <param name="parameters">The Win32 parameter block; its size field must be this build's.</param>
+/// <returns>The identifier of the button chosen, or zero if no box could be put up.</returns>
+/// <remarks>
+/// Everything this form carries beyond MessageBox is either a Windows resource or a Windows
+/// help hook: lpszIcon names an icon resource, dwContextHelpId and lpfnMsgBoxCallback answer
+/// a Help button, dwLanguageId picks the button captions out of USER32, and hInstance is the
+/// module the first two are looked up in. A page has none of them. No style draws an icon
+/// here, so MB_USERICON loses an icon rather than gaining a wrong one, and MB_HELP is a
+/// button that nothing behind it could answer. What is left is the text, the caption, the
+/// owner and the style, and those are MessageBox.
+///
+/// The size field is the block's only statement of its own shape, so a block that does not
+/// state this one's is refused rather than read as if it did.
+/// </remarks>
+int MessageBoxIndirectA(MSGBOXPARAMSA const * parameters)
+{
+	if (parameters == nullptr || parameters->cbSize != sizeof(MSGBOXPARAMSA)) {
+		return(WIN32_UNSUPPORTED("MessageBoxIndirect: a parameter block of another shape", 0));
+	}
+
+	return(MessageBoxA(parameters->hwndOwner, parameters->lpszText, parameters->lpszCaption,
+		parameters->dwStyle));
+}
+
 #endif	// __EMSCRIPTEN__

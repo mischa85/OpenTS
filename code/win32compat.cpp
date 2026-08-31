@@ -3228,9 +3228,6 @@ BOOL SymFromAddr(HANDLE, DWORD64, DWORD64 *, PSYMBOL_INFO) { return(WIN32_STUB(F
 BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return(WIN32_STUB(FALSE)); }
 
 
-int MessageBoxIndirectA(MSGBOXPARAMSA const *) { return(WIN32_STUB(IDCANCEL)); }
-
-
 HWND GetNextDlgGroupItem(HWND, HWND, BOOL) { return(WIN32_STUB((HWND)nullptr)); }
 
 
