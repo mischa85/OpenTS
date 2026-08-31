@@ -232,4 +232,16 @@ BOOL GetDiskFreeSpaceA(LPCSTR root, LPDWORD sectorspercluster, LPDWORD bytespers
 	return(TRUE);
 }
 
+
+/*
+** ---------------------------------------------------------------------------------------
+** The drives.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+UINT GetDriveTypeA(LPCSTR) { return(WIN32_STUB(DRIVE_UNKNOWN)); }
+DWORD GetLogicalDrives(void) { return(WIN32_STUB(0)); }
+BOOL GetVolumeInformationA(LPCSTR, LPSTR, DWORD, LPDWORD, LPDWORD, LPDWORD, LPSTR, DWORD) { return(WIN32_STUB(FALSE)); }
+
 #endif	// __EMSCRIPTEN__

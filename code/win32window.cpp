@@ -34,13 +34,16 @@
 #if defined(__EMSCRIPTEN__)
 
 #include "browser.h"
+#include "misc.h"
 #include "vidscale.h"
+#include "video.h"
 #include "win.h"
 #include "win32user.h"
 #include "wincursor.h"
 
 #include <emscripten/emscripten.h>
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -713,6 +716,9 @@ BOOL GetCursorPos(LPPOINT point)
 }
 
 
+BOOL SetCursorPos(int, int) { return(WIN32_STUB(FALSE)); }
+
+
 /*
 ** A page delivers every mouse event over the canvas to the canvas, whoever asked for it,
 ** so capture is bookkeeping the engine reads back rather than a routing change.
@@ -765,6 +771,135 @@ BOOL ClipCursor(RECT const * rect)
 	return(TRUE);
 }
 
+
+/*
+** ---------------------------------------------------------------------------------------
+** The display.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+HMONITOR MonitorFromWindow(HWND, DWORD) { return(WIN32_STUB((HMONITOR)nullptr)); }
+BOOL GetMonitorInfoA(HMONITOR, LPMONITORINFO) { return(WIN32_STUB(FALSE)); }
+
+
+/*
+** A page has no list of display modes to walk. What stands in for one is the set of frame
+** sizes the game can honestly be rendered at here: the canvas as the page has laid it out,
+** whatever the game is running at now, and the familiar 4:3 and widescreen sizes that fit
+** on the display the tab is on. A canvas is whatever size the page asks for, so every one
+** of them is a size the renderer really can produce; nothing larger than the screen is
+** offered, because a window cannot be opened bigger than the display holding it.
+**
+** Everything here is measured in CSS pixels, as the frame is. A display carrying two
+** device pixels for each CSS pixel shows the same modes as one carrying a single pixel,
+** and shows them more sharply.
+*/
+struct DisplayModeEntry
+{
+	int Width;
+	int Height;
+};
+
+static const DisplayModeEntry _DisplayLadder[] = {
+	{ 640, 400 },	{ 640, 480 },	{ 800, 600 },	{ 1024, 768 },	{ 1152, 864 },
+	{ 1280, 720 },	{ 1280, 800 },	{ 1280, 960 },	{ 1280, 1024 },	{ 1366, 768 },
+	{ 1440, 900 },	{ 1600, 900 },	{ 1600, 1200 },	{ 1680, 1050 },	{ 1920, 1080 },
+	{ 1920, 1200 },	{ 2048, 1152 },	{ 2560, 1440 },	{ 2560, 1600 },
+};
+
+static DisplayModeEntry _DisplayModes[32];
+static int _DisplayModeCount = 0;
+
+
+static void Add_Display_Mode(int width, int height)
+{
+	if (width < 640 || height < 400) return;
+	if (_DisplayModeCount >= (int)(sizeof(_DisplayModes) / sizeof(_DisplayModes[0]))) return;
+
+	for (int index = 0; index < _DisplayModeCount; index++) {
+		if (_DisplayModes[index].Width == width && _DisplayModes[index].Height == height) return;
+	}
+
+	_DisplayModes[_DisplayModeCount].Width = width;
+	_DisplayModes[_DisplayModeCount].Height = height;
+	_DisplayModeCount++;
+}
+
+
+static void Build_Display_Modes(void)
+{
+	_DisplayModeCount = 0;
+
+	int screenwidth = Browser_Screen_Width();
+	int screenheight = Browser_Screen_Height();
+
+	// A page that will not say how big the display is gets the sizes a laptop can be
+	// relied on to manage rather than the whole ladder.
+	if (screenwidth <= 0 || screenheight <= 0) {
+		screenwidth = 1920;
+		screenheight = 1080;
+	}
+
+	for (unsigned index = 0; index < sizeof(_DisplayLadder) / sizeof(_DisplayLadder[0]); index++) {
+		if (_DisplayLadder[index].Width <= screenwidth && _DisplayLadder[index].Height <= screenheight) {
+			Add_Display_Mode(_DisplayLadder[index].Width, _DisplayLadder[index].Height);
+		}
+	}
+
+	/*
+	** The window itself is always on the list, and choosing it is how the player asks for
+	** the frame to keep following the window, so it has to be the size the window actually
+	** produces rather than the size it was measured at.
+	*/
+	int canvaswidth = Browser_Canvas_CSS_Width();
+	int canvasheight = Browser_Canvas_CSS_Height();
+
+	if (canvaswidth > 0 && canvasheight > 0) {
+		Video_Clamp_Frame_Size(canvaswidth, canvasheight);
+		Add_Display_Mode(canvaswidth, canvasheight);
+	}
+
+	// So that the list the player is looking at has the resolution they are looking at it in.
+	Add_Display_Mode(VideoModeWidth, VideoModeHeight);
+
+	std::sort(_DisplayModes, _DisplayModes + _DisplayModeCount,
+		[](DisplayModeEntry const & lhs, DisplayModeEntry const & rhs) {
+			return((lhs.Width != rhs.Width) ? (lhs.Width < rhs.Width) : (lhs.Height < rhs.Height));
+		});
+}
+
+
+BOOL EnumDisplaySettingsA(LPCSTR, DWORD mode, LPDEVMODEA devmode)
+{
+	if (devmode == nullptr) return(FALSE);
+
+	int width = 0;
+	int height = 0;
+
+	if (mode == ENUM_CURRENT_SETTINGS) {
+		width = Browser_Canvas_CSS_Width();
+		height = Browser_Canvas_CSS_Height();
+		if (width <= 0 || height <= 0) return(FALSE);
+	} else {
+		// The list is taken afresh at the start of an enumeration, as a driver's is, so a
+		// canvas that resizes part way through does not shorten what the caller is reading.
+		if (mode == 0) {
+			Build_Display_Modes();
+		}
+		if ((int)mode >= _DisplayModeCount) return(FALSE);
+		width = _DisplayModes[mode].Width;
+		height = _DisplayModes[mode].Height;
+	}
+
+	memset(devmode, 0, sizeof(*devmode));
+	devmode->dmSize = sizeof(*devmode);
+	devmode->dmBitsPerPel = 16;
+	devmode->dmPelsWidth = (DWORD)width;
+	devmode->dmPelsHeight = (DWORD)height;
+	devmode->dmDisplayFrequency = 60;
+	return(TRUE);
+}
 
 /*
 ** ---------------------------------------------------------------------------------------

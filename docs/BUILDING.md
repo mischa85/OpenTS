@@ -180,7 +180,7 @@ names the three original discs beside the page and lets `?image=` override them.
 
 Several images mount at once and are searched in the order they are named, each
 contributing its `INSTALL` directory and then its root, with the first answer
-winning (`code/win32compat.cpp:647`). Naming Firestorm ahead of the base discs
+winning (`code/win32compat.cpp:664`). Naming Firestorm ahead of the base discs
 is therefore what an installation that upgraded over the base game looks like.
 A volume is mounted lazily, on the first name the host cannot answer for, and
 reads shorter than a block are served from a per-image block cache rather than
@@ -196,7 +196,7 @@ answers. A single reader is exempt. `ISODeferredReadClass` (`code/iso9660.h:81`)
 marks a scope in which a block source may answer that the bytes are not here yet:
 it asks for them without waiting and reports a read of nothing, which the layers
 above pass up unchanged rather than retrying (`code/iso9660.cpp:545`,
-`code/rawfile.cpp:491`, `code/win32compat.cpp:1122`) and which the scope tells
+`code/rawfile.cpp:491`, `code/win32compat.cpp:1139`) and which the scope tells
 apart from the end of a file. The score player is the only caller —
 `ThemeClass::Play_Song` asks for a stream that may decline (`code/theme.cpp:439`)
 and the two refill sites in `code/dsaudio.cpp` enter the scope around that
@@ -400,13 +400,13 @@ Not established, and not to be read into the above:
   evidence of a sound, and nobody has confirmed hearing one.
 - **Saving and loading.** The container is implemented and covered:
   `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
-  `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and the
+  `code/docfile.cpp` (`code/win32compat.cpp:3060`, `:3072`, `:3084`), and the
   `save` harness passes here. Somewhere to keep one is implemented too: the page
   mounts `/save` from IndexedDB and reads it back before the engine starts
   (`wasm/game.html:357`), a bare name resolves into that directory ahead of the
-  game directory (`code/win32compat.cpp:421`), a wildcard scan folds it into the
-  results (`code/win32compat.cpp:1928`), and a write to it is flushed with
-  `FS.syncfs` (`code/win32compat.cpp:452`). What is not established is any of it
+  game directory (`code/win32compat.cpp:438`), a wildcard scan folds it into the
+  results (`code/win32compat.cpp:1950`), and a write to it is flushed with
+  `FS.syncfs` (`code/win32compat.cpp:469`). What is not established is any of it
   end to end: no save has been written by `Save_Game` or read back by
   `Load_Game` (`code/saveload.cpp`) in a browser, and the dialog that reaches
   them is dead for the reason the next entry gives.
@@ -417,7 +417,7 @@ Not established, and not to be read into the above:
   `:2485`. Dialogs open and are drawn. What has not been established is each
   dialog doing its job: the options and load screens have been used, skirmish
   setup has not.
-- **The mouse cursor.** `code/win32window.cpp:541` encodes each cursor frame as
+- **The mouse cursor.** `code/win32window.cpp:526` encodes each cursor frame as
   a PNG data URL for `canvas.style.cursor`, but what a player sees is still the
   browser's own arrow, and that path is under active work.
 - **Anything under MSVC.** No part of this port has been compiled on Windows.

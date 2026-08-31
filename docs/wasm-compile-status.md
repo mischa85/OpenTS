@@ -46,14 +46,24 @@ branch, and each substitute's body is inert outside the WebAssembly target.
 | `code/winsockcompat.h` | `winsock.h` | The Windows spellings over the host's BSD sockets |
 | `code/guidcompat.h` | `basetyps.h`, `initguid.h` | Whether `DEFINE_GUID` declares or defines |
 
-The out-of-line half started as one file and has since split by subject:
+Only two of the four carry an out-of-line half, and neither has a `.cpp` of its
+own: what `crtcompat.h` and `winsockcompat.h` declare out of line is defined in
+`code/win32compat.cpp`, under its C runtime and Winsock sections.
+
+The out-of-line half started as one file and has since split by subject. Every
+entry point below is declared in `code/win32compat.h` wherever it is defined, so
+which file holds one is an arrangement of the substitute rather than anything an
+include site or the MSVC build can see:
 
 | File | What it implements |
 | --- | --- |
-| `code/win32compat.cpp` | The filesystem, the in-process COM runtime, the layout assertions, and what is still stubbed |
-| `code/win32user.cpp` | An in-process window manager: window classes, handles, the message queue, `SendMessage`/`DispatchMessage`, the dialog-item protocol, and a message box drawn into the page |
-| `code/win32window.cpp` | The canvas: its size, the pointer position, and the cursor |
-| `code/win32timer.cpp` | The clocks, `Sleep`, and the multimedia timers as main-loop polls |
+| `code/win32compat.cpp` | The filesystem and its disc-image overlay, the layout assertions, the in-process COM runtime, the clocks, the mutexes and events, the heap, resources and version information, OLE serialization and the structured-storage bridge onto `docfile.cpp`, locale formatting, the MSVC C runtime, the Windows-only half of Winsock, and the registry, profile and console entry points nothing has been written for |
+| `code/win32user.cpp` | An in-process window manager: window classes, handles, the message queue, `SendMessage`/`DispatchMessage`, the dialog-item protocol, dialog templates, and a message box drawn into the page; also the keyboard-state, menu, window-scroll-bar and context-help entry points, none of which a page answers |
+| `code/win32ctrl.cpp` | The stock controls the window manager registers -- button, static, edit, list box, combo box, scroll bar, track bar, progress bar and hot key -- drawn and driven in process; the image list is stubbed beside them |
+| `code/win32gdi.cpp` | The synthetic GDI: device contexts, objects, font measurement and text drawing onto the engine's own surfaces. The raster half -- the blits, the DIB sections and the device capabilities -- is stubbed |
+| `code/win32window.cpp` | The canvas: its size, the pointer position, the cursor, the code page, and the display-mode enumeration a page stands in for a driver's |
+| `code/win32process.cpp` | Who the process is: the module name and handle, the command line and its splitter, the locks and critical sections a one-threaded target answers at once, and the module, thread, process and DbgHelp entry points that have nothing underneath them |
+| `code/win32timer.cpp` | `Sleep` and the multimedia timers as main-loop polls, over the millisecond clock `code/win32compat.cpp` supplies |
 | `code/win32disk.cpp` | Free-space reporting, from `navigator.storage.estimate` in a page |
 | `code/docfile.cpp` | The compound file the storage entry points answer out of; built on every target, so its bytes can be held against OLE's |
 
@@ -69,8 +79,8 @@ This is checked rather than asserted. `win32compat.cpp` carries a block of
 `static_assert`s over the sizes, alignments, and field offsets MSVC reports for
 the same constructs on Win32 x86, including the two packed structures whose
 size does not follow from their members: `WAVEFORMATEX` is eighteen bytes
-because `mmsystem.h` packs the wave formats to one (`code/win32compat.cpp:61`),
-and `BITMAPFILEHEADER` is fourteen because `wingdi.h` packs it to two (`:62`).
+because `mmsystem.h` packs the wave formats to one (`code/win32compat.cpp:66`),
+and `BITMAPFILEHEADER` is fourteen because `wingdi.h` packs it to two (`:67`).
 A change that moves a field fails the build instead of reshaping a saved game.
 
 ### Stubs
@@ -91,9 +101,9 @@ Reporting is once per entry point, or once per description, rather than once per
 call, so a stub inside a frame loop names itself without burying the log.
 
 An entry point returns the Win32 failure value silently only where Windows would
-return it too. `GetMenu` (`code/win32compat.cpp:2895`) answers null because no
+return it too. `GetMenu` (`code/win32user.cpp:3108`) answers null because no
 window here has a menu, not because nothing was written for it, and a page's
-`LoadCursor` (`code/win32window.cpp:599`) answers null for a resource identifier
+`LoadCursor` (`code/win32window.cpp:606`) answers null for a resource identifier
 that names no system cursor, which is what a null module handle gets on Windows.
 The test is whether Windows on the same input would answer the same way; where
 it would not, the call keeps reporting, because a stub that stops saying so is
@@ -101,8 +111,10 @@ worse than no stub at all.
 
 On the date above, 179 stub sites remained in `code/win32compat.cpp` and one in
 `code/win32timer.cpp`, against 24 `WIN32_UNSUPPORTED` sites spread across the
-five implementation files. The direction of both numbers is the measurement that
-matters, not their value on a given day.
+implementation files -- there are eight of those, and six of them carry one. The
+direction of both numbers is the measurement that matters, not their value on a
+given day, and the split by subject has since moved stubs between the files
+without changing how many there are.
 
 ### What is implemented rather than stubbed
 
@@ -114,9 +126,9 @@ Each of these says so where it is defined.
   `code/win32user.cpp` supplies. `CreateDialogParam` and `DialogBoxParam` reach
   it. What each individual dialog then does is recorded in
   [Building OpenTS](BUILDING.md#what-has-been-run).
-- **Message boxes.** `MessageBoxA` (`code/win32user.cpp:2937`) lays the question
+- **Message boxes.** `MessageBoxA` (`code/win32user.cpp:2940`) lays the question
   out in the page and waits on the engine's own yield, rather than calling
-  `confirm()` and stopping the page; `MessageBoxIndirectA` (`:3066`) is the same
+  `confirm()` and stopping the page; `MessageBoxIndirectA` (`:3069`) is the same
   box from a parameter block, which is how `Main_Game` reports a failed
   `Init_Game` (`code/conquer.cpp:408`). Naming a disc image the server does not
   carry, as in `?image=TS3.iso`, mounts nothing and is how that report is
@@ -125,9 +137,9 @@ Each of these says so where it is defined.
 - **The filesystem.** The Win32 file API over POSIX, with a case-insensitive
   fallback when the exact spelling is missing, and directory enumeration, so
   `FindFirstFile` answers. It also mounts an ISO 9660 volume, lazily, on the
-  first name the host cannot answer for (`code/win32compat.cpp:535`); in a page
+  first name the host cannot answer for (`code/win32compat.cpp:691`); in a page
   that volume is served over HTTP range requests by `code/isohttp.cpp`.
-- **COM activation.** `code/win32compat.cpp:2203`–`:2344` is an in-process class
+- **COM activation.** `code/win32compat.cpp:2479`–`:2612` is an in-process class
   registry: `CoRegisterClassObject` publishes a factory, `CoCreateInstance` is a
   table lookup followed by `IClassFactory::CreateInstance`, and an activation
   that names an unregistered class prints the CLSID rather than handing back a
@@ -140,8 +152,11 @@ Each of these says so where it is defined.
   Win32 build loads (`code/data.cpp:404`).
 - **The clocks and `Sleep`.** `GetTickCount`, `timeGetTime`,
   `QueryPerformanceCounter`, and `GetSystemTime` over the host's monotonic and
-  realtime clocks; `Sleep` is a yielding wait when the scaffold is built in
-  (`code/win32timer.cpp:217`).
+  realtime clocks, in `code/win32compat.cpp`; `Sleep` is a yielding wait when the
+  scaffold is built in (`code/win32timer.cpp:217`). The clock is deliberately not
+  in `code/win32timer.cpp` beside the timers that read it: `tests/timer`
+  substitutes a `timeGetTime` of its own to step the timer wheel, which it can
+  only do while the two are in different translation units.
 - **Audio.** `code/audiobackend.cpp` carries a looping ring out to Web Audio
   through OpenAL's streaming queue and dresses it in the DirectSound secondary
   buffer contract, so `dsaudio.cpp` and `ahandle.cpp` consume it unchanged.
@@ -212,21 +227,21 @@ would try to suspend outside the promising boundary and trap
   (`code/CMakeLists.txt:72`). Nothing replaces them.
 - **Saving and loading through the engine.** Neither half is missing any more.
   `StgCreateDocfile`, `StgOpenStorage`, and `StgIsStorageFile` answer out of
-  `code/docfile.cpp` (`code/win32compat.cpp:3167`, `:3179`, `:3191`), and
+  `code/docfile.cpp` (`code/win32compat.cpp:3060`, `:3072`, `:3084`), and
   `tests/save` holds its writer and its reader to the layout Microsoft publishes
   as MS-CFB. [C.3](WASM-PORT.md#c3-com-and-what-it-means-for-the-save-format)
   sizes the decision behind it. A save also has somewhere to live: `/save` is
   mounted from IndexedDB and read back before the engine starts
   (`wasm/game.html:357`), and it stands in front of the game directory for any
-  bare name, on an open (`code/win32compat.cpp:421`) and on a scan
-  (`code/win32compat.cpp:1928`), with writes flushed by `FS.syncfs`
-  (`code/win32compat.cpp:452`). What is missing is evidence: no save has been
+  bare name, on an open (`code/win32compat.cpp:438`) and on a scan
+  (`code/win32compat.cpp:1950`), with writes flushed by `FS.syncfs`
+  (`code/win32compat.cpp:469`). What is missing is evidence: no save has been
   written or loaded through the engine in a page.
 - **The mouse cursor.** `code/wincursor.cpp:180` routes the Emscripten build to
   `Win32_Window_Create_Cursor`, which encodes the frame as a PNG data URL for
-  `canvas.style.cursor` (`code/win32window.cpp:541`). The pointer a player sees
+  `canvas.style.cursor` (`code/win32window.cpp:526`). The pointer a player sees
   is still the browser's arrow, and `SetCursorPos` remains a stub
-  (`code/win32compat.cpp:2174`), so the edge-scroll warp at `code/scroll.cpp:768`
+  (`code/win32window.cpp:719`), so the edge-scroll warp at `code/scroll.cpp:768`
   does nothing.
 - **Networking.** Sockets are WebSocket-backed under Emscripten and carry
   neither raw IPX nor UDP, so network play does not work.

@@ -867,4 +867,24 @@ int FillRect(HDC handle, RECT const * rect, HBRUSH brush)
 	return(1);
 }
 
+
+/*
+** ---------------------------------------------------------------------------------------
+** The raster half, which is not written.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+HDC BeginPaint(HWND, LPPAINTSTRUCT) { return(WIN32_STUB((HDC)nullptr)); }
+BOOL EndPaint(HWND, PAINTSTRUCT const *) { return(WIN32_STUB(FALSE)); }
+HBITMAP CreateDIBSection(HDC, BITMAPINFO const *, UINT, void ** bits, HANDLE, DWORD) { if (bits != nullptr) *bits = nullptr; return(WIN32_STUB((HBITMAP)nullptr)); }
+HBITMAP CreateBitmap(int, int, UINT, UINT, void const *) { return(WIN32_STUB((HBITMAP)nullptr)); }
+HICON CreateIconIndirect(PICONINFO) { return(WIN32_STUB((HICON)nullptr)); }
+int GetObjectA(HGDIOBJ, int, LPVOID) { return(WIN32_STUB(0)); }
+int SetStretchBltMode(HDC, int) { return(WIN32_STUB(0)); }
+BOOL StretchBlt(HDC, int, int, int, int, HDC, int, int, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
+BOOL BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
+int StretchDIBits(HDC, int, int, int, int, int, int, int, int, void const *, BITMAPINFO const *, UINT, DWORD) { return(WIN32_STUB(0)); }
+int GetDeviceCaps(HDC, int) { return(WIN32_STUB(0)); }
+
 #endif	// __EMSCRIPTEN__

@@ -1514,4 +1514,21 @@ char const * Win32_Stock_Control_Class(unsigned int ordinal)
 	}
 }
 
+
+/*
+** ---------------------------------------------------------------------------------------
+** The image list.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+HIMAGELIST ImageList_Create(int, int, UINT, int, int) { return(WIN32_STUB((HIMAGELIST)nullptr)); }
+BOOL ImageList_Destroy(HIMAGELIST) { return(WIN32_STUB(FALSE)); }
+BOOL ImageList_BeginDrag(HIMAGELIST, int, int, int) { return(WIN32_STUB(FALSE)); }
+void ImageList_EndDrag(void) { WIN32_STUB_VOID(); }
+BOOL ImageList_DragEnter(HWND, int, int) { return(WIN32_STUB(FALSE)); }
+BOOL ImageList_DragLeave(HWND) { return(WIN32_STUB(FALSE)); }
+BOOL ImageList_DragMove(int, int) { return(WIN32_STUB(FALSE)); }
+BOOL ImageList_DragShowNolock(BOOL) { return(WIN32_STUB(FALSE)); }
+
 #endif	// __EMSCRIPTEN__

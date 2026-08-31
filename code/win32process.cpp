@@ -8,10 +8,10 @@
  ******************************************************************************/
 
 // Who the process is and what it was asked to do. win32compat.h declares the module,
-// command line, and lock entry points; this is where they are answered, and it sits apart
-// from win32compat.cpp because none of them has a host call underneath. A page is not a
-// process with an image on disk, an argument vector, or a loader, so each answer is built
-// out of what this target does have.
+// process, thread, command line, and lock entry points; this is where they are answered,
+// and it sits apart from win32compat.cpp because none of them has a host call underneath.
+// A page is not a process with an image on disk, an argument vector, or a loader, so each
+// answer is built out of what this target does have.
 //
 // The module file name is the one with a trap in it. startup.cpp asks for it, splits the
 // directory off it, and makes that the current directory before the first archive is
@@ -526,5 +526,57 @@ void AcquireSRWLockShared(PSRWLOCK)
 void ReleaseSRWLockShared(PSRWLOCK)
 {
 }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Modules, threads, and the process.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/*
+** Stubs, apart from the handful this target can answer honestly. A stub returns what its
+** Win32 original returns on failure, after naming itself once.
+*/
+
+HMODULE LoadLibraryA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
+BOOL FreeLibrary(HMODULE) { return(WIN32_STUB(FALSE)); }
+FARPROC GetProcAddress(HMODULE, LPCSTR) { return(WIN32_STUB((FARPROC)nullptr)); }
+void ExitProcess(UINT code) { exit((int)code); }
+HANDLE GetCurrentProcess(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
+HANDLE GetCurrentThread(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
+DWORD GetCurrentThreadId(void) { return(1); }
+DWORD GetCurrentProcessId(void) { return(WIN32_STUB(0)); }
+BOOL SetPriorityClass(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
+BOOL SetThreadPriority(HANDLE, int) { return(WIN32_STUB(FALSE)); }
+HANDLE CreateThread(LPSECURITY_ATTRIBUTES, DWORD, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD) { return(WIN32_STUB((HANDLE)nullptr)); }
+BOOL TerminateThread(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
+DWORD ResumeThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
+DWORD SuspendThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
+BOOL GetVersionExA(LPOSVERSIONINFOA) { return(WIN32_STUB(FALSE)); }
+void GetSystemInfo(LPSYSTEM_INFO) { WIN32_STUB_VOID(); }
+void GlobalMemoryStatus(LPMEMORYSTATUS) { WIN32_STUB_VOID(); }
+BOOL TerminateProcess(HANDLE, UINT code) { exit((int)code); }
+void RaiseException(DWORD, DWORD, DWORD, ULONG_PTR const *) { WIN32_STUB_ABORT(); }
+HANDLE CreateToolhelp32Snapshot(DWORD, DWORD) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
+BOOL Module32First(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
+BOOL Module32Next(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
+BOOL IsDebuggerPresent(void) { return(FALSE); }
+PTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(PTOP_LEVEL_EXCEPTION_FILTER) { return(WIN32_STUB((PTOP_LEVEL_EXCEPTION_FILTER)nullptr)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Debug help.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+BOOL SymInitialize(HANDLE, LPCSTR, BOOL) { return(WIN32_STUB(FALSE)); }
+BOOL SymCleanup(HANDLE) { return(WIN32_STUB(FALSE)); }
+DWORD SymSetOptions(DWORD) { return(WIN32_STUB(0)); }
+BOOL SymFromAddr(HANDLE, DWORD64, DWORD64 *, PSYMBOL_INFO) { return(WIN32_STUB(FALSE)); }
+BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return(WIN32_STUB(FALSE)); }
 
 #endif	// __EMSCRIPTEN__

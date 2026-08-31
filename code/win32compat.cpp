@@ -126,6 +126,13 @@ void Win32_Stub_Fatal(char const * function)
 
 
 /*
+** ---------------------------------------------------------------------------------------
+** The last error and interface identity.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/*
 ** The last-error slot. Nothing here produces a Win32 error code of its own, but callers
 ** that set one expect to read it back, so the slot is real.
 */
@@ -157,6 +164,13 @@ BOOL IsEqualGUID(REFGUID first, REFGUID second)
 {
 	return(memcmp(&first, &second, sizeof(GUID)) == 0);
 }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** The clocks.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 /*
@@ -262,13 +276,16 @@ int wsprintfA(LPSTR output, LPCSTR format, ...)
 
 
 /*
-**==========================================================================================
+** ---------------------------------------------------------------------------------------
 ** The file layer.
-**
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/*
 ** The engine reads its archives through RawFileClass, which calls the Win32 handle API
 ** directly, so these are implemented over POSIX rather than stubbed. win32compat.h states
 ** what a caller sees of the mapping; what follows are the decisions behind it.
-**==========================================================================================
 */
 
 /*
@@ -2256,39 +2273,16 @@ BOOL DosDateTimeToFileTime(WORD dosdate, WORD dostime, LPFILETIME filetime)
 
 
 /*
-** Everything below is a stub. Each returns what its Win32 original returns on failure,
-** after naming itself once.
+** ---------------------------------------------------------------------------------------
+** Events, mutexes, and the interlocked operations.
+** ---------------------------------------------------------------------------------------
 */
-
-HMODULE LoadLibraryA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
-BOOL FreeLibrary(HMODULE) { return(WIN32_STUB(FALSE)); }
-FARPROC GetProcAddress(HMODULE, LPCSTR) { return(WIN32_STUB((FARPROC)nullptr)); }
-void ExitProcess(UINT code) { exit((int)code); }
-HANDLE GetCurrentProcess(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
-HANDLE GetCurrentThread(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
-DWORD GetCurrentThreadId(void) { return(1); }
-DWORD GetCurrentProcessId(void) { return(WIN32_STUB(0)); }
-BOOL SetPriorityClass(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
-BOOL SetThreadPriority(HANDLE, int) { return(WIN32_STUB(FALSE)); }
-HANDLE CreateThread(LPSECURITY_ATTRIBUTES, DWORD, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD) { return(WIN32_STUB((HANDLE)nullptr)); }
-BOOL TerminateThread(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
-DWORD ResumeThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
-DWORD SuspendThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
-BOOL GetVersionExA(LPOSVERSIONINFOA) { return(WIN32_STUB(FALSE)); }
-void GetSystemInfo(LPSYSTEM_INFO) { WIN32_STUB_VOID(); }
-void GlobalMemoryStatus(LPMEMORYSTATUS) { WIN32_STUB_VOID(); }
-
-
-void OutputDebugStringA(LPCSTR string)
-{
-	if (string != nullptr) fputs(string, stderr);
-}
 
 
 /*
-** The critical section is a no-op on a single-threaded target, but it is still reported:
-** the engine's threading has not been ported, so any code that reaches one is running
-** somewhere its assumptions have not been checked.
+** An event is something one thread waits on for another to signal, and there is no other
+** thread here to signal it, so nothing below keeps a state. Each reports itself instead:
+** code that reaches one is waiting on something this target cannot deliver.
 */
 
 HANDLE CreateEventA(LPSECURITY_ATTRIBUTES, BOOL, BOOL, LPCSTR) { return(WIN32_STUB((HANDLE)nullptr)); }
@@ -2397,6 +2391,10 @@ DWORD WaitForMultipleObjects(DWORD count, HANDLE const * objects, BOOL waitall, 
 	return(WAIT_OBJECT_0);
 }
 
+
+HANDLE OpenMutexA(DWORD, BOOL, LPCSTR) { return(WIN32_STUB((HANDLE)nullptr)); }
+
+
 /*
 ** The interlocked operations are single-threaded here, so they are implemented rather
 ** than stubbed: the arithmetic is the whole contract once there is only one thread.
@@ -2405,9 +2403,12 @@ LONG InterlockedIncrement(LONG volatile * addend) { LONG value = *addend + 1; *a
 LONG InterlockedDecrement(LONG volatile * addend) { LONG value = *addend - 1; *addend = value; return(value); }
 LONG InterlockedExchange(LONG volatile * target, LONG value) { LONG old = *target; *target = value; return(old); }
 
-UINT GetDriveTypeA(LPCSTR) { return(WIN32_STUB(DRIVE_UNKNOWN)); }
-DWORD GetLogicalDrives(void) { return(WIN32_STUB(0)); }
-BOOL GetVolumeInformationA(LPCSTR, LPSTR, DWORD, LPDWORD, LPDWORD, LPDWORD, LPSTR, DWORD) { return(WIN32_STUB(FALSE)); }
+
+/*
+** ---------------------------------------------------------------------------------------
+** The heap.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 /*
@@ -2428,13 +2429,15 @@ HGLOBAL GlobalFree(HGLOBAL memory) { free(memory); return(nullptr); }
 LPVOID GlobalLock(HGLOBAL memory) { return(memory); }
 BOOL GlobalUnlock(HGLOBAL) { return(FALSE); }
 
-HDC BeginPaint(HWND, LPPAINTSTRUCT) { return(WIN32_STUB((HDC)nullptr)); }
-BOOL EndPaint(HWND, PAINTSTRUCT const *) { return(WIN32_STUB(FALSE)); }
-BOOL SetCursorPos(int, int) { return(WIN32_STUB(FALSE)); }
-SHORT GetKeyState(int) { return(WIN32_STUB(0)); }
-SHORT GetAsyncKeyState(int) { return(WIN32_STUB(0)); }
-BOOL GetKeyboardState(PBYTE) { return(WIN32_STUB(FALSE)); }
-UINT MapVirtualKeyA(UINT, UINT) { return(WIN32_STUB(0)); }
+
+HLOCAL LocalFree(HLOCAL memory) { free(memory); return(nullptr); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** The registry and the profiles.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 LONG RegOpenKeyExA(HKEY, LPCSTR, DWORD, DWORD, PHKEY result) { if (result != nullptr) *result = nullptr; return(WIN32_STUB(ERROR_FILE_NOT_FOUND)); }
@@ -2443,6 +2446,7 @@ LONG RegQueryValueExA(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD) { return(
 LONG RegSetValueExA(HKEY, LPCSTR, DWORD, DWORD, BYTE const *, DWORD) { return(WIN32_STUB(ERROR_ACCESS_DENIED)); }
 LONG RegDeleteValueA(HKEY, LPCSTR) { return(WIN32_STUB(ERROR_FILE_NOT_FOUND)); }
 LONG RegCloseKey(HKEY) { return(WIN32_STUB(ERROR_INVALID_HANDLE)); }
+
 
 UINT GetPrivateProfileIntA(LPCSTR, LPCSTR, INT defaultvalue, LPCSTR) { return(WIN32_STUB((UINT)defaultvalue)); }
 DWORD GetPrivateProfileStringA(LPCSTR, LPCSTR, LPCSTR defaultvalue, LPSTR returned, DWORD size, LPCSTR)
@@ -2455,6 +2459,14 @@ DWORD GetPrivateProfileStringA(LPCSTR, LPCSTR, LPCSTR defaultvalue, LPSTR return
 	return(WIN32_STUB(0));
 }
 BOOL WritePrivateProfileStringA(LPCSTR, LPCSTR, LPCSTR, LPCSTR) { return(WIN32_STUB(FALSE)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** COM.
+** ---------------------------------------------------------------------------------------
+*/
+
 
 /*
 ** The class object table, which is all of the COM runtime this port needs. The engine is
@@ -2603,6 +2615,8 @@ HRESULT CoCreateInstance(REFCLSID classid, IUnknown * outer, DWORD context, REFI
 LPVOID CoTaskMemAlloc(SIZE_T size) { return(malloc(size)); }
 void CoTaskMemFree(LPVOID block) { free(block); }
 HRESULT CreateStreamOnHGlobal(HGLOBAL, BOOL, LPSTREAM * stream) { if (stream != nullptr) *stream = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
+
+
 /// <summary>
 /// Reads a class identifier out of its registry-form text.
 /// </summary>
@@ -2661,7 +2675,46 @@ HRESULT CLSIDFromString(LPCOLESTR string, LPCLSID classid)
 	return(S_OK);
 }
 
-HINSTANCE ShellExecuteA(HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, int) { return(WIN32_STUB((HINSTANCE)nullptr)); }
+
+HRESULT CoFileTimeNow(FILETIME * filetime)
+{
+	if (filetime == nullptr) return(E_INVALIDARG);
+
+	// Win32 counts 100 nanosecond intervals from the start of 1601; the host counts seconds
+	// from the start of 1970.
+	unsigned long long const epoch = 116444736000000000ULL;
+	unsigned long long const now = epoch + (unsigned long long)::time(nullptr) * 10000000ULL;
+
+	filetime->dwLowDateTime = (DWORD)(now & 0xFFFFFFFFULL);
+	filetime->dwHighDateTime = (DWORD)(now >> 32);
+
+	return(S_OK);
+}
+
+
+HRESULT OleInitialize(LPVOID reserved) { return(CoInitialize(reserved)); }
+void OleUninitialize(void) { CoUninitialize(); }
+
+
+/*
+** comdef.h turns a failed HRESULT into a thrown _com_error. Nothing here catches one, so
+** the failure is reported and the process stops rather than unwinding into code that has
+** no handler.
+*/
+void _com_issue_error(HRESULT result)
+{
+	fprintf(stderr, "OpenTS: COM call failed with HRESULT 0x%08lx and there is no COM runtime "
+		"to report it through.\n", (unsigned long)result);
+	fflush(stderr);
+	abort();
+}
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** The MSVC C runtime.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 /*
@@ -2783,42 +2836,11 @@ void _makepath(char * path, char const * drive, char const * dir, char const * f
 
 
 /*
-** GDI, the window manager's remainder, resources, the console, OLE, and the multimedia
-** timer. All stubs.
+** ---------------------------------------------------------------------------------------
+** Resources and version information.
+** ---------------------------------------------------------------------------------------
 */
-HBITMAP CreateDIBSection(HDC, BITMAPINFO const *, UINT, void ** bits, HANDLE, DWORD) { if (bits != nullptr) *bits = nullptr; return(WIN32_STUB((HBITMAP)nullptr)); }
-int GetObjectA(HGDIOBJ, int, LPVOID) { return(WIN32_STUB(0)); }
-int SetStretchBltMode(HDC, int) { return(WIN32_STUB(0)); }
-BOOL StretchBlt(HDC, int, int, int, int, HDC, int, int, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
-BOOL BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) { return(WIN32_STUB(FALSE)); }
-int StretchDIBits(HDC, int, int, int, int, int, int, int, int, void const *, BITMAPINFO const *, UINT, DWORD) { return(WIN32_STUB(0)); }
 
-HMONITOR MonitorFromWindow(HWND, DWORD) { return(WIN32_STUB((HMONITOR)nullptr)); }
-BOOL GetMonitorInfoA(HMONITOR, LPMONITORINFO) { return(WIN32_STUB(FALSE)); }
-int TranslateAcceleratorA(HWND, HACCEL, LPMSG) { return(WIN32_STUB(0)); }
-int ToAscii(UINT, UINT, BYTE const *, LPWORD, UINT) { return(WIN32_STUB(0)); }
-/// <summary>
-/// Translates a run of characters from the ANSI code page to the OEM one.
-/// </summary>
-/// <remarks>
-/// The two code pages agree across ASCII, which is what the shipped game data holds, so
-/// the run is copied through. A localized build wanting the high half translated needs a
-/// real code page table here. Source and destination may be the same buffer, which several
-/// callers rely on.
-/// </remarks>
-BOOL CharToOemBuffA(LPCSTR source, LPSTR destination, DWORD length)
-{
-	if (source == nullptr || destination == nullptr) {
-		return(FALSE);
-	}
-
-	for (DWORD index = 0; index < length; index++) {
-		destination[index] = source[index];
-	}
-
-	return(TRUE);
-}
-HLOCAL LocalFree(HLOCAL memory) { free(memory); return(nullptr); }
 
 int LoadStringA(HINSTANCE, UINT, LPSTR buffer, int size) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
 HRSRC FindResourceA(HMODULE, LPCSTR, LPCSTR) { return(WIN32_STUB((HRSRC)nullptr)); }
@@ -2853,20 +2875,46 @@ DWORD GetFileVersionInfoSizeA(LPCSTR filename, LPDWORD handle)
 BOOL GetFileVersionInfoA(LPCSTR, DWORD, DWORD, LPVOID) { return(WIN32_STUB(FALSE)); }
 BOOL VerQueryValueA(LPCVOID, LPCSTR, LPVOID * buffer, PUINT length) { if (buffer != nullptr) *buffer = nullptr; if (length != nullptr) *length = 0; return(WIN32_STUB(FALSE)); }
 
+
+/*
+** ---------------------------------------------------------------------------------------
+** The console.
+** ---------------------------------------------------------------------------------------
+*/
+
+
 BOOL AllocConsole(void) { return(WIN32_STUB(FALSE)); }
 BOOL FreeConsole(void) { return(WIN32_STUB(FALSE)); }
 BOOL SetConsoleTitleA(LPCSTR) { return(WIN32_STUB(FALSE)); }
 HANDLE GetStdHandle(DWORD) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 BOOL SetConsoleMode(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
 BOOL GetConsoleMode(HANDLE, LPDWORD) { return(WIN32_STUB(FALSE)); }
-BOOL TerminateProcess(HANDLE, UINT code) { exit((int)code); }
-void RaiseException(DWORD, DWORD, DWORD, ULONG_PTR const *) { WIN32_STUB_ABORT(); }
+
+
+BOOL SetStdHandle(DWORD, HANDLE) { return(WIN32_STUB(FALSE)); }
+BOOL GetConsoleScreenBufferInfo(HANDLE, PCONSOLE_SCREEN_BUFFER_INFO) { return(WIN32_STUB(FALSE)); }
+HWND GetConsoleWindow(void) { return(WIN32_STUB((HWND)nullptr)); }
+
+
+BOOL SetConsoleScreenBufferSize(HANDLE, COORD) { return(WIN32_STUB(FALSE)); }
+
+
+BOOL WriteConsoleA(HANDLE, void const *, DWORD, LPDWORD written, LPVOID) { if (written != nullptr) *written = 0; return(WIN32_STUB(FALSE)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** OLE serialization.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 BSTR SysAllocString(OLECHAR const *) { return(WIN32_STUB((BSTR)nullptr)); }
 void SysFreeString(BSTR) { WIN32_STUB_VOID(); }
 UINT SysStringLen(BSTR) { return(WIN32_STUB(0)); }
 HRESULT StringFromCLSID(REFCLSID, LPOLESTR * string) { if (string != nullptr) *string = nullptr; return(WIN32_STUB(E_NOTIMPL)); }
+
+
 /*
 ** An object is framed on the stream by its class identifier and nothing else: sixteen bytes
 ** naming the class, then whatever the object writes for itself. That framing is the save
@@ -2915,40 +2963,20 @@ HRESULT OleLoadFromStream(IStream * stream, REFIID riid, void ** object)
 }
 
 
+extern "C" const IID IID_IPropertyStorage = {0x00000138, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
+extern "C" const IID IID_IPropertySetStorage = {0x0000013A, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
+
+void PropVariantInit(PROPVARIANT * value) { if (value != nullptr) memset(value, 0, sizeof(*value)); }
+HRESULT PropVariantClear(PROPVARIANT * value) { if (value != nullptr) memset(value, 0, sizeof(*value)); return(S_OK); }
 
 
 /*
-** comdef.h turns a failed HRESULT into a thrown _com_error. Nothing here catches one, so
-** the failure is reported and the process stops rather than unwinding into code that has
-** no handler.
+** ---------------------------------------------------------------------------------------
+** Locale formatting.
+** ---------------------------------------------------------------------------------------
 */
-void _com_issue_error(HRESULT result)
-{
-	fprintf(stderr, "OpenTS: COM call failed with HRESULT 0x%08lx and there is no COM runtime "
-		"to report it through.\n", (unsigned long)result);
-	fflush(stderr);
-	abort();
-}
 
 
-BOOL DeviceIoControl(HANDLE, DWORD, LPVOID, DWORD, LPVOID, DWORD, LPDWORD returned, LPOVERLAPPED) { if (returned != nullptr) *returned = 0; return(WIN32_STUB(FALSE)); }
-HANDLE CreateToolhelp32Snapshot(DWORD, DWORD) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
-BOOL Module32First(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
-BOOL Module32Next(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
-
-
-/*
-** No window on this target has a menu bar. The window layer keeps no menu of its own, and
-** the classes the engine registers name none, so NULL -- what Windows answers for a window
-** without a menu -- is the result rather than a gap.
-*/
-HMENU GetMenu(HWND) { return(nullptr); }
-HMENU GetSystemMenu(HWND, BOOL) { return(WIN32_STUB((HMENU)nullptr)); }
-BOOL DeleteMenu(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
-BOOL EnableMenuItem(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
-int GetDeviceCaps(HDC, int) { return(WIN32_STUB(0)); }
-BOOL GetScrollInfo(HWND, int, LPSCROLLINFO) { return(WIN32_STUB(FALSE)); }
-int SetScrollInfo(HWND, int, LPCSCROLLINFO, BOOL) { return(WIN32_STUB(0)); }
 /*
 ** The page's own locale stands in for the user locale these two are asked for, so a saved
 ** game is stamped the way the rest of the browser writes a date. A picture string is a
@@ -2997,154 +3025,14 @@ int GetDateFormatA(LCID, DWORD, SYSTEMTIME const * date, LPCSTR format, LPSTR te
 		return size;
 	}, date->wYear, date->wMonth, date->wDay, text, count));
 }
-BOOL SetStdHandle(DWORD, HANDLE) { return(WIN32_STUB(FALSE)); }
-BOOL GetConsoleScreenBufferInfo(HANDLE, PCONSOLE_SCREEN_BUFFER_INFO) { return(WIN32_STUB(FALSE)); }
-HWND GetConsoleWindow(void) { return(WIN32_STUB((HWND)nullptr)); }
-BOOL IsDebuggerPresent(void) { return(FALSE); }
-BOOL WriteConsoleA(HANDLE, void const *, DWORD, LPDWORD written, LPVOID) { if (written != nullptr) *written = 0; return(WIN32_STUB(FALSE)); }
-HIMAGELIST ImageList_Create(int, int, UINT, int, int) { return(WIN32_STUB((HIMAGELIST)nullptr)); }
-BOOL ImageList_Destroy(HIMAGELIST) { return(WIN32_STUB(FALSE)); }
-BOOL ImageList_BeginDrag(HIMAGELIST, int, int, int) { return(WIN32_STUB(FALSE)); }
-void ImageList_EndDrag(void) { WIN32_STUB_VOID(); }
-BOOL ImageList_DragEnter(HWND, int, int) { return(WIN32_STUB(FALSE)); }
-BOOL ImageList_DragLeave(HWND) { return(WIN32_STUB(FALSE)); }
-BOOL ImageList_DragMove(int, int) { return(WIN32_STUB(FALSE)); }
-BOOL ImageList_DragShowNolock(BOOL) { return(WIN32_STUB(FALSE)); }
-
-extern "C" const IID IID_IPropertyStorage = {0x00000138, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
-extern "C" const IID IID_IPropertySetStorage = {0x0000013A, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
-
-void PropVariantInit(PROPVARIANT * value) { if (value != nullptr) memset(value, 0, sizeof(*value)); }
-HRESULT PropVariantClear(PROPVARIANT * value) { if (value != nullptr) memset(value, 0, sizeof(*value)); return(S_OK); }
-
-int WSACancelAsyncRequest(HANDLE) { return(WIN32_STUB(-1)); }
 
 
-DWORD FormatMessageA(DWORD, LPCVOID, DWORD, DWORD, LPSTR buffer, DWORD size, va_list *) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
-BOOL SetConsoleScreenBufferSize(HANDLE, COORD) { return(WIN32_STUB(FALSE)); }
-PTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(PTOP_LEVEL_EXCEPTION_FILTER) { return(WIN32_STUB((PTOP_LEVEL_EXCEPTION_FILTER)nullptr)); }
-
-DWORD GetWindowContextHelpId(HWND) { return(WIN32_STUB(0)); }
-BOOL WinHelpA(HWND, LPCSTR, UINT, ULONG_PTR) { return(WIN32_STUB(FALSE)); }
-HBITMAP CreateBitmap(int, int, UINT, UINT, void const *) { return(WIN32_STUB((HBITMAP)nullptr)); }
-HICON CreateIconIndirect(PICONINFO) { return(WIN32_STUB((HICON)nullptr)); }
 /*
-** A page has no list of display modes to walk. What stands in for one is the set of frame
-** sizes the game can honestly be rendered at here: the canvas as the page has laid it out,
-** whatever the game is running at now, and the familiar 4:3 and widescreen sizes that fit
-** on the display the tab is on. A canvas is whatever size the page asks for, so every one
-** of them is a size the renderer really can produce; nothing larger than the screen is
-** offered, because a window cannot be opened bigger than the display holding it.
-**
-** Everything here is measured in CSS pixels, as the frame is. A display carrying two
-** device pixels for each CSS pixel shows the same modes as one carrying a single pixel,
-** and shows them more sharply.
+** ---------------------------------------------------------------------------------------
+** Structured storage.
+** ---------------------------------------------------------------------------------------
 */
-struct DisplayModeEntry
-{
-	int Width;
-	int Height;
-};
 
-static const DisplayModeEntry _DisplayLadder[] = {
-	{ 640, 400 },	{ 640, 480 },	{ 800, 600 },	{ 1024, 768 },	{ 1152, 864 },
-	{ 1280, 720 },	{ 1280, 800 },	{ 1280, 960 },	{ 1280, 1024 },	{ 1366, 768 },
-	{ 1440, 900 },	{ 1600, 900 },	{ 1600, 1200 },	{ 1680, 1050 },	{ 1920, 1080 },
-	{ 1920, 1200 },	{ 2048, 1152 },	{ 2560, 1440 },	{ 2560, 1600 },
-};
-
-static DisplayModeEntry _DisplayModes[32];
-static int _DisplayModeCount = 0;
-
-
-static void Add_Display_Mode(int width, int height)
-{
-	if (width < 640 || height < 400) return;
-	if (_DisplayModeCount >= (int)(sizeof(_DisplayModes) / sizeof(_DisplayModes[0]))) return;
-
-	for (int index = 0; index < _DisplayModeCount; index++) {
-		if (_DisplayModes[index].Width == width && _DisplayModes[index].Height == height) return;
-	}
-
-	_DisplayModes[_DisplayModeCount].Width = width;
-	_DisplayModes[_DisplayModeCount].Height = height;
-	_DisplayModeCount++;
-}
-
-
-static void Build_Display_Modes(void)
-{
-	_DisplayModeCount = 0;
-
-	int screenwidth = Browser_Screen_Width();
-	int screenheight = Browser_Screen_Height();
-
-	// A page that will not say how big the display is gets the sizes a laptop can be
-	// relied on to manage rather than the whole ladder.
-	if (screenwidth <= 0 || screenheight <= 0) {
-		screenwidth = 1920;
-		screenheight = 1080;
-	}
-
-	for (unsigned index = 0; index < sizeof(_DisplayLadder) / sizeof(_DisplayLadder[0]); index++) {
-		if (_DisplayLadder[index].Width <= screenwidth && _DisplayLadder[index].Height <= screenheight) {
-			Add_Display_Mode(_DisplayLadder[index].Width, _DisplayLadder[index].Height);
-		}
-	}
-
-	/*
-	** The window itself is always on the list, and choosing it is how the player asks for
-	** the frame to keep following the window, so it has to be the size the window actually
-	** produces rather than the size it was measured at.
-	*/
-	int canvaswidth = Browser_Canvas_CSS_Width();
-	int canvasheight = Browser_Canvas_CSS_Height();
-
-	if (canvaswidth > 0 && canvasheight > 0) {
-		Video_Clamp_Frame_Size(canvaswidth, canvasheight);
-		Add_Display_Mode(canvaswidth, canvasheight);
-	}
-
-	// So that the list the player is looking at has the resolution they are looking at it in.
-	Add_Display_Mode(VideoModeWidth, VideoModeHeight);
-
-	std::sort(_DisplayModes, _DisplayModes + _DisplayModeCount,
-		[](DisplayModeEntry const & lhs, DisplayModeEntry const & rhs) {
-			return((lhs.Width != rhs.Width) ? (lhs.Width < rhs.Width) : (lhs.Height < rhs.Height));
-		});
-}
-
-
-BOOL EnumDisplaySettingsA(LPCSTR, DWORD mode, LPDEVMODEA devmode)
-{
-	if (devmode == nullptr) return(FALSE);
-
-	int width = 0;
-	int height = 0;
-
-	if (mode == ENUM_CURRENT_SETTINGS) {
-		width = Browser_Canvas_CSS_Width();
-		height = Browser_Canvas_CSS_Height();
-		if (width <= 0 || height <= 0) return(FALSE);
-	} else {
-		// The list is taken afresh at the start of an enumeration, as a driver's is, so a
-		// canvas that resizes part way through does not shorten what the caller is reading.
-		if (mode == 0) {
-			Build_Display_Modes();
-		}
-		if ((int)mode >= _DisplayModeCount) return(FALSE);
-		width = _DisplayModes[mode].Width;
-		height = _DisplayModes[mode].Height;
-	}
-
-	memset(devmode, 0, sizeof(*devmode));
-	devmode->dmSize = sizeof(*devmode);
-	devmode->dmBitsPerPel = 16;
-	devmode->dmPelsWidth = (DWORD)width;
-	devmode->dmPelsHeight = (DWORD)height;
-	devmode->dmDisplayFrequency = 60;
-	return(TRUE);
-}
 
 extern "C" const FMTID FMTID_SummaryInformation = {0xF29F85E0, 0x4FF9, 0x1068, {0xAB, 0x91, 0x08, 0x00, 0x2B, 0x27, 0xB3, 0xD9}};
 extern "C" const IID IID_IStorage = {0x0000000B, 0x0000, 0x0000, {0xC0, 0, 0, 0, 0, 0, 0, 0x46}};
@@ -3202,41 +3090,11 @@ HRESULT StgIsStorageFile(OLECHAR const * name)
 }
 
 
-HRESULT CoFileTimeNow(FILETIME * filetime)
-{
-	if (filetime == nullptr) return(E_INVALIDARG);
-
-	// Win32 counts 100 nanosecond intervals from the start of 1601; the host counts seconds
-	// from the start of 1970.
-	unsigned long long const epoch = 116444736000000000ULL;
-	unsigned long long const now = epoch + (unsigned long long)::time(nullptr) * 10000000ULL;
-
-	filetime->dwLowDateTime = (DWORD)(now & 0xFFFFFFFFULL);
-	filetime->dwHighDateTime = (DWORD)(now >> 32);
-
-	return(S_OK);
-}
-
-
-DWORD GetAdaptersInfo(PIP_ADAPTER_INFO, PULONG size) { if (size != nullptr) *size = 0; return(WIN32_STUB(ERROR_BUFFER_OVERFLOW)); }
-
-
-HANDLE OpenMutexA(DWORD, BOOL, LPCSTR) { return(WIN32_STUB((HANDLE)nullptr)); }
-HRESULT OleInitialize(LPVOID reserved) { return(CoInitialize(reserved)); }
-void OleUninitialize(void) { CoUninitialize(); }
-
-
-BOOL SymInitialize(HANDLE, LPCSTR, BOOL) { return(WIN32_STUB(FALSE)); }
-BOOL SymCleanup(HANDLE) { return(WIN32_STUB(FALSE)); }
-DWORD SymSetOptions(DWORD) { return(WIN32_STUB(0)); }
-BOOL SymFromAddr(HANDLE, DWORD64, DWORD64 *, PSYMBOL_INFO) { return(WIN32_STUB(FALSE)); }
-BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return(WIN32_STUB(FALSE)); }
-
-
-HWND GetNextDlgGroupItem(HWND, HWND, BOOL) { return(WIN32_STUB((HWND)nullptr)); }
-
-
-int GetKeyNameTextA(LONG, LPSTR buffer, int size) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
+/*
+** ---------------------------------------------------------------------------------------
+** Winsock.
+** ---------------------------------------------------------------------------------------
+*/
 
 
 /*
@@ -3258,5 +3116,55 @@ void WSASetLastError(int error) { errno = error > WSABASEERR ? error - WSABASEER
 int WSAAsyncSelect(SOCKET, HWND, unsigned int, long) { return(WIN32_STUB(SOCKET_ERROR)); }
 int ioctlsocket(SOCKET, long, unsigned long *) { return(WIN32_STUB(SOCKET_ERROR)); }
 
+
+int WSACancelAsyncRequest(HANDLE) { return(WIN32_STUB(-1)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** What is left.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+void OutputDebugStringA(LPCSTR string)
+{
+	if (string != nullptr) fputs(string, stderr);
+}
+
+
+/// <summary>
+/// Translates a run of characters from the ANSI code page to the OEM one.
+/// </summary>
+/// <remarks>
+/// The two code pages agree across ASCII, which is what the shipped game data holds, so
+/// the run is copied through. A localized build wanting the high half translated needs a
+/// real code page table here. Source and destination may be the same buffer, which several
+/// callers rely on.
+/// </remarks>
+BOOL CharToOemBuffA(LPCSTR source, LPSTR destination, DWORD length)
+{
+	if (source == nullptr || destination == nullptr) {
+		return(FALSE);
+	}
+
+	for (DWORD index = 0; index < length; index++) {
+		destination[index] = source[index];
+	}
+
+	return(TRUE);
+}
+
+
+HINSTANCE ShellExecuteA(HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, int) { return(WIN32_STUB((HINSTANCE)nullptr)); }
+
+
+BOOL DeviceIoControl(HANDLE, DWORD, LPVOID, DWORD, LPVOID, DWORD, LPDWORD returned, LPOVERLAPPED) { if (returned != nullptr) *returned = 0; return(WIN32_STUB(FALSE)); }
+
+
+DWORD FormatMessageA(DWORD, LPCVOID, DWORD, DWORD, LPSTR buffer, DWORD size, va_list *) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
+
+
+DWORD GetAdaptersInfo(PIP_ADAPTER_INFO, PULONG size) { if (size != nullptr) *size = 0; return(WIN32_STUB(ERROR_BUFFER_OVERFLOW)); }
 
 #endif	// __EMSCRIPTEN__

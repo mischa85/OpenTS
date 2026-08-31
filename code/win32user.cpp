@@ -2631,6 +2631,9 @@ HWND GetNextDlgTabItem(HWND dialog, HWND control, BOOL previous)
 }
 
 
+HWND GetNextDlgGroupItem(HWND, HWND, BOOL) { return(WIN32_STUB((HWND)nullptr)); }
+
+
 /// <summary>
 /// Offers a message to a modeless dialog before the normal handling sees it.
 /// </summary>
@@ -3072,5 +3075,65 @@ int MessageBoxIndirectA(MSGBOXPARAMSA const * parameters)
 	return(MessageBoxA(parameters->hwndOwner, parameters->lpszText, parameters->lpszCaption,
 		parameters->dwStyle));
 }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Keyboard state.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+SHORT GetKeyState(int) { return(WIN32_STUB(0)); }
+SHORT GetAsyncKeyState(int) { return(WIN32_STUB(0)); }
+BOOL GetKeyboardState(PBYTE) { return(WIN32_STUB(FALSE)); }
+UINT MapVirtualKeyA(UINT, UINT) { return(WIN32_STUB(0)); }
+int ToAscii(UINT, UINT, BYTE const *, LPWORD, UINT) { return(WIN32_STUB(0)); }
+int GetKeyNameTextA(LONG, LPSTR buffer, int size) { if (buffer != nullptr && size > 0) buffer[0] = '\0'; return(WIN32_STUB(0)); }
+int TranslateAcceleratorA(HWND, HACCEL, LPMSG) { return(WIN32_STUB(0)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Menus.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/*
+** No window on this target has a menu bar. The window layer keeps no menu of its own, and
+** the classes the engine registers name none, so NULL -- what Windows answers for a window
+** without a menu -- is the result rather than a gap.
+*/
+HMENU GetMenu(HWND) { return(nullptr); }
+HMENU GetSystemMenu(HWND, BOOL) { return(WIN32_STUB((HMENU)nullptr)); }
+BOOL DeleteMenu(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
+BOOL EnableMenuItem(HMENU, UINT, UINT) { return(WIN32_STUB(FALSE)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Window scroll bars.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+/*
+** A window's own scroll information, not the scroll bar control's: the model those two
+** would read belongs to Scroll_Bar_Proc in win32ctrl.cpp, and no window here keeps one.
+*/
+BOOL GetScrollInfo(HWND, int, LPSCROLLINFO) { return(WIN32_STUB(FALSE)); }
+int SetScrollInfo(HWND, int, LPCSCROLLINFO, BOOL) { return(WIN32_STUB(0)); }
+
+
+/*
+** ---------------------------------------------------------------------------------------
+** Context help.
+** ---------------------------------------------------------------------------------------
+*/
+
+
+DWORD GetWindowContextHelpId(HWND) { return(WIN32_STUB(0)); }
+BOOL WinHelpA(HWND, LPCSTR, UINT, ULONG_PTR) { return(WIN32_STUB(FALSE)); }
 
 #endif	// __EMSCRIPTEN__
