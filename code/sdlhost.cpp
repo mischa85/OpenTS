@@ -21,6 +21,7 @@
 #include "vidscale.h"
 #include "video.h"
 #include "win.h"
+#include "win32timer.h"
 #include "wwmouse.h"
 
 #include <SDL.h>
@@ -424,6 +425,10 @@ void Browser_Service(void)
 	}
 
 	GameInFocus = ((SDL_GetWindowFlags(_Window) & SDL_WINDOW_MINIMIZED) == 0);
+
+	// The multimedia timers the engine arms have no thread of their own here, so they
+	// fire on the host's pump, which every wait in the engine comes through.
+	Win32_Timer_Service();
 
 	while (_EventHead != _EventTail) {
 		HostEvent const queued = _Events[_EventHead];

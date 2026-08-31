@@ -1458,6 +1458,11 @@ void CALLBACK DSAudio::Sound_Timer_Callback ( UINT, UINT, DWORD_PTR, DWORD_PTR, 
 {
 	HANDLE mutex = Audio.TimerMutex;
 	if (WaitForSingleObject(mutex, 0) == 0) {
+#if !defined(_WIN32)
+		// The buffers go out to the device first, so the play cursors the pass below
+		// reads are the current ones, as in Sound_Callback.
+		Audio_Backend_Service();
+#endif
 		Audio.maintenance_callback();
 		mutex = Audio.TimerMutex;
 		ReleaseMutex(mutex);
