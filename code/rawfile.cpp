@@ -51,20 +51,21 @@
 
 #include "rawfile.h"
 
+#include "iso9660.h"
+
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-
 #ifdef _WIN32
 #include <direct.h>
+#else
+#include "crtcompat.h"
+#endif
+#ifdef _WIN32
 #include <share.h>
 #else
-#include <ctime>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <unistd.h>
+#include "crtcompat.h"
 #endif
 
 
@@ -278,7 +279,6 @@ int RawFileClass::Open(int rights)
 			default:
 				break;
 
-#ifdef _WIN32
 			case READ:
 				Handle = CreateFile(Filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
 											NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
@@ -295,21 +295,6 @@ int RawFileClass::Open(int rights)
 				Handle = CreateFile(Filename, GENERIC_READ | GENERIC_WRITE, 0,
 											NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 				break;
-#else
-			case READ:
-				Handle = open(Filename, O_RDONLY);
-				break;
-
-			case WRITE:
-				Handle = open(Filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-				break;
-
-			case READ|WRITE:
-				// SKB 5/13/99 use OPEN_ALWAYS instead of CREATE_ALWAYS so that files
-				//             does not get destroyed.
-				Handle = open(Filename, O_RDWR | O_CREAT, 0644);
-				break;
-#endif
 		}
 
 		/*
@@ -380,12 +365,8 @@ bool RawFileClass::Is_Available(int forced)
 	**	condition, go through the normal error recover channels.
 	*/
 	for (;;) {
-#ifdef _WIN32
 		Handle = CreateFile(Filename, GENERIC_READ, FILE_SHARE_READ,
 											NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#else
-		Handle = open(Filename, O_RDONLY);
-#endif
 		if (Handle == NULL_HANDLE) {
 			return(false);
 		}
@@ -395,15 +376,9 @@ bool RawFileClass::Is_Available(int forced)
 	/*
 	**	Since the file could be opened, then close it and return that the file exists.
 	*/
-#ifdef _WIN32
 	if (!CloseHandle(Handle)) {
 		Error(GetLastError(), false, Filename);
 	}
-#else
-	if (close(Handle) != 0) {
-		Error(errno, false, Filename);
-	}
-#endif
 	Handle = NULL_HANDLE;
 
 	return(true);
@@ -436,15 +411,9 @@ void RawFileClass::Close(void)
 		**	Try to close the file. If there was an error (who knows what that could be), then
 		**	call the error routine.
 		*/
-#ifdef _WIN32
 		if (!CloseHandle(Handle)) {
 			Error(GetLastError(), false, Filename);
 		}
-#else
-		if (close(Handle) != 0) {
-			Error(errno, false, Filename);
-		}
-#endif
 
 		/*
 		**	At this point the file must have been closed. Mark the file as empty and return.
@@ -509,22 +478,21 @@ int RawFileClass::Read(void * buffer, int size)
 	while (size > 0) {
 		bytesread = 0;
 
-#ifdef _WIN32
 		if (!ReadFile(Handle, buffer, size, &(DWORD &)bytesread, NULL)) {
 			buffer = (char *)buffer + bytesread;
 			size -= bytesread;
 			total += bytesread;
+
+			/*
+			**	A read that declined has not failed, so retrying it here would only ask
+			**	again for bytes that are on their way. What was read is reported short and
+			**	the caller, which said the read may decline, comes back for the rest.
+			*/
+			if (ISODeferredReadClass::Declined_Now()) break;
+
 			Error(GetLastError(), true, Filename);
 			continue;
 		}
-#else
-		ssize_t const got = read(Handle, buffer, size);
-		if (got < 0) {
-			Error(errno, true, Filename);
-			continue;
-		}
-		bytesread = (int)got;
-#endif
 		buffer = (char *)buffer + bytesread;
 		size -= bytesread;
 		total += bytesread;
@@ -576,18 +544,9 @@ int RawFileClass::Write(void const * buffer, int size)
 		opened = true;
 	}
 
-#ifdef _WIN32
 	if (!WriteFile(Handle, buffer, size, &(DWORD &)byteswritten, NULL)) {
 		Error(GetLastError(), false, Filename);
 	}
-#else
-	ssize_t const put = write(Handle, buffer, size);
-	if (put < 0) {
-		Error(errno, false, Filename);
-	} else {
-		byteswritten = (int)put;
-	}
-#endif
 
 	/*
 	**	Fixup the bias length if necessary.
@@ -719,7 +678,6 @@ int RawFileClass::Size(void)
 	*/
 	if (Is_Open()) {
 
-#ifdef _WIN32
 		size = GetFileSize(Handle, NULL);
 
 		/*
@@ -728,14 +686,6 @@ int RawFileClass::Size(void)
 		if (size == 0xFFFFFFFF) {
 			Error(GetLastError(), false, Filename);
 		}
-#else
-		struct stat status;
-		if (fstat(Handle, &status) == 0) {
-			size = (int)status.st_size;
-		} else {
-			Error(errno, false, Filename);
-		}
-#endif
 
 	} else {
 
@@ -877,7 +827,6 @@ int RawFileClass::Delete(void)
  *=============================================================================================*/
 unsigned int RawFileClass::Get_Date_Time(void)
 {
-#ifdef _WIN32
 	BY_HANDLE_FILE_INFORMATION info;
 
 	if (GetFileInformationByHandle(Handle, &info)) {
@@ -887,23 +836,6 @@ unsigned int RawFileClass::Get_Date_Time(void)
 		return((dosdate << 16) | dostime);
 	}
 	return(0);
-#else
-	struct stat status;
-
-	if (Is_Open() && fstat(Handle, &status) == 0) {
-		struct tm fields;
-		localtime_r(&status.st_mtime, &fields);
-
-		unsigned int const dosdate = ((fields.tm_year - 80) << 9)
-											| ((fields.tm_mon + 1) << 5)
-											| fields.tm_mday;
-		unsigned int const dostime = (fields.tm_hour << 11)
-											| (fields.tm_min << 5)
-											| (fields.tm_sec / 2);
-		return((dosdate << 16) | dostime);
-	}
-	return(0);
-#endif
 }
 
 
@@ -924,7 +856,6 @@ unsigned int RawFileClass::Get_Date_Time(void)
  *=============================================================================================*/
 bool RawFileClass::Set_Date_Time(unsigned int datetime)
 {
-#ifdef _WIN32
 	if (RawFileClass::Is_Open()) {
 		BY_HANDLE_FILE_INFORMATION info;
 
@@ -936,26 +867,6 @@ bool RawFileClass::Set_Date_Time(unsigned int datetime)
 		}
 	}
 	return(false);
-#else
-	if (RawFileClass::Is_Open() && Filename != NULL) {
-		struct tm fields;
-		memset(&fields, 0, sizeof(fields));
-		fields.tm_year = ((datetime >> 25) & 0x7F) + 80;
-		fields.tm_mon = ((datetime >> 21) & 0x0F) - 1;
-		fields.tm_mday = (datetime >> 16) & 0x1F;
-		fields.tm_hour = (datetime >> 11) & 0x1F;
-		fields.tm_min = (datetime >> 5) & 0x3F;
-		fields.tm_sec = (datetime & 0x1F) * 2;
-		fields.tm_isdst = -1;
-
-		time_t const seconds = mktime(&fields);
-		if (seconds != (time_t)-1) {
-			struct timeval stamps[2] = {{seconds, 0}, {seconds, 0}};
-			return(utimes(Filename, stamps) == 0);
-		}
-	}
-	return(false);
-#endif
 }
 
 
@@ -1033,7 +944,6 @@ int RawFileClass::Raw_Seek(int pos, int dir)
 		return(0);
 	}
 
-#ifdef _WIN32
 	switch (dir) {
 		case SEEK_SET:
 			dir = FILE_BEGIN;
@@ -1056,18 +966,6 @@ int RawFileClass::Raw_Seek(int pos, int dir)
 		Error(GetLastError(), false, Filename);
 		return(0);
 	}
-#else
-	off_t const moved = lseek(Handle, pos, dir);
-
-	/*
-	**	If there was an error in the seek, then bail with an error condition.
-	*/
-	if (moved < 0) {
-		Error(errno, false, Filename);
-		return(0);
-	}
-	pos = (int)moved;
-#endif
 
 	/*
 	**	Return with the new position of the file. This will range between zero and the number of
