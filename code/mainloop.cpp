@@ -302,7 +302,9 @@ bool Main_Loop(void)
 			}
 		}
 	} else {
-		FrameTimer = Options.GameSpeed;
+		// The fastest setting historically meant unthrottled, which period hardware
+		// bounded to something playable and a modern machine does not.
+		FrameTimer = std::max(Options.GameSpeed, 1);
 	}
 
 	/*
