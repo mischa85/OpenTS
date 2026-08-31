@@ -52,14 +52,14 @@ AHANDLE_CALLBACK_2 _AHandleCallbackFunc2;
 
 /// private, call handler instead
 
-long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, long);
-long __cdecl Close_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Start_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Stop_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Play_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
-long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes);
+int32_t __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t);
+int32_t __cdecl Close_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Start_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Stop_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Play_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
+int32_t __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes);
 void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR);
 _STATIC unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
@@ -121,14 +121,14 @@ unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *co
 	DWORD				play_cursor;		//Position that direct sound is reading from
 	DWORD				write_cursor;		//Position in buffer that we can write to
 
-	long r;
+	int32_t r;
 
 	{
 		std::lock_guard<std::recursive_mutex> guard(Lock_Of(audio));
 
 		r = vqap->RepeatedBuffers;
-		long l = audio->LastChunkPosition;
-		long m = audio->ChunksMovedToAudioBuffer;
+		uint32_t l = audio->LastChunkPosition;
+		uint32_t m = audio->ChunksMovedToAudioBuffer;
 
 		totalbytes = config->HMIBufSize * m;
 
@@ -156,12 +156,12 @@ unsigned int Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *co
 }
 
 
-intptr_t __cdecl Stream_Audio_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes)
+intptr_t __cdecl Stream_Audio_Handler(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config;
 
-	long error = VQAERR_NONE;
+	int32_t error = VQAERR_NONE;
 
 	switch (action) {
 
@@ -204,7 +204,7 @@ intptr_t __cdecl Stream_Audio_Handler(VQAHandle *vqa, long action, void *buffer,
 }
 
 
-long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, long b)
+int32_t __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, int32_t b)
 {
 	DSCAPS dscaps;
 
@@ -311,7 +311,7 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 }
 
 
-long __cdecl Close_Audio_Handler(VQAHandleP *vqap)
+int32_t __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 {
 	DebugString("Closing VQ audio handler\n");
 
@@ -358,7 +358,7 @@ long __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
+int32_t __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 {
 	/* Dereference commonly used data members for quicker access. */
 	VQAConfig *config = &vqap->Config;
@@ -431,7 +431,7 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
+int32_t __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, int32_t nbytes)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
@@ -457,7 +457,7 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
 }
 
 
-long __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
+int32_t __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
@@ -472,11 +472,11 @@ long __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
+int32_t __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
-	long rc;
+	int32_t rc;
 	if (!handle->Used || handle->SecondaryBufferPtr == NULL) {
 		return(VQAERR_AUDIO);
 	}
@@ -497,7 +497,7 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 }
 
 
-long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
+int32_t __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 {
 	Ahandle *handle = &_handles[vqap->AudioHandleIndex];
 
@@ -763,14 +763,14 @@ void Resume_All_Audio_Handler(void)
 }
 
 
-long __cdecl Lock_Audio_Handler(void)
+int32_t __cdecl Lock_Audio_Handler(void)
 {
 	/// nothing in win32
 	return(1);
 }
 
 
-long __cdecl Unlock_Audio_Handler(void)
+int32_t __cdecl Unlock_Audio_Handler(void)
 {
 	/// nothing in win32
 	return(1);

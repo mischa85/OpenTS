@@ -41,6 +41,8 @@
 #include "vqaplay.h"
 #include "cmp.h"
 
+#include <cstdint>
+
 #define  NULL 0
 
 #if 0
@@ -777,8 +779,8 @@ void VQA_StartAudio(VQAHandleP *vqap);
 void VQA_PauseAudio(VQAHandleP *vqap);
 void VQA_StopAudio(VQAHandleP *vqap);
 long CopyAudio(VQAHandleP *vqap);
-long __cdecl VQA_AudioFillCallback(VQAHandleP *vqap);
-long __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, void *);
+int32_t __cdecl VQA_AudioFillCallback(VQAHandleP *vqap);
+int32_t __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, void *);
 #endif
 
 /* Debugging system. */

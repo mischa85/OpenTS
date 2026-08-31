@@ -775,7 +775,7 @@ long VQA_Configure_Buffer(VQAHandleP *vqap)
 }
 
 
-intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes)
+intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes)
 {
 	intptr_t error = 0;
 

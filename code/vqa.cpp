@@ -43,10 +43,10 @@
 
 DynamicVectorClass<VQHandle *> IngameVQ;
 
-intptr_t __cdecl VQAMixFileHandler(VQAHandle * vqa, long action, void * buffer, long nbytes);
-intptr_t __cdecl VQACCFileHandler(VQAHandle * vqa, long action, void * buffer, long nbytes);
-intptr_t __cdecl VQAEventHandler(VQAHandle * vqa, long action, void * buffer, long nbytes);
-intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, long action, void * buffer, long nbytes);
+intptr_t __cdecl VQAMixFileHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes);
+intptr_t __cdecl VQACCFileHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes);
+intptr_t __cdecl VQAEventHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes);
+intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes);
 
 bool VQA_Message_Handler(void)
 {
@@ -963,7 +963,7 @@ long VQAClass::CCFileHandler(long action, void * buffer, long nbytes)
 }
 
 
-intptr_t __cdecl VQACCFileHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+intptr_t __cdecl VQACCFileHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config = &vqap->Config;
@@ -1093,7 +1093,7 @@ long VQAClass::MixFileHandler(long action, void * buffer, long nbytes)
 }
 
 
-intptr_t __cdecl VQAMixFileHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+intptr_t __cdecl VQAMixFileHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config = &vqap->Config;
@@ -1103,7 +1103,7 @@ intptr_t __cdecl VQAMixFileHandler(VQAHandle * vqa, long action, void * buffer, 
 }
 
 
-long /*__cdecl*/ VQACacheHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+long /*__cdecl*/ VQACacheHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config = &vqap->Config;
@@ -1113,7 +1113,7 @@ long /*__cdecl*/ VQACacheHandler(VQAHandle * vqa, long action, void * buffer, lo
 }
 
 
-intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+intptr_t __cdecl VQAMemoryHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	intptr_t error = 0;
 
@@ -1160,7 +1160,7 @@ static void VQAScalePalette(unsigned char *palette)
 }
 
 
-intptr_t __cdecl VQAEventHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+intptr_t __cdecl VQAEventHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config = &vqap->Config;
@@ -1236,7 +1236,7 @@ void vqanoop3(void)
  * HISTORY:                                                                                    *
  *   07/04/1995 JLB : Created.                                                                 *
  *=============================================================================================*/
-long MixFileHandler(VQAHandle * vqa, long action, void * buffer, long nbytes)
+long MixFileHandler(VQAHandle * vqa, uint32_t action, void * buffer, int32_t nbytes)
 {
 	CCFileClass * file;
 	long        error;

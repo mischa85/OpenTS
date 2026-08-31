@@ -398,7 +398,7 @@ long CopyAudio(VQAHandleP *vqap)
 }
 
 
-long __cdecl VQA_AudioFillCallback(VQAHandleP *vqap)
+int32_t __cdecl VQA_AudioFillCallback(VQAHandleP *vqap)
 {
 	VQAAudio *audio;
 	VQAConfig *config;
@@ -484,7 +484,7 @@ long __cdecl VQA_AudioFillCallback(VQAHandleP *vqap)
 }
 
 
-long __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, void *buffer)
+int32_t __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, void *buffer)
 {
 	VQAConfig *config;
 	VQAAudio *audio;

@@ -163,7 +163,7 @@ class VQAClass;
 typedef void  (__cdecl *UNVQ_FUNC)(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned int blocksperrow, unsigned int numrows, unsigned int bufwidth);
 
 // Handlers must be this type
-typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
+typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes);
 
 // draw callback must be this type
 typedef long (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, long framenum);

@@ -97,8 +97,8 @@ long Load_CLIP(VQAHandleP *vqap, unsigned int iffsize);
 long Load_MFCI(VQAHandleP *vqap);
 long Load_MSCI(VQAHandleP *vqap);
 
-intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
-intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
+intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes);
+intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes);
 
 long VQA_LargestLoop(VQAHandleP *vqap, long);
 

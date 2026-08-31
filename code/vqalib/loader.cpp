@@ -130,7 +130,7 @@ VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, long framenum);
 long VQA_ReloadPalette(VQAHandleP *vqap, long framenum, int force);
 _STATIC long VQA_LoadLoop(VQAHandleP *vqap, long framenum);
 
-intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
+intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, uint32_t action, void *buffer, int32_t nbytes);
 _STATIC long VQA_LoadFrame_Internal(VQAHandleP *vqap, long flags);
 
 long VQA_SeekGroup(VQAHandleP *vqap, long framenum, long groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
