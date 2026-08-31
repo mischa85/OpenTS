@@ -23,14 +23,26 @@ final class RootViewController: UIViewController {
 	private let storage = UILabel()
 	private var clearButton = UIButton()
 
+	/// Shown over the game until it draws. A cold start reads a working set off the discs
+	/// before there is anything to see, and over a network that is minutes; without
+	/// something moving on it, that screen reads as a hang.
+	private let spinner = UIActivityIndicatorView(style: .medium)
+	private let loading = UILabel()
+	private let detail = UILabel()
+	private var loadingConstraints: [NSLayoutConstraint] = []
+
+	/// When the run being reported on started, which is what turns its byte count into a
+	/// rate.
+	private var loadingSince = Date()
+
+	/// The first failure has been reported; the engine will keep asking and the tenth
+	/// message says no more than the first.
+	private var reported = false
+
 	override func viewDidLoad() {
 		super.viewDidLoad()
 
-		// The web view is not opaque, so this shows wherever the page does not paint --
-		// the safe area insets a full screen game reaches under. The game's own frame is
-		// letterboxed against black, and the system background is white in a light
-		// appearance, which would frame the picture.
-		view.backgroundColor = .black
+		GameSession.shared.onStatus = { [weak self] status in self?.show(status) }
 
 		if DiscLibrary.shared.isConfigured {
 			showGame()
@@ -47,6 +59,14 @@ final class RootViewController: UIViewController {
 	private func showGame() {
 		setup?.removeFromSuperview()
 		setup = nil
+		reported = false
+		loadingSince = Date()
+
+		// The web view is not opaque, so this shows wherever the page does not paint --
+		// the safe area insets a full screen game reaches under. The game's own frame is
+		// letterboxed against black, and the system background is white in a light
+		// appearance, which would frame the picture.
+		view.backgroundColor = .black
 
 		let web = GameSession.shared.webView!
 		web.translatesAutoresizingMaskIntoConstraints = false
@@ -62,14 +82,101 @@ final class RootViewController: UIViewController {
 			web.bottomAnchor.constraint(equalTo: guide.bottomAnchor),
 		])
 
+		loading.text = "Starting the engine…"
+		detail.text = LoadingReadout.explanation
+
+		loadingBanner.isHidden = false
+		spinner.startAnimating()
+
+		NSLayoutConstraint.deactivate(loadingConstraints)
+		view.addSubview(loadingBanner)
+		// The banner is the readable width the Mac gives it, less on a narrow phone.
+		let width = loadingBanner.widthAnchor.constraint(equalToConstant: 420)
+		width.priority = .defaultHigh
+		loadingConstraints = [
+			loadingBanner.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+			loadingBanner.centerYAnchor.constraint(equalTo: guide.centerYAnchor),
+			loadingBanner.widthAnchor.constraint(lessThanOrEqualTo: guide.widthAnchor, constant: -56),
+			width,
+		]
+		NSLayoutConstraint.activate(loadingConstraints)
+
 		setNeedsStatusBarAppearanceUpdate()
 		setNeedsUpdateOfHomeIndicatorAutoHidden()
 		GameSession.shared.start()
 	}
 
+	/// The spinner, the line of progress and the sentence under it, built once and moved to
+	/// the front of the view a restart puts it back in.
+	private lazy var loadingBanner: UIStackView = {
+		loading.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+		loading.textColor = .label
+		loading.numberOfLines = 0
+
+		detail.font = .systemFont(ofSize: 12)
+		detail.textColor = .secondaryLabel
+		detail.textAlignment = .center
+		detail.numberOfLines = 0
+
+		let head = UIStackView(arrangedSubviews: [spinner, loading])
+		head.axis = .horizontal
+		head.spacing = 8
+
+		let column = UIStackView(arrangedSubviews: [head, detail])
+		column.axis = .vertical
+		column.alignment = .center
+		column.spacing = 10
+		column.translatesAutoresizingMaskIntoConstraints = false
+		// It sits on the engine's black canvas whatever the rest of the system is set to,
+		// so the label colours are resolved against a dark appearance rather than the
+		// player's: in a light one they come out dark on black and cannot be read.
+		column.overrideUserInterfaceStyle = .dark
+		return column
+	}()
+
+	/// The loading readout, and the one alert a disc that could not be read gets.
+	///
+	/// Only a read the scheme handler gave up on reaches here. A read that failed and then
+	/// succeeded is in the log and nowhere else: the player has nothing to decide about a
+	/// block they already have.
+	private func show(_ status: GameSession.Status) {
+		if let failure = status.failure, !reported, presentedViewController == nil {
+			reported = true
+			hideLoading()
+			report(failure)
+			return
+		}
+
+		guard !loadingBanner.isHidden else { return }
+
+		guard let line = LoadingReadout.line(for: status, since: loadingSince) else {
+			return hideLoading()
+		}
+		loading.text = line
+	}
+
+	private func hideLoading() {
+		spinner.stopAnimating()
+		loadingBanner.isHidden = true
+	}
+
+	private func report(_ failure: String) {
+		let alert = UIAlertController(title: LoadingReadout.failureTitle, message: failure,
+		                              preferredStyle: .alert)
+		alert.addAction(UIAlertAction(title: "Choose Disc Images…", style: .default) { [weak self] _ in
+			self?.pickFiles()
+		})
+		alert.addAction(UIAlertAction(title: "Continue", style: .cancel))
+		present(alert, animated: true)
+	}
+
 	// MARK: - Setup
 
 	private func showSetup() {
+		// Ordinary UIKit rather than the game's black: this screen is the system's own
+		// controls and semantic label colours, and it has no canvas to sit against.
+		view.backgroundColor = .systemBackground
+
 		let title = UILabel()
 		title.text = "Command & Conquer: Tiberian Sun"
 		title.font = .systemFont(ofSize: 22, weight: .semibold)

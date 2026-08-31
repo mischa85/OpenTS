@@ -18,10 +18,12 @@
 		528962DDE1EC24A14E79041C /* DiscLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806AD60738496302E18B788B /* DiscLibrary.swift */; };
 		629A867AEA8EDC038DDAF309 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD500829E89B71052A965B9 /* AppDelegate.swift */; };
 		65CB70BD66AC145A1276AF70 /* RootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A70B321D336696C10DEF23 /* RootViewController.swift */; };
+		68FA222DC9F78977103C7F5A /* LoadingReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12B9C4D997BE227B9C34519 /* LoadingReadout.swift */; };
 		79C2C74ABD6D18718BCB59C0 /* DiscScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */; };
 		82F49C4D1A482FDA28562DEE /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD72ADD63365986942F7852 /* SettingsViewController.swift */; };
 		8CE2C7F1A3523D9EF6872BA6 /* DiscScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */; };
 		B2738AA214E8278FF91BA820 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEFB56A2D8E35563E5A0260 /* GameSession.swift */; };
+		D462009318DAF5BDE0904795 /* LoadingReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12B9C4D997BE227B9C34519 /* LoadingReadout.swift */; };
 		D482179A7E5E79BC45D6E27B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 52A35942529197F28D10D991 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -42,6 +44,7 @@
 		BF2ACB780FA4F541DCF77F23 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscScheme.swift; sourceTree = "<group>"; };
 		CFEFB56A2D8E35563E5A0260 /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
+		D12B9C4D997BE227B9C34519 /* LoadingReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingReadout.swift; sourceTree = "<group>"; };
 		F6BD4F7DE2B22EACB307F670 /* Sandbox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sandbox.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -75,6 +78,7 @@
 				806AD60738496302E18B788B /* DiscLibrary.swift */,
 				C5FE9538BE3383DA4D52F9F9 /* DiscScheme.swift */,
 				CFEFB56A2D8E35563E5A0260 /* GameSession.swift */,
+				D12B9C4D997BE227B9C34519 /* LoadingReadout.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -250,6 +254,7 @@
 				528962DDE1EC24A14E79041C /* DiscLibrary.swift in Sources */,
 				79C2C74ABD6D18718BCB59C0 /* DiscScheme.swift in Sources */,
 				B2738AA214E8278FF91BA820 /* GameSession.swift in Sources */,
+				68FA222DC9F78977103C7F5A /* LoadingReadout.swift in Sources */,
 				82F49C4D1A482FDA28562DEE /* SettingsViewController.swift in Sources */,
 				410F8A48087FF592C1EE58E1 /* main.swift in Sources */,
 			);
@@ -264,6 +269,7 @@
 				29B3AFDC6A7D204CCA03A607 /* DiscLibrary.swift in Sources */,
 				8CE2C7F1A3523D9EF6872BA6 /* DiscScheme.swift in Sources */,
 				020D9F3BD43BBA81A9B467EA /* GameSession.swift in Sources */,
+				D462009318DAF5BDE0904795 /* LoadingReadout.swift in Sources */,
 				65CB70BD66AC145A1276AF70 /* RootViewController.swift in Sources */,
 				084529486C9DC01E451096E6 /* main.swift in Sources */,
 			);

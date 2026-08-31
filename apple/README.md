@@ -10,8 +10,8 @@ disc images; until they do, it falls back to the addresses `DiscLibrary.archiveD
 holds.
 
 A first launch on those addresses reads its working set over the network before the menu
-can appear, so the window carries a readout of what has been read and how fast while it
-does. What arrives is kept on this device, so only the first launch pays for it.
+can appear, so both apps carry a readout of what has been read and how fast while it does.
+What arrives is kept on this device, so only the first launch pays for it.
 
 ## What it needs
 
@@ -72,10 +72,36 @@ module.
 | `Shared/DiscScheme.swift` | The `disc:` scheme: the bundled engine, and ranged reads of an image from a file or a server. |
 | `Shared/DiscCache.swift` | The copy of a served image this device keeps, and the fetching that fills it. |
 | `Shared/GameSession.swift` | The webview, the run's status, and the browser side storage. |
+| `Shared/LoadingReadout.swift` | What the readout over a loading run says, for both shells. |
 | `macOS/` | The Mac window, menu and settings panel. |
 | `iOS/` | The iPhone and iPad window and setup screen. |
 | `Support/copy-web.sh` | Copies the page and modules into the bundle at build time. |
 | `Support/make-icons.swift` | Renders the app icons from the project's mark. Run it when the mark changes. |
+
+## While a run loads
+
+Until the engine draws its first frame, both shells hold a spinner over the black canvas
+with a line saying how much has been read off the discs and at what average rate, and, when
+any of them is served over the network, a sentence saying why a first launch takes minutes.
+`LoadingReadout` decides what those say from the counters `GameSession` keeps; the Mac draws
+them with AppKit and the phone with UIKit, against a dark appearance either way because the
+canvas behind them is black whatever the rest of the system is set to. The page draws its
+own speed indicator in the bottom left corner, which says what the last moment cost rather
+than what the run has cost.
+
+The alert a disc that stays unreadable raises is the same on both, offering to choose disc
+images or to carry on. Only a read the scheme handler gave up on after its three attempts
+reaches it, and only the first one per run.
+
+## Orientation
+
+The apps declare the two landscape orientations, because the engine's frame is a 4:3
+landscape battlefield that a portrait window can only shrink. iOS honours that on iPhone.
+iPadOS 26 does not: it sizes every app's window itself, and an iPad follows the device into
+portrait whatever the app asks for — through `UISupportedInterfaceOrientations`, a
+`supportedInterfaceOrientations` override, `requestGeometryUpdate`, or
+`UISceneSizeRestrictions`. The game still runs; it is letterboxed into the middle of the
+screen until the device is turned back.
 
 ## Discs
 

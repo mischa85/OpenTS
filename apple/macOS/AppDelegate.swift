@@ -86,13 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		container.addSubview(web)
 
 		loading.stringValue = "Starting the engine…"
-		// A network run has a minutes long stretch with nothing on screen and no way for
-		// the player to tell it from a stall, so it is said outright what is happening.
-		detail.stringValue = DiscLibrary.shared.discs.contains(where: \.isRemote)
-			? "The discs are being read over the network. A first launch fetches what the "
-			+ "game needs before its menu can appear, which takes a few minutes; a later "
-			+ "one reuses what this one keeps."
-			: ""
+		detail.stringValue = LoadingReadout.explanation
 
 		loadingBanner.isHidden = false
 		spinner.startAnimation(nil)
@@ -161,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 			hideLoading()
 
 			let alert = NSAlert()
-			alert.messageText = "A disc image could not be read."
+			alert.messageText = LoadingReadout.failureTitle
 			alert.informativeText = failure
 			alert.addButton(withTitle: "Choose Disc Images…")
 			alert.addButton(withTitle: "Continue")
@@ -171,24 +165,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 		guard !loadingBanner.isHidden else { return }
 
-		if status.frames > 0 { return hideLoading() }
-
-		guard status.delivered > 0 else {
-			loading.stringValue = "Starting the engine…"
-			return
+		guard let line = LoadingReadout.line(for: status, since: loadingSince) else {
+			return hideLoading()
 		}
-
-		let read = ByteCountFormatter.string(fromByteCount: Int64(status.delivered),
-		                                     countStyle: .file)
-		let elapsed = Date().timeIntervalSince(loadingSince)
-		guard elapsed >= 2 else {
-			loading.stringValue = "Reading the discs — \(read) so far"
-			return
-		}
-
-		let rate = ByteCountFormatter.string(fromByteCount: Int64(Double(status.delivered) / elapsed),
-		                                     countStyle: .file)
-		loading.stringValue = "Reading the discs — \(read) at \(rate)/s"
+		loading.stringValue = line
 	}
 
 	private func hideLoading() {
