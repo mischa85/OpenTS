@@ -2387,14 +2387,14 @@ static bool Read_Dialog_Item(DialogTemplateReader & reader, bool extended, Dialo
 /// </remarks>
 static LRESULT CALLBACK Dialog_Window_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-	DLGPROC procedure = (DLGPROC)(ULONG_PTR)GetWindowLongA(window, DWL_DLGPROC);
+	DLGPROC procedure = (DLGPROC)GetWindowLongPtrA(window, DWLP_DLGPROC);
 
 	if (procedure != nullptr) {
-		SetWindowLongA(window, DWL_MSGRESULT, 0);
+		SetWindowLongPtrA(window, DWLP_MSGRESULT, 0);
 
 		INT_PTR handled = procedure(window, message, wparam, lparam);
 		if (handled != 0) {
-			LONG result = GetWindowLongA(window, DWL_MSGRESULT);
+			LONG_PTR result = GetWindowLongPtrA(window, DWLP_MSGRESULT);
 			return((result != 0) ? (LRESULT)result : (LRESULT)handled);
 		}
 	}
@@ -2497,7 +2497,7 @@ HWND CreateDialogIndirectParamA(HINSTANCE instance, LPCDLGTEMPLATE dialogtemplat
 		return(nullptr);
 	}
 
-	SetWindowLongA(dialog, DWL_DLGPROC, (LONG)(ULONG_PTR)dialogproc);
+	SetWindowLongPtrA(dialog, DWLP_DLGPROC, (LONG_PTR)dialogproc);
 
 	for (unsigned int index = 0; index < header.ItemCount; index++) {
 		DialogTemplateItem item;

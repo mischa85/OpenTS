@@ -102,7 +102,7 @@ struct ControlState
 
 static ControlState * State_Of(HWND window)
 {
-	return((ControlState *)(ULONG_PTR)GetWindowLongA(window, CONTROL_STATE_OFFSET));
+	return((ControlState *)GetWindowLongPtrA(window, CONTROL_STATE_OFFSET));
 }
 
 
@@ -132,13 +132,13 @@ static bool Manage_State(HWND window, UINT message)
 		state->TextLimit = 0;
 		state->HotKey = 0;
 
-		SetWindowLongA(window, CONTROL_STATE_OFFSET, (LONG)(ULONG_PTR)state);
+		SetWindowLongPtrA(window, CONTROL_STATE_OFFSET, (LONG_PTR)state);
 		return(true);
 	}
 
 	if (message == WM_NCDESTROY) {
 		delete State_Of(window);
-		SetWindowLongA(window, CONTROL_STATE_OFFSET, 0);
+		SetWindowLongPtrA(window, CONTROL_STATE_OFFSET, 0);
 		return(true);
 	}
 
@@ -1493,7 +1493,7 @@ void Win32_Register_Stock_Controls(void)
 
 		windowclass.style = CS_DBLCLKS;
 		windowclass.lpfnWndProc = _StockClasses[index].Procedure;
-		windowclass.cbWndExtra = CONTROL_STATE_OFFSET + (int)sizeof(LONG);
+		windowclass.cbWndExtra = CONTROL_STATE_OFFSET + (int)sizeof(LONG_PTR);
 		windowclass.lpszClassName = _StockClasses[index].Name;
 
 		RegisterClassA(&windowclass);
