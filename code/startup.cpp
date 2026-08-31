@@ -110,6 +110,7 @@
 #include "rules.h"
 #include "scenario.h"
 #include "scheme.h"
+#include "screenlayout.h"
 #include "script.h"
 #include "session.h"
 #include "shapeset.h"
@@ -614,11 +615,9 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 
 		VisibleSurface->Fill(0);
 
-		Rect sidebar_rect(0,0,SidebarClass::SIDE_WIDTH,VisibleRect.Height);
-		Rect tile_rect(0,0,VisibleRect.Width-sidebar_rect.Width, sidebar_rect.Height);
-		Rect composite_rect(0,0,VisibleRect.Width-sidebar_rect.Width, sidebar_rect.Height);
+		ScreenLayout const layout = Compute_Screen_Layout(VisibleRect);
 
-		Allocate_Surfaces(VisibleRect, composite_rect, tile_rect, sidebar_rect, false);
+		Allocate_Surfaces(layout.Hidden, layout.Composite, layout.Tile, layout.Sidebar, false);
 		LogicalSurface = HiddenSurface;
 		Update_Visible_Surface(HiddenSurface);
 

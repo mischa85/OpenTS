@@ -132,6 +132,7 @@
 #include "queue.h"
 #include "rules.h"
 #include "savestream.h"
+#include "screenlayout.h"
 #include "session.h"
 #include "smudtype.h"
 #include "sidebar.h"
@@ -249,16 +250,7 @@ void DisplayClass::One_Time(void)
 	PlacementShapes = MFCD::Retrieve("PLACE.SHP");
 	ShadowShapes = MFCD::Retrieve("SHADOW.SHP");
 
-	Rect rect = VisibleRect;
-	if (Options.IsSidebarOnRight || Debug_Map) {
-		rect.X = 0;
-	} else {
-		rect.X = SidebarClass::SIDE_WIDTH;
-	}
-	rect.Y = 16;
-	rect.Width = rect.Width - SidebarClass::SIDE_WIDTH;
-	rect.Height = rect.Height - 16;
-	Set_View_Dimensions(rect);
+	Set_View_Dimensions(Compute_Screen_Layout(VisibleRect).Tactical);
 }
 
 
