@@ -19,7 +19,6 @@ add_executable(GameDirs
     "${CMAKE_SOURCE_DIR}/code/mpmath.cpp"
     "${CMAKE_SOURCE_DIR}/code/pipe.cpp"
     "${CMAKE_SOURCE_DIR}/code/pk.cpp"
-    "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
     "${CMAKE_SOURCE_DIR}/code/readline.cpp"
     "${CMAKE_SOURCE_DIR}/code/straw.cpp"
     "${CMAKE_SOURCE_DIR}/code/trim.cpp"
@@ -48,7 +47,7 @@ if(WIN32)
     target_link_libraries(GameDirs PRIVATE kernel32 user32 shell32)
 else()
     find_package(Threads REQUIRED)
-    target_link_libraries(GameDirs PRIVATE Threads::Threads)
+    target_link_libraries(GameDirs PRIVATE Threads::Threads OpenTSPosixCompat)
 endif()
 
 set_target_properties(GameDirs PROPERTIES

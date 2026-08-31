@@ -87,6 +87,28 @@ elseif(NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|
     set(OPENTS_TARGET_IS_X86 TRUE)
 endif()
 
+# The Win32 substitute every non-Windows target builds on: the compatibility layer, the
+# compound-file writer, and the disc image reader, with the native POSIX helpers.
+if(NOT WIN32)
+    add_library(OpenTSPosixCompat STATIC
+        "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32stub.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32timer.cpp"
+        "${CMAKE_SOURCE_DIR}/code/docfile.cpp"
+        "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
+        "${CMAKE_SOURCE_DIR}/code/isofile.cpp"
+        "${CMAKE_SOURCE_DIR}/code/isodisc.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32window.cpp"
+        "${CMAKE_SOURCE_DIR}/code/hostyield.cpp"
+        "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
+    )
+    target_compile_features(OpenTSPosixCompat PUBLIC cxx_std_20)
+    target_include_directories(OpenTSPosixCompat PUBLIC "${CMAKE_SOURCE_DIR}/code")
+    target_compile_definitions(OpenTSPosixCompat PUBLIC NOMINMAX)
+    target_compile_options(OpenTSPosixCompat PUBLIC ${OPENTS_HARNESS_COMPILE_OPTIONS})
+endif()
+
 add_subdirectory(thirdparty)
 if(WIN32)
     add_subdirectory(code)

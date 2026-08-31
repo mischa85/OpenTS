@@ -3,8 +3,8 @@
 # this target's entry point up.
 add_executable(TimerTest
     "${CMAKE_CURRENT_SOURCE_DIR}/timertest.cpp"
-    "${CMAKE_SOURCE_DIR}/code/win32timer.cpp"
 )
+target_link_libraries(TimerTest PRIVATE OpenTSPosixCompat)
 
 target_compile_features(TimerTest PRIVATE cxx_std_20)
 
@@ -25,7 +25,10 @@ target_compile_definitions(TimerTest PRIVATE
     cdecl=
 )
 
-target_compile_options(TimerTest PRIVATE -fdeclspec -fshort-wchar)
+target_compile_options(TimerTest PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
+if(EMSCRIPTEN)
+    target_compile_options(TimerTest PRIVATE -fshort-wchar)
+endif()
 
 set_target_properties(TimerTest PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

@@ -6,17 +6,6 @@ set(COM_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/comtest.cpp"
 )
 
-if(EMSCRIPTEN)
-    # The substitute's file layer resolves names against a mounted disc image, so the
-    # reader and the block source it is handed come with it.
-    list(APPEND COM_TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
-        "${CMAKE_SOURCE_DIR}/code/isohttp.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
-    )
-endif()
-
 add_executable(ComTest ${COM_TEST_SOURCES})
 
 target_compile_features(ComTest PRIVATE cxx_std_20)
@@ -34,25 +23,18 @@ if(MSVC)
     target_link_libraries(ComTest PRIVATE ole32)
 endif()
 
+if(NOT WIN32)
+    target_link_libraries(ComTest PRIVATE OpenTSPosixCompat)
+endif()
+
 set_target_properties(ComTest PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-if(EMSCRIPTEN)
-    # The substitute's structures are pinned to their Win32 x86 widths, so the harness needs
-    # the same narrow wchar_t and MSVC keyword handling the engine is built with.
-    target_compile_options(ComTest PRIVATE
-        -fshort-wchar
-        -fno-builtin-wcslen
-        -fno-builtin-wcsnlen
-        -fexceptions
-        -fdeclspec
-        -D__cdecl=
-        -D__stdcall=
-        -D__fastcall=
-    )
 
-    target_link_options(ComTest PRIVATE -fexceptions)
+if(NOT MSVC)
+    target_compile_definitions(ComTest PRIVATE NOMINMAX)
+    target_compile_options(ComTest PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
 endif()
 
 add_test(NAME com COMMAND ComTest)

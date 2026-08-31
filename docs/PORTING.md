@@ -64,6 +64,14 @@ port is playable, and same-platform play is unaffected.
    rebuild on the in-game gadget system. Largest single item; last because
    everything else can be proven under the Windows build first.
 
+## Adopted work
+
+Stage 3 came from tinix0's translate-assembly-to-cpp and win64-port branches, with
+golden parity data captured against the original assembly. Stage 4 and the
+win32compat/crtcompat/docfile/peresource/iso9660 layers came from gunnarbeutner's
+wasm-port branch, widened from the WebAssembly target to every non-Windows target and
+made LP64-clean. The merge history records the authorship.
+
 ## Known LP64 breaks
 
 The short list of genuine 64-bit breaks found by audit, fixed as their
@@ -83,7 +91,7 @@ subsystems are touched:
 | --- | --- |
 | 1. Build scaffolding | done — non-Windows configures; bgfx and the tests build |
 | 2. Foundation | done — CTest green on macOS arm64 and x86_64; Linux expected but unverified |
-| 3. Codecs | not started |
-| 4. Object model and saves | not started |
-| 5. Platform backend | not started |
-| 6. Dialog layer | not started |
+| 3. Codecs | done — merged from tinix0/translate-assembly-to-cpp and win64-port; golden parity tests green on macOS |
+| 4. Object model and saves | done — gunnarbeutner/wasm-port's COM registry, CFBF docfile, and PE resource layers adopted; com/save/resources tests green natively |
+| 5. Platform backend | in progress — the win32compat family builds natively; the window manager, input, audio, and networking still need a native host |
+| 6. Dialog layer | in progress — runs against win32compat's window manager on the WebAssembly target; needs the native host |

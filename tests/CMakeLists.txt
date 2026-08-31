@@ -1,5 +1,16 @@
 add_subdirectory(gamedirs)
 add_subdirectory(logstress)
+add_subdirectory(com)
+add_subdirectory(save)
+add_subdirectory(resources)
+add_subdirectory(iso9660)
+
+# These exercise the Win32 substitute, which only non-Windows targets build.
+if(NOT WIN32)
+    add_subdirectory(timer)
+    add_subdirectory(win32file)
+    add_subdirectory(win32process)
+endif()
 add_subdirectory(sosparity)
 add_subdirectory(vqaunpack)
 add_subdirectory(unvqdec)

@@ -25,6 +25,10 @@ if(WIN32)
     target_link_libraries(CpuDetect PRIVATE kernel32 user32 shell32)
 endif()
 
+if(NOT WIN32)
+    target_link_libraries(CpuDetect PRIVATE OpenTSPosixCompat)
+endif()
+
 set_target_properties(CpuDetect PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

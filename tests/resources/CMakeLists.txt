@@ -20,8 +20,17 @@ if(MSVC)
     )
 endif()
 
+if(NOT WIN32)
+    target_link_libraries(ResourceTest PRIVATE OpenTSPosixCompat)
+endif()
+
 set_target_properties(ResourceTest PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+if(NOT MSVC)
+    target_compile_definitions(ResourceTest PRIVATE NOMINMAX)
+    target_compile_options(ResourceTest PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
+endif()
 
 add_test(NAME resources COMMAND ResourceTest)

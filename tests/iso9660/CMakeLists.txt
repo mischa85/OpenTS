@@ -7,7 +7,7 @@ set(ISO9660_TEST_SOURCES
 
 # The file class the engine consumes the reader through is Win32 only, so the read-only
 # checks that live with it are built only where it builds.
-if(WIN32)
+if(NOT EMSCRIPTEN)
     list(APPEND ISO9660_TEST_SOURCES "${CMAKE_SOURCE_DIR}/code/isofile.cpp")
 endif()
 
@@ -26,6 +26,10 @@ if(MSVC)
     )
 endif()
 
+if(NOT WIN32)
+    target_link_libraries(ISO9660Test PRIVATE OpenTSPosixCompat)
+endif()
+
 set_target_properties(ISO9660Test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -35,6 +39,11 @@ set_target_properties(ISO9660Test PROPERTIES
 # the in-memory one Emscripten supplies by default.
 if(EMSCRIPTEN)
     target_link_options(ISO9660Test PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1)
+endif()
+
+if(NOT MSVC)
+    target_compile_definitions(ISO9660Test PRIVATE NOMINMAX)
+    target_compile_options(ISO9660Test PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
 endif()
 
 add_test(NAME iso9660 COMMAND ISO9660Test "${CMAKE_CURRENT_BINARY_DIR}")

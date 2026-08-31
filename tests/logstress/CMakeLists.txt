@@ -3,7 +3,6 @@
 add_executable(LogStress
     "${CMAKE_CURRENT_SOURCE_DIR}/logstress.cpp"
     "${CMAKE_SOURCE_DIR}/code/dbgprint.cpp"
-    "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
 )
 
 target_compile_features(LogStress PRIVATE cxx_std_20)
@@ -27,7 +26,7 @@ if(WIN32)
     target_link_libraries(LogStress PRIVATE kernel32 user32 shell32)
 else()
     find_package(Threads REQUIRED)
-    target_link_libraries(LogStress PRIVATE Threads::Threads)
+    target_link_libraries(LogStress PRIVATE Threads::Threads OpenTSPosixCompat)
 endif()
 
 set_target_properties(LogStress PROPERTIES

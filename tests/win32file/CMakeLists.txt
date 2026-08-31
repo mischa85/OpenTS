@@ -7,17 +7,6 @@ set(WIN32FILE_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/win32filetest.cpp"
 )
 
-if(EMSCRIPTEN)
-    # The substitute resolves a name the host has no file for on a mounted disc image, so
-    # the reader and the block source it is handed come with it.
-    list(APPEND WIN32FILE_TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
-        "${CMAKE_SOURCE_DIR}/code/isohttp.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
-    )
-endif()
-
 add_executable(Win32FileTest ${WIN32FILE_TEST_SOURCES})
 
 target_compile_features(Win32FileTest PRIVATE cxx_std_20)
@@ -31,6 +20,10 @@ if(MSVC)
         $<$<CONFIG:Debug>:/MTd /EHsc /Zc:__cplusplus>
         $<$<CONFIG:Release>:/MT /EHsc /Zc:__cplusplus>
     )
+endif()
+
+if(NOT WIN32)
+    target_link_libraries(Win32FileTest PRIVATE OpenTSPosixCompat)
 endif()
 
 set_target_properties(Win32FileTest PROPERTIES
@@ -57,4 +50,9 @@ if(EMSCRIPTEN)
 endif()
 
 # The harness writes the files it reads back, so it is given a directory of its own.
+if(NOT MSVC)
+    target_compile_definitions(Win32FileTest PRIVATE NOMINMAX)
+    target_compile_options(Win32FileTest PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
+endif()
+
 add_test(NAME win32file COMMAND Win32FileTest "${CMAKE_CURRENT_BINARY_DIR}")

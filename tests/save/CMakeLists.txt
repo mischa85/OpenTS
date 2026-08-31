@@ -4,19 +4,9 @@
 # place that interchange can actually be established.
 set(SAVE_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/savetest.cpp"
-    "${CMAKE_SOURCE_DIR}/code/docfile.cpp"
 )
-
-if(EMSCRIPTEN)
-    # The Win32 file API docfile.cpp reads and writes through is the WebAssembly target's
-    # substitute, and the substitute resolves a name it has no file for on a mounted disc
-    # image, so the reader and the block source it is handed come with it.
-    list(APPEND SAVE_TEST_SOURCES
-        "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
-        "${CMAKE_SOURCE_DIR}/code/isohttp.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
-    )
+if(WIN32)
+    list(APPEND SAVE_TEST_SOURCES "${CMAKE_SOURCE_DIR}/code/docfile.cpp")
 endif()
 
 add_executable(SaveTest ${SAVE_TEST_SOURCES})
@@ -34,6 +24,10 @@ if(MSVC)
     )
 
     target_link_libraries(SaveTest PRIVATE ole32)
+endif()
+
+if(NOT WIN32)
+    target_link_libraries(SaveTest PRIVATE OpenTSPosixCompat)
 endif()
 
 set_target_properties(SaveTest PROPERTIES
@@ -60,4 +54,9 @@ if(EMSCRIPTEN)
 endif()
 
 # The harness writes the files it reads back, so it is given a directory of its own.
+if(NOT MSVC)
+    target_compile_definitions(SaveTest PRIVATE NOMINMAX)
+    target_compile_options(SaveTest PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
+endif()
+
 add_test(NAME save COMMAND SaveTest "${CMAKE_CURRENT_BINARY_DIR}")
