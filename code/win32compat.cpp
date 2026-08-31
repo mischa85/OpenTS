@@ -8,12 +8,15 @@
  ******************************************************************************/
 
 // The out-of-line half of the WebAssembly target's Win32 substitute. win32compat.h
-// explains what this stands for and why nothing here succeeds quietly.
+// explains what this stands for and why nothing here succeeds quietly. The file entry
+// points are adapters over filesystem.h, which owns where a name actually lives.
 
 #include "always.h"
 
 #include "crtcompat.h"
 #include "docfile.h"
+#include "filesystem.h"
+#include "hostfile.h"
 #include "iso9660.h"
 #include "misc.h"
 #include "video.h"
@@ -294,6 +297,7 @@ static DWORD Win32_Error_From_Errno(int error)
 		case EROFS:
 		case EISDIR:	return(ERROR_ACCESS_DENIED);
 		case EBADF:		return(ERROR_INVALID_HANDLE);
+		case EIO:		return(ERROR_READ_FAULT);
 		case ENOMEM:	return(ERROR_NOT_ENOUGH_MEMORY);
 		case EEXIST:	return(ERROR_FILE_EXISTS);
 		case EINVAL:	return(ERROR_INVALID_PARAMETER);
@@ -303,195 +307,6 @@ static DWORD Win32_Error_From_Errno(int error)
 		case ENOTEMPTY:	return(ERROR_DIRECTORY);
 		default:		return(ERROR_GEN_FAILURE);
 	}
-}
-
-
-static bool Path_Present(std::string const & path)
-{
-	struct stat info;
-
-	return(::lstat(path.c_str(), &info) == 0);
-}
-
-
-/*
-** Matches a path against what the host actually holds, without regard to case.
-**
-** The engine asks for TIBSUN.MIX in upper case while the assets a player supplies may be
-** spelled either way, and Windows would not care. The host might: Emscripten's virtual
-** filesystem and Linux are case-sensitive even though APFS and NTFS are not. So a path that
-** exists as spelled is used as spelled -- one system call, and the common case costs nothing
-** -- and only a path that does not is walked component by component, each missing component
-** matched against its directory's entries without regard to case. A component with no match
-** at all stays as it was spelled, which is what lets a file be created under the name the
-** caller chose rather than under a neighbor's. Two entries differing only in case resolve to
-** the first in sort order, so repeated lookups on one directory agree with each other.
-*/
-static std::string Resolve_Case(std::string const & translated)
-{
-	if (translated.empty() || Path_Present(translated)) return(translated);
-
-	std::string resolved;
-	std::size_t cursor = 0;
-
-	if (translated[0] == '/') {
-		resolved = "/";
-		cursor = 1;
-	}
-
-	while (cursor < translated.size()) {
-		std::size_t separator = translated.find('/', cursor);
-		if (separator == std::string::npos) separator = translated.size();
-
-		std::string component(translated, cursor, separator - cursor);
-
-		if (!component.empty() && component != "." && component != ".." && !Path_Present(resolved + component)) {
-			DIR * const directory = ::opendir(resolved.empty() ? "." : resolved.c_str());
-
-			if (directory != nullptr) {
-				std::string match;
-
-				for (struct dirent * item = ::readdir(directory); item != nullptr; item = ::readdir(directory)) {
-					if (::strcasecmp(item->d_name, component.c_str()) != 0) continue;
-					if (match.empty() || item->d_name < match) match = item->d_name;
-				}
-
-				::closedir(directory);
-				if (!match.empty()) component = match;
-			}
-		}
-
-		resolved += component;
-		if (separator < translated.size()) resolved += '/';
-		cursor = separator + 1;
-	}
-
-	return(resolved);
-}
-
-
-/*
-** The directory that survives the page. Everything else the engine can reach is gone the
-** moment the tab is: the game data arrives preloaded or off an image fetched over HTTP, and
-** the filesystem it lands in is memory. So one directory is mounted on IndexedDB before main
-** runs, and only that one -- copying the game data into a browser's database would cost
-** hundreds of megabytes of quota to store what the page already has.
-**
-** The engine writes its saves into the directory it runs in, under bare names, so the
-** overlay stands in front of that directory rather than beside it. Nothing is moved: a name
-** that exists as game data still resolves to the game data.
-*/
-#define OPENTS_PERSISTENT_DIRECTORY "/save"
-
-static std::string const & Persistent_Root(void)
-{
-	static std::string const root = []() -> std::string {
-		struct stat info;
-
-		if (::stat(OPENTS_PERSISTENT_DIRECTORY, &info) == 0 && S_ISDIR(info.st_mode)) {
-			return(OPENTS_PERSISTENT_DIRECTORY "/");
-		}
-
-		return(std::string());
-	}();
-
-	return(root);
-}
-
-
-static bool Is_Persistent(std::string const & path)
-{
-	std::string const & root = Persistent_Root();
-
-	return(!root.empty() && path.compare(0, root.size(), root) == 0);
-}
-
-
-/*
-** Rebuilds a Win32 path as one the host will accept. Backslashes become slashes, because the
-** engine writes both and Windows accepts both.
-**
-** A bare name is looked for in the persistent directory first and in the game directory
-** after, and a name that is in neither resolves into the persistent directory. That last rule
-** is what puts a saved game somewhere it survives the tab without the file layer having to be
-** told which opens are writes: a file that is about to be created exists nowhere, and a file
-** that is about to be read exists where it was written.
-*/
-static std::string Host_Path(char const * path)
-{
-	std::string translated(path != nullptr ? path : "");
-
-	for (char & character : translated) {
-		if (character == '\\') character = '/';
-	}
-
-	std::string const & root = Persistent_Root();
-
-	if (!root.empty() && !translated.empty() && translated.find('/') == std::string::npos) {
-		std::string const persistent = root + translated;
-
-		// The spelling the caller wrote, in both directories, before either is matched
-		// without regard to case: the engine spells the game data the way it is on disk, and
-		// that path should cost two system calls rather than a scan of two directories.
-		if (Path_Present(persistent)) return(persistent);
-		if (Path_Present(translated)) return(translated);
-
-		std::string const matched = Resolve_Case(persistent);
-		if (Path_Present(matched)) return(matched);
-
-		std::string const local = Resolve_Case(translated);
-		if (Path_Present(local)) return(local);
-
-		return(persistent);
-	}
-
-	return(Resolve_Case(translated));
-}
-
-
-/*
-** Hands the persistent directory to the browser to store.
-**
-** IndexedDB is reached asynchronously and the engine cannot wait on it, so the transfer is
-** started here and finishes on its own. The page counts the ones that complete, which is what
-** an automated check waits for before it reloads.
-*/
-static bool PersistentDirty = false;
-
-static void Flush_Persistent_Storage(void)
-{
-#if defined(__EMSCRIPTEN__)
-	if (!PersistentDirty) return;
-	PersistentDirty = false;
-
-	MAIN_THREAD_EM_ASM({
-		if (typeof FS === "undefined") return;
-
-		var again = function () {
-			FS.syncfs(false, function (error) {
-				if (error) {
-					console.error("OpenTS: writing persistent storage failed: " + error);
-				}
-				Module.OpenTS_Syncs = (Module.OpenTS_Syncs || 0) + 1;
-
-				if (Module.OpenTS_SyncAgain) {
-					Module.OpenTS_SyncAgain = false;
-					again();
-				} else {
-					Module.OpenTS_SyncRunning = false;
-				}
-			});
-		};
-
-		if (Module.OpenTS_SyncRunning) {
-			Module.OpenTS_SyncAgain = true;
-		} else {
-			Module.OpenTS_SyncRunning = true;
-			again();
-		}
-	});#else
-	PersistentDirty = false;
-#endif
 }
 
 
@@ -513,7 +328,6 @@ enum HandleKindType
 	HANDLE_KIND_FREE,
 	HANDLE_KIND_FILE,
 	HANDLE_KIND_FIND,
-	HANDLE_KIND_IMAGE,
 	HANDLE_KIND_MUTEX
 };
 
@@ -532,13 +346,9 @@ struct HandleEntryType
 {
 	HandleKindType Kind = HANDLE_KIND_FREE;
 
-	int Descriptor = -1;
+	std::unique_ptr<FileStreamClass> Stream;
 	bool DeleteOnClose = false;
 	std::string Path;
-
-	std::shared_ptr<ISOVolumeClass> Volume;
-	ISOEntryClass Image;
-	std::uint32_t Cursor = 0;
 
 	unsigned int Held = 0;
 
@@ -588,16 +398,9 @@ static HandleEntryType * Entry_From_Handle(HANDLE handle, HandleKindType kind)
 }
 
 
-/*
-** A handle either kind of file was opened on. Everything that only reads accepts both.
-*/
 static HandleEntryType * Entry_From_File_Handle(HANDLE handle)
 {
-	HandleEntryType * const entry = Entry_From_Handle(handle);
-
-	if (entry == nullptr) return(nullptr);
-	if (entry->Kind != HANDLE_KIND_FILE && entry->Kind != HANDLE_KIND_IMAGE) return(nullptr);
-	return(entry);
+	return(Entry_From_Handle(handle, HANDLE_KIND_FILE));
 }
 
 
@@ -617,12 +420,9 @@ static std::size_t Allocate_Handle(void)
 static void Release_Handle(HandleEntryType * entry)
 {
 	entry->Kind = HANDLE_KIND_FREE;
-	entry->Descriptor = -1;
+	entry->Stream.reset();
 	entry->DeleteOnClose = false;
 	entry->Path.clear();
-	entry->Volume.reset();
-	entry->Image.Reset();
-	entry->Cursor = 0;
 	entry->Held = 0;
 	entry->Directory.clear();
 	entry->Matches.clear();
@@ -630,152 +430,39 @@ static void Release_Handle(HandleEntryType * entry)
 }
 
 
-/*
-** The mounted images. A game is spread over several discs, so the list is ordered and a
-** name is answered by the first disc that carries it; each disc offers its installed data
-** directory ahead of its own root, which is the order cdfile.cpp searches an image in.
-**
-** They are mounted on the first name the host cannot answer for, so that a build with no
-** image beside it pays a single failed lookup rather than a cost at startup -- and, on the
-** suspending transport, so that no fetch is attempted from a static constructor, where the
-** module is not yet inside a promising export.
-*/
-struct MountedImageType
-{
-	std::shared_ptr<ISOVolumeClass> Volume;
-	std::vector<std::string> Directories;
-};
-
-static std::vector<MountedImageType> & Image_Table(void)
-{
-	static std::vector<MountedImageType> images;
-
-	return(images);
-}
-
-static bool ImageMountTried = false;
-
-
+// The disc images. hostfile.h owns the mounting and the lookup; these are the names the
+// substitute publishes for them, so a caller reaching for the Win32 spelling finds the
+// same discs the file layer opens through.
 bool Win32_Mount_Image(char const * location)
 {
-	ImageMountTried = true;
-
-	std::unique_ptr<ISOBlockSourceClass> source = ISO_Open_Location(location);
-	if (!source) return(false);
-
-	MountedImageType mounted;
-
-	mounted.Volume = std::make_shared<ISOVolumeClass>();
-	if (!mounted.Volume->Attach(std::move(source))) return(false);
-
-	ISO_Search_Directories(*mounted.Volume, mounted.Directories);
-	Image_Table().push_back(std::move(mounted));
-	return(true);
+	return(Mount_Disc_Image(location));
 }
 
 
 void Win32_Unmount_Image(void)
 {
-	Image_Table().clear();
-	ImageMountTried = true;
+	Unmount_Disc_Images();
 }
 
 
-static std::vector<MountedImageType> const & Mounted_Images(void)
+// A hint is advisory wherever it lands, so a handle on an ordinary host file accepts one
+// and does nothing with it.
+// What a stream's failure looks like to a Win32 caller. A read the transport declined has
+// not failed: the bytes are on their way, and ERROR_IO_PENDING is what says so.
+static DWORD Win32_Error_From_Stream(FileStreamClass const & stream)
 {
-	if (!ImageMountTried) {
-		std::vector<std::string> locations;
+	if (stream.Declined()) return(ERROR_IO_PENDING);
 
-		ISO_Image_Locations(locations);
-		ImageMountTried = true;
-
-		for (std::string const & location : locations) {
-			if (Win32_Mount_Image(location.c_str())) {
-				fprintf(stderr, "OpenTS: reading game data out of the image at %s.\n", location.c_str());
-			} else {
-				fprintf(stderr, "OpenTS: no image mounted from %s; only files the host answers "
-					"for can be read.\n", location.c_str());
-			}
-			fflush(stderr);
-		}
-	}
-
-	return(Image_Table());
+	int const error = stream.Error();
+	return((error != 0) ? Win32_Error_From_Errno(error) : ERROR_GEN_FAILURE);
 }
 
 
-/*
-** Rebuilds a Win32 path as one the image can be asked for: a path relative to the volume
-** root, with the drive letter and the leading separator a caller may have written taken
-** off, since the image root is what the engine would have been running out of. A path that
-** climbs out of the volume has no answer here and is refused rather than clamped.
-*/
-static bool Image_Path(char const * path, std::string & inside)
+static FileHintType Hint_From_Image_Hint(ISOHintType kind)
 {
-	inside.clear();
-
-	if (path == nullptr) return(false);
-
-	std::string translated(path);
-
-	for (char & character : translated) {
-		if (character == '\\') character = '/';
-	}
-
-	if (translated.size() >= 2 && translated[1] == ':') translated.erase(0, 2);
-
-	std::size_t cursor = 0;
-
-	while (cursor < translated.size()) {
-		std::size_t separator = translated.find('/', cursor);
-		if (separator == std::string::npos) separator = translated.size();
-
-		std::string const component(translated, cursor, separator - cursor);
-		cursor = separator + 1;
-
-		if (component.empty() || component == ".") continue;
-		if (component == "..") return(false);
-
-		if (!inside.empty()) inside += '/';
-		inside += component;
-	}
-
-	return(true);
-}
-
-
-/*
-** Joins one of a disc's search directories to a path relative to its root.
-*/
-static std::string Image_Within(std::string const & directory, std::string const & inside)
-{
-	if (directory.empty()) return(inside);
-	if (inside.empty()) return(directory);
-
-	return(directory + '/' + inside);
-}
-
-
-/*
-** Looks a name up across the mounted images, taking the first disc and the first of its
-** search directories that carries it. The volumes are left mounted, so a handle taken out
-** on the entry keeps reading from the one it was found on for as long as it is open.
-*/
-static std::shared_ptr<ISOVolumeClass> Image_Entry(char const * filename, ISOEntryClass & entry)
-{
-	std::string inside;
-	if (!Image_Path(filename, inside) || inside.empty()) return(nullptr);
-
-	for (MountedImageType const & image : Mounted_Images()) {
-		for (std::string const & directory : image.Directories) {
-			std::string const path = Image_Within(directory, inside);
-
-			if (image.Volume->Find(path.c_str(), entry) && !entry.IsDirectory) return(image.Volume);
-		}
-	}
-
-	entry.Reset();
-	return(nullptr);
+	if (kind == ISO_HINT_SOON) return(FILE_HINT_SOON);
+	if (kind == ISO_HINT_DONE) return(FILE_HINT_DONE);
+	return(FILE_HINT_SEQUENTIAL);
 }
 
 
@@ -784,12 +471,12 @@ bool Win32_Hint_Handle(HANDLE file, ISOHintType kind, unsigned int offset, unsig
 {
 	HandleEntryType * const entry = Entry_From_File_Handle(file);
 
-	if (entry == nullptr || entry->Kind != HANDLE_KIND_IMAGE || !entry->Volume) return(false);
-	if (offset >= entry->Image.Size) return(false);
+	if (entry == nullptr || !entry->Stream) return(false);
 
-	std::uint32_t const span = (length != 0) ? (std::uint32_t)length : (entry->Image.Size - offset);
+	FileStatusType status;
+	if (!entry->Stream->Status(status) || offset >= status.Size) return(false);
 
-	entry->Volume->Hint(entry->Image, kind, (std::uint32_t)offset, span);
+	entry->Stream->Hint(Hint_From_Image_Hint(kind), offset, length);
 	return(true);
 }
 
@@ -800,7 +487,7 @@ bool Win32_Hint_File(char const * filename, ISOHintType kind, unsigned int offse
 	if (filename == nullptr || *filename == '\0') return(false);
 
 	ISOEntryClass found;
-	std::shared_ptr<ISOVolumeClass> volume = Image_Entry(filename, found);
+	std::shared_ptr<ISOVolumeClass> volume = Image_File_Entry(filename, found);
 
 	if (!volume) return(false);
 	if (offset >= found.Size) return(false);
@@ -842,6 +529,16 @@ static FILETIME Filetime_From_Image(unsigned int datetime)
 		DosDateTimeToFileTime((WORD)(datetime >> 16), (WORD)(datetime & 0xFFFF), &result);
 	}
 
+	return(result);
+}
+
+
+static FILETIME Filetime_From_Ticks(unsigned long long ticks)
+{
+	FILETIME result;
+
+	result.dwLowDateTime = (DWORD)(ticks & 0xFFFFFFFFULL);
+	result.dwHighDateTime = (DWORD)(ticks >> 32);
 	return(result);
 }
 
@@ -960,45 +657,24 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 
 	bool const wantsread = (access & (GENERIC_READ | GENERIC_ALL)) != 0;
 	bool const wantswrite = (access & (GENERIC_WRITE | GENERIC_ALL)) != 0;
-	int openflags;
 
-	if (wantsread && wantswrite) {
-		openflags = O_RDWR;
-	} else if (wantswrite) {
-		openflags = O_WRONLY;
-	} else {
+	/*
+	** Zero access is Win32's query-only open, which asks after the file's metadata and never
+	** its contents. A read stream answers everything such a caller can ask, so it is not
+	** distinguished from a read.
+	*/
+	FileAccessType wanted = FILE_ACCESS_READ;
+	if (wantsread && wantswrite) wanted = FILE_ACCESS_READ_WRITE;
+	else if (wantswrite) wanted = FILE_ACCESS_WRITE;
 
-		/*
-		** Zero access is Win32's query-only open, which asks after the file's metadata and
-		** never its contents. A read-only descriptor answers everything such a caller can
-		** ask, so it is not distinguished from a read.
-		*/
-		openflags = O_RDONLY;
-	}
-
-	bool truncates = false;
+	FileDispositionType disposition;
 
 	switch (creation) {
-		case CREATE_NEW:
-			openflags |= O_CREAT | O_EXCL;
-			break;
-
-		case CREATE_ALWAYS:
-			openflags |= O_CREAT | O_TRUNC;
-			truncates = true;
-			break;
-
-		case OPEN_EXISTING:
-			break;
-
-		case OPEN_ALWAYS:
-			openflags |= O_CREAT;
-			break;
-
-		case TRUNCATE_EXISTING:
-			openflags |= O_TRUNC;
-			truncates = true;
-			break;
+		case CREATE_NEW:			disposition = FILE_CREATE_NEW; break;
+		case CREATE_ALWAYS:			disposition = FILE_CREATE_ALWAYS; break;
+		case OPEN_EXISTING:			disposition = FILE_OPEN_EXISTING; break;
+		case OPEN_ALWAYS:			disposition = FILE_OPEN_ALWAYS; break;
+		case TRUNCATE_EXISTING:		disposition = FILE_TRUNCATE_EXISTING; break;
 
 		default:
 			SetLastError(ERROR_INVALID_PARAMETER);
@@ -1006,82 +682,30 @@ HANDLE CreateFileA(LPCSTR filename, DWORD access, DWORD sharemode, LPSECURITY_AT
 				INVALID_HANDLE_VALUE));
 	}
 
-	if (truncates && !wantswrite) {
-		SetLastError(ERROR_INVALID_PARAMETER);
+	std::unique_ptr<FileStreamClass> stream = Open_File_Stream(filename, wanted, disposition,
+		(flags & FILE_FLAG_SEQUENTIAL_SCAN) != 0);
+	if (!stream) {
+		SetLastError(Win32_Error_From_Errno(File_Layer_Error()));
 		return(INVALID_HANDLE_VALUE);
 	}
 
-	std::string const path = Host_Path(filename);
-	struct stat existing;
-	bool const present = (::stat(path.c_str(), &existing) == 0);
-
-	/*
-	** Win32 refuses to open a directory as a file unless asked for backup semantics, which
-	** nothing here asks for. POSIX would hand back a descriptor, so the case is rejected
-	** rather than letting a caller read a directory as if it held bytes.
-	*/
-	if (present && S_ISDIR(existing.st_mode)) {
-		SetLastError(ERROR_ACCESS_DENIED);
-		return(INVALID_HANDLE_VALUE);
-	}
-
-	/*
-	** A name the host has no file for may still be on the mounted image. The image is read
-	** only, so only an open that would have read an existing file resolves there; anything
-	** that would create or write goes on to the host, which is where a file the engine
-	** writes belongs.
-	*/
-	if (!present && !wantswrite && (creation == OPEN_EXISTING || creation == OPEN_ALWAYS)) {
-		ISOEntryClass found;
-		std::shared_ptr<ISOVolumeClass> volume = Image_Entry(filename, found);
-
-		if (volume) {
-			std::size_t const index = Allocate_Handle();
-			HandleEntryType & entry = Handle_Table()[index];
-
-			entry.Kind = HANDLE_KIND_IMAGE;
-			entry.Path = filename;
-			entry.Volume = std::move(volume);
-			entry.Image = found;
-			entry.Cursor = 0;
-
-			/*
-			** The image is told what the directory lookup just established and the reads
-			** that follow cannot say: these bytes are one file, they are about to be read
-			** from front to back, and they end where the file does. An image whose bytes
-			** are at hand does nothing with it; one being fetched over a network reads
-			** ahead from the first block rather than after the reads it would take to
-			** notice, and never past the end of the file.
-			*/
-			entry.Volume->Hint(entry.Image, ISO_HINT_SEQUENTIAL, 0, entry.Image.Size);
-
-			SetLastError(NO_ERROR);
-			return(Handle_From_Index(index));
-		}
-	}
-
-	int const descriptor = ::open(path.c_str(), openflags,
-		((flags & FILE_ATTRIBUTE_READONLY) != 0) ? (mode_t)0444 : (mode_t)0666);
-	if (descriptor < 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
-		return(INVALID_HANDLE_VALUE);
-	}
+	bool const existed = stream->Existed();
 
 	std::size_t const index = Allocate_Handle();
 	HandleEntryType & entry = Handle_Table()[index];
 
 	entry.Kind = HANDLE_KIND_FILE;
-	entry.Descriptor = descriptor;
 	entry.DeleteOnClose = ((flags & FILE_FLAG_DELETE_ON_CLOSE) != 0);
-	entry.Path = path;
+	entry.Stream = std::move(stream);
 
-	if (wantswrite && Is_Persistent(path)) PersistentDirty = true;
+	// Only a delete-on-close open needs the resolved path, and resolving one costs a walk.
+	if (entry.DeleteOnClose) entry.Path = Host_File_Path(filename);
 
 	/*
 	** Both dispositions that accept a file already there report the fact through the
 	** last-error slot on an otherwise successful open, and callers read it back.
 	*/
-	SetLastError((present && (creation == CREATE_ALWAYS || creation == OPEN_ALWAYS))
+	SetLastError((existed && (creation == CREATE_ALWAYS || creation == OPEN_ALWAYS))
 		? ERROR_ALREADY_EXISTS : NO_ERROR);
 
 	return(Handle_From_Index(index));
@@ -1108,59 +732,16 @@ BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD toread, LPDWORD read, LPOVERLAPP
 		return(FALSE);
 	}
 
-	if (entry->Kind == HANDLE_KIND_IMAGE) {
+	unsigned int got = 0;
+	bool const served = entry->Stream->Read(buffer, (unsigned int)toread, got);
 
-		/*
-		** The volume delivers what it read and reports a transport failure the same way it
-		** reports the end of the file. Only the request itself says which happened, so the
-		** count the file could have answered is worked out first and anything less than
-		** that is a failure rather than a quiet short read.
-		*/
-		DWORD const available = (entry->Cursor < entry->Image.Size)
-			? (DWORD)(entry->Image.Size - entry->Cursor) : (DWORD)0;
-		DWORD const wanted = (toread < available) ? toread : available;
+	if (read != nullptr) *read = (DWORD)got;
 
-		int const got = entry->Volume->Read(entry->Image, entry->Cursor, buffer, wanted);
-
-		entry->Cursor += (std::uint32_t)(got > 0 ? got : 0);
-		if (read != nullptr) *read = (DWORD)(got > 0 ? got : 0);
-
-		if (got < 0 || (DWORD)got != wanted) {
-
-			/*
-			** A read the volume declined has not failed. The caller asked for a read that
-			** may say the bytes are not here yet, and that is what is reported.
-			*/
-			SetLastError(ISODeferredReadClass::Declined_Now() ? ERROR_IO_PENDING : ERROR_READ_FAULT);
-			return(FALSE);
-		}
-
-		SetLastError(NO_ERROR);
-		return(TRUE);
+	if (!served) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
+		return(FALSE);
 	}
 
-	/*
-	** Win32 fills the whole request from a file on disk, so a short host read is resumed
-	** rather than reported. Only the end of the file stops the loop early.
-	*/
-	char * const cursor = (char *)buffer;
-	DWORD total = 0;
-
-	while (total < toread) {
-		ssize_t const got = ::read(entry->Descriptor, cursor + total, (size_t)(toread - total));
-
-		if (got < 0) {
-			if (errno == EINTR) continue;
-			SetLastError(Win32_Error_From_Errno(errno));
-			if (read != nullptr) *read = total;
-			return(FALSE);
-		}
-
-		if (got == 0) break;
-		total += (DWORD)got;
-	}
-
-	if (read != nullptr) *read = total;
 	SetLastError(NO_ERROR);
 	return(TRUE);
 }
@@ -1175,12 +756,7 @@ BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD towrite, LPDWORD written, LPOV
 		return(WIN32_UNSUPPORTED("WriteFile with an overlapped request", FALSE));
 	}
 
-	if (Entry_From_Handle(file, HANDLE_KIND_IMAGE) != nullptr) {
-		SetLastError(ERROR_ACCESS_DENIED);
-		return(FALSE);
-	}
-
-	HandleEntryType const * const entry = Entry_From_Handle(file, HANDLE_KIND_FILE);
+	HandleEntryType * const entry = Entry_From_File_Handle(file);
 	if (entry == nullptr) {
 		SetLastError(ERROR_INVALID_HANDLE);
 		return(FALSE);
@@ -1191,24 +767,16 @@ BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD towrite, LPDWORD written, LPOV
 		return(FALSE);
 	}
 
-	char const * const cursor = (char const *)buffer;
-	DWORD total = 0;
+	unsigned int put = 0;
+	bool const served = entry->Stream->Write(buffer, (unsigned int)towrite, put);
 
-	while (total < towrite) {
-		ssize_t const put = ::write(entry->Descriptor, cursor + total, (size_t)(towrite - total));
+	if (written != nullptr) *written = (DWORD)put;
 
-		if (put < 0) {
-			if (errno == EINTR) continue;
-			SetLastError(Win32_Error_From_Errno(errno));
-			if (written != nullptr) *written = total;
-			return(FALSE);
-		}
-
-		if (put == 0) break;
-		total += (DWORD)put;
+	if (!served) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
+		return(FALSE);
 	}
 
-	if (written != nullptr) *written = total;
 	SetLastError(NO_ERROR);
 	return(TRUE);
 }
@@ -1222,12 +790,12 @@ DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distancehigh, DWORD metho
 		return(INVALID_SET_FILE_POINTER);
 	}
 
-	int origin;
+	FileOriginType origin;
 
 	switch (method) {
-		case FILE_BEGIN:	origin = SEEK_SET; break;
-		case FILE_CURRENT:	origin = SEEK_CUR; break;
-		case FILE_END:		origin = SEEK_END; break;
+		case FILE_BEGIN:	origin = FILE_ORIGIN_BEGIN; break;
+		case FILE_CURRENT:	origin = FILE_ORIGIN_CURRENT; break;
+		case FILE_END:		origin = FILE_ORIGIN_END; break;
 
 		default:
 			SetLastError(ERROR_INVALID_PARAMETER);
@@ -1243,35 +811,10 @@ DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distancehigh, DWORD metho
 		? (long long)(((unsigned long long)(long long)*distancehigh << 32) | (unsigned long long)(DWORD)distance)
 		: (long long)distance;
 
-	if (entry->Kind == HANDLE_KIND_IMAGE) {
-		long long const base = (origin == SEEK_SET) ? 0
-			: ((origin == SEEK_CUR) ? (long long)entry->Cursor : (long long)entry->Image.Size);
-		long long const wanted = base + offset;
+	long long position = 0;
 
-		/*
-		** A seek past the end is what Win32 does, and reading there answers with nothing.
-		** A seek before the start is the one Win32 refuses.
-		*/
-		if (wanted < 0) {
-			SetLastError(ERROR_NEGATIVE_SEEK);
-			return(INVALID_SET_FILE_POINTER);
-		}
-
-		if (wanted > (long long)0xFFFFFFFFLL) {
-			SetLastError(ERROR_SEEK);
-			return(INVALID_SET_FILE_POINTER);
-		}
-
-		entry->Cursor = (std::uint32_t)wanted;
-		if (distancehigh != nullptr) *distancehigh = 0;
-
-		SetLastError(NO_ERROR);
-		return((DWORD)entry->Cursor);
-	}
-
-	off_t const position = ::lseek(entry->Descriptor, (off_t)offset, origin);
-	if (position < 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Seek(offset, origin, position)) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(INVALID_SET_FILE_POINTER);
 	}
 
@@ -1296,47 +839,38 @@ DWORD GetFileSize(HANDLE file, LPDWORD sizehigh)
 		return(INVALID_FILE_SIZE);
 	}
 
-	struct stat info;
+	FileStatusType status;
 
-	if (entry->Kind == HANDLE_KIND_FILE && ::fstat(entry->Descriptor, &info) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Status(status)) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(INVALID_FILE_SIZE);
 	}
-
-	unsigned long long const size = (entry->Kind == HANDLE_KIND_IMAGE)
-		? (unsigned long long)entry->Image.Size : (unsigned long long)info.st_size;
 
 	/*
 	** With no high word there is nowhere to put the upper half of a size that needs one.
 	*/
-	if (sizehigh == nullptr && size > 0xFFFFFFFFULL) {
+	if (sizehigh == nullptr && status.Size > 0xFFFFFFFFULL) {
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return(INVALID_FILE_SIZE);
 	}
 
-	if (sizehigh != nullptr) *sizehigh = (DWORD)(size >> 32);
+	if (sizehigh != nullptr) *sizehigh = (DWORD)(status.Size >> 32);
 
 	SetLastError(NO_ERROR);
-	return((DWORD)(size & 0xFFFFFFFFULL));
+	return((DWORD)(status.Size & 0xFFFFFFFFULL));
 }
 
 
 BOOL SetEndOfFile(HANDLE file)
 {
-	if (Entry_From_Handle(file, HANDLE_KIND_IMAGE) != nullptr) {
-		SetLastError(ERROR_ACCESS_DENIED);
-		return(FALSE);
-	}
-
-	HandleEntryType const * const entry = Entry_From_Handle(file, HANDLE_KIND_FILE);
+	HandleEntryType const * const entry = Entry_From_File_Handle(file);
 	if (entry == nullptr) {
 		SetLastError(ERROR_INVALID_HANDLE);
 		return(FALSE);
 	}
 
-	off_t const position = ::lseek(entry->Descriptor, 0, SEEK_CUR);
-	if (position < 0 || ::ftruncate(entry->Descriptor, position) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Truncate()) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(FALSE);
 	}
 
@@ -1347,19 +881,14 @@ BOOL SetEndOfFile(HANDLE file)
 
 BOOL FlushFileBuffers(HANDLE file)
 {
-	if (Entry_From_Handle(file, HANDLE_KIND_IMAGE) != nullptr) {
-		SetLastError(ERROR_ACCESS_DENIED);
-		return(FALSE);
-	}
-
-	HandleEntryType const * const entry = Entry_From_Handle(file, HANDLE_KIND_FILE);
+	HandleEntryType const * const entry = Entry_From_File_Handle(file);
 	if (entry == nullptr) {
 		SetLastError(ERROR_INVALID_HANDLE);
 		return(FALSE);
 	}
 
-	if (::fsync(entry->Descriptor) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Flush()) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(FALSE);
 	}
 
@@ -1389,29 +918,14 @@ BOOL CloseHandle(HANDLE object)
 		return(FALSE);
 	}
 
-	if (entry->Kind == HANDLE_KIND_IMAGE) {
-		Release_Handle(entry);
-
-		SetLastError(NO_ERROR);
-		return(TRUE);
-	}
-
-	bool const closed = (::close(entry->Descriptor) == 0);
-	int const failure = errno;
-
 	if (entry->DeleteOnClose) {
 		::unlink(entry->Path.c_str());
-		if (Is_Persistent(entry->Path)) PersistentDirty = true;
+		if (Host_Path_Is_Persistent(entry->Path)) Host_Persistent_Touched();
 	}
 
 	Release_Handle(entry);
 
-	Flush_Persistent_Storage();
-
-	if (!closed) {
-		SetLastError(Win32_Error_From_Errno(failure));
-		return(FALSE);
-	}
+	Host_Flush_Persistent();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1425,15 +939,10 @@ BOOL DeleteFileA(LPCSTR filename)
 		return(FALSE);
 	}
 
-	std::string const path = Host_Path(filename);
-
-	if (::unlink(path.c_str()) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!Delete_File_Entry(filename)) {
+		SetLastError(Win32_Error_From_Errno(File_Layer_Error()));
 		return(FALSE);
 	}
-
-	if (Is_Persistent(path)) PersistentDirty = true;
-	Flush_Persistent_Storage();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1450,21 +959,21 @@ BOOL MoveFileA(LPCSTR existing, LPCSTR newname)
 		return(FALSE);
 	}
 
-	std::string const target = Host_Path(newname);
-	if (Path_Present(target)) {
+	std::string const target = Host_File_Path(newname);
+	if (Host_Path_Present(target)) {
 		SetLastError(ERROR_ALREADY_EXISTS);
 		return(FALSE);
 	}
 
-	std::string const source = Host_Path(existing);
+	std::string const source = Host_File_Path(existing);
 
 	if (::rename(source.c_str(), target.c_str()) != 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}
 
-	if (Is_Persistent(source) || Is_Persistent(target)) PersistentDirty = true;
-	Flush_Persistent_Storage();
+	if (Host_Path_Is_Persistent(source) || Host_Path_Is_Persistent(target)) Host_Persistent_Touched();
+	Host_Flush_Persistent();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1478,13 +987,13 @@ BOOL CopyFileA(LPCSTR existing, LPCSTR newname, BOOL failifexists)
 		return(FALSE);
 	}
 
-	std::string const target = Host_Path(newname);
-	if (failifexists && Path_Present(target)) {
+	std::string const target = Host_File_Path(newname);
+	if (failifexists && Host_Path_Present(target)) {
 		SetLastError(ERROR_FILE_EXISTS);
 		return(FALSE);
 	}
 
-	int const source = ::open(Host_Path(existing).c_str(), O_RDONLY);
+	int const source = ::open(Host_File_Path(existing).c_str(), O_RDONLY);
 	if (source < 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
@@ -1534,8 +1043,8 @@ BOOL CopyFileA(LPCSTR existing, LPCSTR newname, BOOL failifexists)
 		return(FALSE);
 	}
 
-	if (Is_Persistent(target)) PersistentDirty = true;
-	Flush_Persistent_Storage();
+	if (Host_Path_Is_Persistent(target)) Host_Persistent_Touched();
+	Host_Flush_Persistent();
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1549,7 +1058,7 @@ DWORD GetFileAttributesA(LPCSTR filename)
 		return(INVALID_FILE_ATTRIBUTES);
 	}
 
-	std::string const path = Host_Path(filename);
+	std::string const path = Host_File_Path(filename);
 	struct stat info;
 
 	if (::stat(path.c_str(), &info) != 0) {
@@ -1560,7 +1069,7 @@ DWORD GetFileAttributesA(LPCSTR filename)
 		** A name CreateFileA can open has to be a name this reports on, or a caller that
 		** tests before opening would decide the file is missing.
 		*/
-		if (Image_Entry(filename, found)) {
+		if (Image_File_Entry(filename, found)) {
 			SetLastError(NO_ERROR);
 			return(FILE_ATTRIBUTE_READONLY);
 		}
@@ -1589,7 +1098,7 @@ BOOL SetFileAttributesA(LPCSTR filename, DWORD attributes)
 		return(FALSE);
 	}
 
-	std::string const path = Host_Path(filename);
+	std::string const path = Host_File_Path(filename);
 	struct stat info;
 
 	if (::stat(path.c_str(), &info) != 0) {
@@ -1628,26 +1137,16 @@ BOOL GetFileTime(HANDLE file, LPFILETIME creation, LPFILETIME access, LPFILETIME
 		return(FALSE);
 	}
 
-	if (entry->Kind == HANDLE_KIND_IMAGE) {
-		FILETIME const recorded = Filetime_From_Image(entry->Image.DateTime);
+	FileStatusType status;
 
-		if (creation != nullptr) *creation = recorded;
-		if (access != nullptr) *access = recorded;
-		if (write != nullptr) *write = recorded;
-
-		SetLastError(NO_ERROR);
-		return(TRUE);
-	}
-
-	struct stat info;
-	if (::fstat(entry->Descriptor, &info) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Status(status)) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(FALSE);
 	}
 
-	if (creation != nullptr) *creation = Filetime_From_Host(info.st_ctim.tv_sec, info.st_ctim.tv_nsec);
-	if (access != nullptr) *access = Filetime_From_Host(info.st_atim.tv_sec, info.st_atim.tv_nsec);
-	if (write != nullptr) *write = Filetime_From_Host(info.st_mtim.tv_sec, info.st_mtim.tv_nsec);
+	if (creation != nullptr) *creation = Filetime_From_Ticks(status.Creation);
+	if (access != nullptr) *access = Filetime_From_Ticks(status.Access);
+	if (write != nullptr) *write = Filetime_From_Ticks(status.Write);
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1656,44 +1155,22 @@ BOOL GetFileTime(HANDLE file, LPFILETIME creation, LPFILETIME access, LPFILETIME
 
 /*
 ** A null time means leave that one alone, as it does under Win32. The creation time cannot
-** be set at all -- the host does not store one -- so it is accepted and dropped.
+** be set on a POSIX host -- there is none stored -- so it is accepted and dropped.
 */
 BOOL SetFileTime(HANDLE file, FILETIME const * creation, FILETIME const * access, FILETIME const * write)
 {
-	(void)creation;
-
-	if (Entry_From_Handle(file, HANDLE_KIND_IMAGE) != nullptr) {
-		SetLastError(ERROR_ACCESS_DENIED);
-		return(FALSE);
-	}
-
-	HandleEntryType const * const entry = Entry_From_Handle(file, HANDLE_KIND_FILE);
+	HandleEntryType const * const entry = Entry_From_File_Handle(file);
 	if (entry == nullptr) {
 		SetLastError(ERROR_INVALID_HANDLE);
 		return(FALSE);
 	}
 
-	struct timespec times[2];
+	unsigned long long const created = (creation != nullptr) ? (unsigned long long)Ticks_From_Filetime(creation) : 0ull;
+	unsigned long long const touched = (access != nullptr) ? (unsigned long long)Ticks_From_Filetime(access) : 0ull;
+	unsigned long long const written = (write != nullptr) ? (unsigned long long)Ticks_From_Filetime(write) : 0ull;
 
-	times[0].tv_sec = 0;
-	times[0].tv_nsec = UTIME_OMIT;
-	times[1].tv_sec = 0;
-	times[1].tv_nsec = UTIME_OMIT;
-
-	if (access != nullptr) {
-		long long const ticks = Ticks_From_Filetime(access) - FiletimeEpochOffset;
-		times[0].tv_sec = (time_t)(ticks / 10000000LL);
-		times[0].tv_nsec = (long)((ticks % 10000000LL) * 100LL);
-	}
-
-	if (write != nullptr) {
-		long long const ticks = Ticks_From_Filetime(write) - FiletimeEpochOffset;
-		times[1].tv_sec = (time_t)(ticks / 10000000LL);
-		times[1].tv_nsec = (long)((ticks % 10000000LL) * 100LL);
-	}
-
-	if (::futimens(entry->Descriptor, times) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Set_Times(created, touched, written)) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(FALSE);
 	}
 
@@ -1715,47 +1192,27 @@ BOOL GetFileInformationByHandle(HANDLE file, LPBY_HANDLE_FILE_INFORMATION inform
 		return(FALSE);
 	}
 
-	if (entry->Kind == HANDLE_KIND_IMAGE) {
-		FILETIME const recorded = Filetime_From_Image(entry->Image.DateTime);
+	FileStatusType status;
 
-		memset(information, 0, sizeof(*information));
-
-		information->dwFileAttributes = FILE_ATTRIBUTE_READONLY;
-		information->ftCreationTime = recorded;
-		information->ftLastAccessTime = recorded;
-		information->ftLastWriteTime = recorded;
-		information->nFileSizeLow = (DWORD)entry->Image.Size;
-		information->nNumberOfLinks = 1;
-
-		/*
-		** A disc entry has no index a caller could compare two handles on, and the first
-		** logical block of the file is the nearest thing the volume records.
-		*/
-		information->nFileIndexLow = entry->Image.Extents.empty()
-			? (DWORD)0 : (DWORD)entry->Image.Extents.front().Start;
-
-		SetLastError(NO_ERROR);
-		return(TRUE);
-	}
-
-	struct stat info;
-	if (::fstat(entry->Descriptor, &info) != 0) {
-		SetLastError(Win32_Error_From_Errno(errno));
+	if (!entry->Stream->Status(status)) {
+		SetLastError(Win32_Error_From_Stream(*entry->Stream));
 		return(FALSE);
 	}
 
 	memset(information, 0, sizeof(*information));
 
-	information->dwFileAttributes = Attributes_From_Stat(nullptr, info);
-	information->ftCreationTime = Filetime_From_Host(info.st_ctim.tv_sec, info.st_ctim.tv_nsec);
-	information->ftLastAccessTime = Filetime_From_Host(info.st_atim.tv_sec, info.st_atim.tv_nsec);
-	information->ftLastWriteTime = Filetime_From_Host(info.st_mtim.tv_sec, info.st_mtim.tv_nsec);
-	information->dwVolumeSerialNumber = (DWORD)info.st_dev;
-	information->nFileSizeHigh = (DWORD)((unsigned long long)info.st_size >> 32);
-	information->nFileSizeLow = (DWORD)((unsigned long long)info.st_size & 0xFFFFFFFFULL);
-	information->nNumberOfLinks = (DWORD)info.st_nlink;
-	information->nFileIndexHigh = (DWORD)((unsigned long long)info.st_ino >> 32);
-	information->nFileIndexLow = (DWORD)((unsigned long long)info.st_ino & 0xFFFFFFFFULL);
+	// Windows never reports an empty attribute set, so a plain writable file reports itself
+	// normal. Nothing the file layer answers distinguishes a hidden or system file here.
+	information->dwFileAttributes = status.IsReadOnly ? FILE_ATTRIBUTE_READONLY : FILE_ATTRIBUTE_NORMAL;
+	information->ftCreationTime = Filetime_From_Ticks(status.Creation);
+	information->ftLastAccessTime = Filetime_From_Ticks(status.Access);
+	information->ftLastWriteTime = Filetime_From_Ticks(status.Write);
+	information->dwVolumeSerialNumber = (DWORD)status.Volume;
+	information->nFileSizeHigh = (DWORD)(status.Size >> 32);
+	information->nFileSizeLow = (DWORD)(status.Size & 0xFFFFFFFFULL);
+	information->nNumberOfLinks = (DWORD)status.Links;
+	information->nFileIndexHigh = (DWORD)(status.Identifier >> 32);
+	information->nFileIndexLow = (DWORD)(status.Identifier & 0xFFFFFFFFULL);
 
 	SetLastError(NO_ERROR);
 	return(TRUE);
@@ -1777,7 +1234,7 @@ static void Fill_Find_Data(LPWIN32_FIND_DATAA data, std::string const & director
 		data->ftLastWriteTime = recorded;
 		data->nFileSizeLow = (DWORD)match.Image.Size;
 
-	} else if (::stat(Host_Path((directory + match.Name).c_str()).c_str(), &info) == 0) {
+	} else if (::stat(Host_File_Path((directory + match.Name).c_str()).c_str(), &info) == 0) {
 		data->dwFileAttributes = Attributes_From_Stat(match.Name.c_str(), info);
 		data->ftCreationTime = Filetime_From_Host(info.st_ctim.tv_sec, info.st_ctim.tv_nsec);
 		data->ftLastAccessTime = Filetime_From_Host(info.st_atim.tv_sec, info.st_atim.tv_nsec);
@@ -1802,7 +1259,7 @@ static void Fill_Find_Data(LPWIN32_FIND_DATAA data, std::string const & director
 */
 static void Persistent_Matches(std::string const & directory, std::string const & leaf, std::vector<FindMatchType> & matches)
 {
-	std::string const & root = Persistent_Root();
+	std::string const & root = Host_Persistent_Root();
 	if (root.empty() || !directory.empty()) return;
 
 	DIR * const scan = ::opendir(root.c_str());
@@ -1843,11 +1300,11 @@ static void Persistent_Matches(std::string const & directory, std::string const 
 static void Image_Matches(std::string const & directory, std::string const & leaf, std::vector<FindMatchType> & matches)
 {
 	std::string inside;
-	if (!Image_Path(directory.c_str(), inside)) return;
+	if (!Image_Relative_Path(directory.c_str(), inside)) return;
 
-	for (MountedImageType const & image : Mounted_Images()) {
+	for (MountedImageType const & image : Mounted_Disc_Images()) {
 		for (std::string const & search : image.Directories) {
-			std::string const path = Image_Within(search, inside);
+			std::string const path = Image_Search_Path(search, inside);
 
 			ISOEntryClass folder = image.Volume->Root();
 			if (!path.empty() && (!image.Volume->Find(path.c_str(), folder) || !folder.IsDirectory)) continue;
@@ -1904,7 +1361,7 @@ HANDLE FindFirstFileA(LPCSTR filename, LPWIN32_FIND_DATAA data)
 	std::string directory = requested;
 	std::string const leaf = (split == std::string::npos) ? pattern : pattern.substr(split + 1);
 
-	if (!directory.empty()) directory = Host_Path(directory.c_str());
+	if (!directory.empty()) directory = Host_File_Path(directory.c_str());
 
 	std::vector<FindMatchType> matches;
 
@@ -1914,7 +1371,7 @@ HANDLE FindFirstFileA(LPCSTR filename, LPWIN32_FIND_DATAA data)
 		** A search with no wildcard names one entry, and Win32 answers with that entry
 		** alone. The map generator asks after its cache directory this way.
 		*/
-		std::string const resolved = Host_Path((directory + leaf).c_str());
+		std::string const resolved = Host_File_Path((directory + leaf).c_str());
 		struct stat info;
 
 		if (::stat(resolved.c_str(), &info) == 0) {
@@ -2029,7 +1486,7 @@ BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES attributes)
 		return(FALSE);
 	}
 
-	if (::mkdir(Host_Path(path).c_str(), (mode_t)0777) != 0) {
+	if (::mkdir(Host_File_Path(path).c_str(), (mode_t)0777) != 0) {
 		SetLastError(errno == EEXIST ? (DWORD)ERROR_ALREADY_EXISTS : Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}
@@ -2046,7 +1503,7 @@ BOOL RemoveDirectoryA(LPCSTR path)
 		return(FALSE);
 	}
 
-	if (::rmdir(Host_Path(path).c_str()) != 0) {
+	if (::rmdir(Host_File_Path(path).c_str()) != 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}
@@ -2090,7 +1547,7 @@ BOOL SetCurrentDirectoryA(LPCSTR path)
 		return(FALSE);
 	}
 
-	if (::chdir(Host_Path(path).c_str()) != 0) {
+	if (::chdir(Host_File_Path(path).c_str()) != 0) {
 		SetLastError(Win32_Error_From_Errno(errno));
 		return(FALSE);
 	}

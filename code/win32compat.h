@@ -24,11 +24,12 @@
 // report themselves and then return the value their Win32 originals return on failure,
 // so a port that reaches one fails visibly instead of proceeding on a lie. See
 // WIN32_STUB below. What the host can genuinely answer is answered instead of stubbed,
-// and says so: the clocks, the string helpers, and the file layer -- CreateFileA through
-// the FindFirstFileA family -- which sits on POSIX and is what the engine reads its
-// archives through. A request the file layer cannot honestly serve, such as an unhandled
-// creation disposition, reports itself through WIN32_UNSUPPORTED and fails rather than
-// approximating.
+// and says so: the clocks, the string helpers, and the file entry points -- CreateFileA
+// through the FindFirstFileA family. Those are adapters: filesystem.h owns the file layer
+// itself and decides whether a name is a host file or an entry on a mounted disc, so the
+// engine gets the same answer whether it opens through RawFileClass or through here. A
+// request they cannot honestly serve, such as an unhandled creation disposition, reports
+// itself through WIN32_UNSUPPORTED and fails rather than approximating.
 
 #pragma once
 
