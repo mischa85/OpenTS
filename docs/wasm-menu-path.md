@@ -307,6 +307,14 @@ source therefore produces a 1:1 copy in the corner, not a stretch.
 `true` (`code/dsurface.cpp:79`), so `Play_Movie` will still compute a stretched
 rectangle (`code/movie.cpp:104`–`:112`) that the blitter cannot honor.
 
+> **Corrected.** The two paragraphs above were true when this was written and
+> are not now. Scaling no longer depends on GDI or on a flag: `XSurface::Blit_From`
+> dispatches to `XSurface::Blit_Scaled` whenever the destination rectangle
+> differs in size from the source (`code/xsurface.cpp:1281`), so every surface
+> scales. `AllowStretchBlits` and the `StretchBlt` path were removed, and the
+> stretched rectangle `Play_Movie` computes (`code/movie.cpp:104`–`:117`) is
+> honored.
+
 This does **not** affect the menu's own drawing: `MSVQAnim` forces both its
 rectangles to a centered 640×400 (`code/msanim.cpp:604`–`:605`),
 `Load_Title_Screen` blits a PCX at its own size (`code/winstub.cpp:558`), and
@@ -476,7 +484,7 @@ section closes out the verdict above rather than restating them.
 | 5 | Audio answering honestly | Superseded. `code/audiobackend.cpp` is a real OpenAL-over-Web-Audio backend rather than an honest refusal. Whether anything is audible is not established. |
 | 6 | `Play_VQA` yielding | Done. `VQA_Message_Handler` takes an Emscripten branch that services the page and yields (`code/vqa.cpp:53`–`:69`), and movies have been observed playing. |
 | 7 | A cursor | Attempted, not settled. The prediction that the answer was a data URL on `canvas.style.cursor` was right (`code/win32window.cpp:541`), but what a player sees is still the browser's arrow. |
-| 8 | Scaled blits | Open, and still only read rather than observed. `DSurface::AllowStretchBlits` is still true (`code/dsurface.cpp:79`) and `Bit_Blit` still copies `std::min(srect.Height, drect.Height)` rows (`code/blit.cpp:342`), so a destination larger than its source is still not stretched. Movies play; whether a stretched one is cropped has not been checked. |
+| 8 | Scaled blits | Done, and not by either route predicted. Rather than clearing the flag or confining scaling to GDI, `XSurface::Blit_From` now dispatches to a nearest-neighbour `Blit_Scaled` whenever the rectangles differ in size (`code/xsurface.cpp:1281`), so every surface scales and `AllowStretchBlits` was removed. The estimate of a week for real scaling was too high. |
 | 9 | Heap footprint at the menu | Still not measured. |
 
 Two judgements in [6](#6--the-verdict) are worth marking as having held. The

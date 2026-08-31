@@ -483,6 +483,17 @@ of a 565 buffer.
 > (`code/dsurface.cpp:79`), and the comment beside its declaration claiming
 > surfaces stretch in software does not match `Bit_Blit`. No scaled blit has
 > been observed either way.
+>
+> **Resolved.** Scaling is no longer a GDI question. `XSurface::Blit_From`
+> dispatches to `XSurface::Blit_Scaled` whenever the destination rectangle
+> differs in size from the source (`code/xsurface.cpp:1281`), so every surface
+> in the engine scales, `StretchBlt` is gone, and the `AllowStretchBlits` flag
+> was removed with it. `Blit_Scaled` resamples nearest-neighbour in 16.16 fixed
+> point (`code/xsurface.cpp:1705`) through the same blitters a matching blit
+> would use. One inherited limitation stands: clipping a scaled blit adjusts
+> each rectangle independently, which changes the scale the other is drawn at,
+> so a scaled blit is expected to have been clipped to its boundary already
+> (`code/xsurface.cpp:1394`).
 
 `DSurface` hands out a Windows device context (`code/dsurface.h:66`), and four
 places draw text through it: `code/ownrdraw.cpp:4940`, `:5687`, `:6152`, and
