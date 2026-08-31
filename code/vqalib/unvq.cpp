@@ -11,7 +11,15 @@
  * disclaimers apply; see LICENSE.md.
  ******************************************************************************/
 
+#include <stddef.h>
 #include <string.h>
+
+/*
+ * A block run ends by stepping the destination back to the row it started on and forward by
+ * the blocks it covered, which is a move backwards overall. Both halves of that subtraction
+ * have to be signed: computed in unsigned they wrap to a value near 2^32, which a 32 bit
+ * pointer absorbs but a 64 bit one follows off the frame.
+ */
 
 typedef signed char int8_t;
 typedef signed short int16_t;
@@ -133,7 +141,7 @@ void __cdecl UnVQ2_C1_4x4(unsigned char * codebook, unsigned char * pointers, un
 			}
 
 			/* final pointer correction: dst += count*8 - bufwidth*4 */
-			dst += (count * 8u) - block_row_stride;
+			dst += (ptrdiff_t)(count * 8u) - (ptrdiff_t)block_row_stride;
 		} break;
 
 		case 0x3000u: {
@@ -168,7 +176,7 @@ void __cdecl UnVQ2_C1_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * count - block_row_stride;
+			dst += (ptrdiff_t)(8u * count) - (ptrdiff_t)block_row_stride;
 		} break;
 
 
@@ -330,7 +338,7 @@ void __cdecl UnVQ1_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -356,7 +364,7 @@ void __cdecl UnVQ1_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -497,7 +505,7 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -531,7 +539,7 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * height - block_row_stride;
+			dst += (ptrdiff_t)(8u * height) - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -579,7 +587,7 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 					dst += bufwidth;
 				}
 
-				dst += 8u * height - block_row_stride;
+				dst += (ptrdiff_t)(8u * height) - (ptrdiff_t)block_row_stride;
 			}
 			break;
 
@@ -603,7 +611,7 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 		}
 
@@ -662,7 +670,7 @@ void __cdecl UnVQ1_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -688,7 +696,7 @@ void __cdecl UnVQ1_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -831,7 +839,7 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -864,7 +872,7 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * height - block_row_stride;
+			dst += (ptrdiff_t)(8u * height) - (ptrdiff_t)block_row_stride;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -912,7 +920,7 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 					dst += bufwidth;
 				}
 
-				dst += 8u * height - block_row_stride;
+				dst += (ptrdiff_t)(8u * height) - (ptrdiff_t)block_row_stride;
 			}
 			break;
 
@@ -936,7 +944,7 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst += (ptrdiff_t)8 - (ptrdiff_t)block_row_stride;
 		} break;
 		}
 
@@ -956,7 +964,7 @@ void __cdecl UnVQ2_C0_4x4_TRANS(unsigned char * codebook, unsigned char * pointe
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = blocksperrow * numrows;
 
@@ -1222,7 +1230,7 @@ void __cdecl UnVQ2_C0_4x4_KEY(unsigned char * codebook, unsigned char * pointers
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = numrows * blocksperrow;
 
@@ -2010,7 +2018,7 @@ void __cdecl UnVQ2_C0_4x2_KEY(unsigned char * codebook, unsigned char * pointers
 {
 	uint8_t * dst = (uint8_t *)buffer;
 	uint8_t * row_base = (uint8_t *)buffer;
-	register uint16_t * src = (uint16_t *)pointers;
+	uint16_t * src = (uint16_t *)pointers;
 	uint32_t blocks = 0;
 	uint32_t total = numrows * blocksperrow;
 

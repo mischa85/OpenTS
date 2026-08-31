@@ -11,6 +11,8 @@
  * disclaimers apply; see LICENSE.md.
  ******************************************************************************/
 
+#include <cstdint>
+
 /* $Header: /CounterStrike/LCWUNCMP.CPP 1     3/03/97 10:25a Joe_bostic $ */
 /***************************************************************************
  **    C O N F I D E N T I A L --- W E S T W O O D   S T U D I O S        **
@@ -115,7 +117,7 @@ unsigned long __cdecl LCW_Uncompress (void * source, void * dest, unsigned long 
 					word_data  = (word_data << 24) + (word_data << 16) + (word_data << 8) + word_data;
 					source_ptr += 3;
 
-					copy_ptr = dest_ptr + 4 - ((unsigned) dest_ptr & 0x3);
+					copy_ptr = dest_ptr + 4 - ((uintptr_t) dest_ptr & 0x3);
 					count -= (copy_ptr - dest_ptr);
 					while (dest_ptr < copy_ptr) *dest_ptr++ = data;
 

@@ -75,7 +75,7 @@ char * strupr(char * string);
 #define   free(p)           _free_dbg(p, _NORMAL_BLOCK)
 #define   _msize(p)         _msize_dbg(p, _NORMAL_BLOCK)
 
-void * __cdecl operator new(unsigned int size);
+void * __cdecl operator new(size_t size);
 void __cdecl operator delete(void * ptr);
 
 #endif	//STEVES_NEW_CATCHER

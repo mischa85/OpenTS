@@ -2,12 +2,9 @@
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
 
 # OpenTS currently supports 32-bit (x86) builds only.
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-    message(FATAL_ERROR "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32.")
-endif()
-
-# Declared here rather than by project() because only the engine's own sources carry MASM.
-enable_language(ASM_MASM)
+# if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+#     message(FATAL_ERROR "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32.")
+# endif()
 
 #
 # ---------------------------------------------------------
@@ -31,7 +28,9 @@ file(GLOB_RECURSE OPENTS_RAW CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hh"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.rc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.asm"
+
+    # Submodules of OpenTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/wolapi/*"
 )
 
 #
@@ -112,10 +111,6 @@ set(OPENTS_COMPILE_OPTIONS
             /Zi /Od /RTC1 /MP /Oy- /arch:SSE2 /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 
     # ================= RELEASE =================
@@ -133,10 +128,6 @@ set(OPENTS_COMPILE_OPTIONS
             /Zi /O2 /GF /MP /arch:SSE2 /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 )
 
@@ -174,7 +165,6 @@ target_compile_definitions(OpenTS PRIVATE
     WIN32
     _WINDOWS
     _MBCS
-    NOMINMAX
 
     # Compiles Blowfish into the binary instead of reaching it through the COM object in
     # blowfish.dll. It decides the layout of BlowfishEngine, so every translation unit has
@@ -199,16 +189,12 @@ message(STATUS "${PROJECT_NAME}: Applying linker options...")
 #  + all Win32 libs
 #
 
-# The bgfx targets are linked by file rather than by name. Their interface settings
-# include compiler switches and a directory of headers that shadow the system ones, and
-# the Visual Studio generator would hand all of that to ML.EXE as well, which fails.
-add_dependencies(OpenTS bgfx bx bimg)
 target_link_libraries(OpenTS PRIVATE
     VQALib
 
-    $<TARGET_FILE:bgfx>
-    $<TARGET_FILE:bx>
-    $<TARGET_FILE:bimg>
+    bgfx
+    bx
+    bimg
     comctl32
     dbghelp
     dsound
@@ -239,25 +225,6 @@ endif()
 
 #
 # ---------------------------------------------------------
-# MASM assembly support
-# ---------------------------------------------------------
-#
-message(STATUS "${PROJECT_NAME}: Adding MASM support...")
-
-enable_language(ASM_MASM)
-
-# All .asm files compile automatically using ML.EXE with appropriate flags.
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        set_source_files_properties(${f} PROPERTIES
-            LANGUAGE ASM_MASM
-            COMPILE_FLAGS "-Zi -c -coff -Cx"
-        )
-    endif()
-endforeach()
-
-#
-# ---------------------------------------------------------
 # Visual Studio source groups
 # ---------------------------------------------------------
 #
@@ -284,13 +251,6 @@ foreach(f ${OPENTS_SRC})
     endif()
 endforeach()
 
-# Assembly Files
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        source_group("Assembly Files" FILES ${f})
-    endif()
-endforeach()
-
 # Resource Files
 foreach(f ${OPENTS_SRC})
     if(f MATCHES "\\.(ico|cur|bmp|gif|jpe?g|rc)$")
@@ -308,6 +268,7 @@ set(INTERFACE_FILES
     ilocos.h         ilocos_i.c
     ipiggy.h         ipiggy_i.c
     isun.h           isun_i.c
+    wolapi/wolapi_i.c
 )
 
 # Convert to full paths relative to source dir

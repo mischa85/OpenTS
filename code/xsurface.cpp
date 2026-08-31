@@ -790,9 +790,6 @@ bool XSurface::Fill_Rect(Rect const & fillrect, int color)
 }
 
 
-/// inline asm functions don't have a return statement
-#pragma warning(disable: 4035)
-
 /// <summary>
 /// Fills a run of longwords with a color value.
 /// This is the low level filler that the surface rectangle fill routines use for the bulk
@@ -804,25 +801,14 @@ bool XSurface::Fill_Rect(Rect const & fillrect, int color)
 /// <returns>Returns with a pointer to just past the last longword written.</returns>
 static void *surface_quick_fill(void *buf, int count, int color)
 {
-	_asm {
-		push edi /// Bug fixed in TS but not in ShapeSet
+	unsigned int * ptr = (unsigned int *)buf;
 
-		mov ecx, [count]
-		mov edi, [buf]
-
-		cmp ecx, 0
-		jle short $end
-
-		mov eax, [color]
-		rep stosd
-
-	$end:
-		mov eax, edi
-		pop edi /// Bug fixed in TS but not in ShapeSet
+	for (int index = 0; index < count; index++) {
+		*ptr++ = (unsigned int)color;
 	}
-	// return is in eax
+
+	return(ptr);
 }
-#pragma warning(default: 4035)
 
 
 /***********************************************************************************************
@@ -873,7 +859,7 @@ bool XSurface::Fill_Rect(Rect const & cliprect, Rect const & fillrect, int color
 				buffer = ((unsigned char *)buffer) + pitch;
 			}
 		} else {
-			switch ((unsigned int)buffer & 3) {
+			switch ((uintptr_t)buffer & 3) {
 				case 0: {
 					int odd_pixel = width & 1;
 					width >>= 1;

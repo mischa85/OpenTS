@@ -111,6 +111,14 @@ static inline void memset32(void * D, unsigned int val, unsigned int n)
 }
 
 
+/*
+ * The decoders below end a block run by stepping the destination back to the row the run
+ * started on and forward by the blocks it covered, which is a move backwards overall. Both
+ * halves of that subtraction have to be signed: computed in unsigned it wraps to a value near
+ * 2^32, which a 32 bit pointer absorbs but a 64 bit one follows off the frame.
+ */
+
+
 void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
 {
 	assert(HicolorTable != 0);
@@ -167,7 +175,7 @@ void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 								buffer += bufwidth;
 								--len;
 							}
-							buffer += 8 * count - blocks_per_rowa;
+							buffer += (ptrdiff_t)(8 * count) - (ptrdiff_t)blocks_per_rowa;
 						}
 					} else {
 						buffer += 8 * count;
@@ -215,7 +223,7 @@ void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 					--len;
 				}
 
-				buffer += 8 * count - blocks_per_rowa;
+				buffer += (ptrdiff_t)(8 * count) - (ptrdiff_t)blocks_per_rowa;
 			}
 		} else {
 			switch (code) {
@@ -352,7 +360,7 @@ void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 								buffer += 2 * bufwidth;
 								--len;
 							}
-							buffer += 8 * count - (int)(bufwidth << 2);
+							buffer += (ptrdiff_t)(8 * count) - (ptrdiff_t)(bufwidth << 2);
 						}
 					} else {
 						buffer += 8 * count;
@@ -395,7 +403,7 @@ void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 					--len;
 				}
 
-				buffer += 8 * count - (int)(bufwidth << 2);
+				buffer += (ptrdiff_t)(8 * count) - (ptrdiff_t)(bufwidth << 2);
 			}
 		} else {
 			switch (code) {
@@ -690,7 +698,7 @@ void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 							buffer += 2 * bufwidth;
 							--len;
 						} while (len);
-						buffer += 8 * scatter_count - (int)(bufwidth << 2);
+						buffer += (ptrdiff_t)(8 * scatter_count) - (ptrdiff_t)(bufwidth << 2);
 					}
 					}
 				} else {
@@ -772,7 +780,7 @@ void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 					buffer += 2 * bufwidth;
 				}
 
-				buffer += 8 * count - (int)(bufwidth << 2);
+				buffer += (ptrdiff_t)(8 * count) - (ptrdiff_t)(bufwidth << 2);
 				break;
 			}
 			}

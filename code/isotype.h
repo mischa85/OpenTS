@@ -22,6 +22,8 @@
 #include "isotype.hh"
 #include "land.hh"
 
+#include <cstdint>
+
 class LightConvertClass;
 class Surface;
 class ShapeSet;
@@ -115,11 +117,20 @@ class IsoTileSet
 
 		IsoTileRecord const * Fetch_Record_Pointer(int index) const
 		{
-			return(Tiles[index % Tile_Count()]);
+			return(Fetch_Record_Pointer_Unsafe(index % Tile_Count()));
 		}
 		IsoTileRecord const * Fetch_Record_Pointer_Unsafe(int index) const
 		{
-			return(Tiles[index]);
+			int const offset = TileOffsets[index];
+			if (offset == 0) {
+				return(NULL);
+			}
+			return((IsoTileRecord const *)((unsigned char const *)this + offset));
+		}
+		IsoTileRecord * Fetch_Record_Pointer_Unsafe(int index)
+		{
+			IsoTileSet const * self = this;
+			return(const_cast<IsoTileRecord *>(self->Fetch_Record_Pointer_Unsafe(index)));
 		}
 
 		/*
@@ -160,11 +171,13 @@ class IsoTileSet
 		int Height;
 
 		/*
-		 * This is the first of the tile set's image record pointers, one per sub-tile, held in
-		 * the file as offsets from the start of the set and converted in place by the loader.
-		 * Reach a record through Fetch_Record_Pointer rather than through the array.
+		 * This is the first of the tile set's image record offsets, one per sub-tile, counted
+		 * in bytes from the start of the set, with zero meaning the sub-tile has no record.
+		 * The class is overlaid directly on the file image, so these stay the 32 bit offsets
+		 * the file holds and are resolved on access. Reach a record through
+		 * Fetch_Record_Pointer rather than through the array.
 		 */
-		IsoTileRecord *Tiles[1];
+		int32_t TileOffsets[1];
 
 
 	/*
@@ -176,6 +189,13 @@ class IsoTileSet
 		IsoTileSet const & operator = (IsoTileSet const & rvalue);
 };
 #pragma pack()
+
+/*
+ * The class is overlaid on the tile file rather than read out of it, so its layout is the
+ * file's and cannot follow the pointer width of the target. Four dimension fields and one
+ * record offset come to twenty bytes on every build.
+ */
+static_assert(sizeof(IsoTileSet) == 20, "IsoTileSet must keep the layout of the tile file");
 
 
 /****************************************************************************

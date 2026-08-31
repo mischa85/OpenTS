@@ -43,30 +43,6 @@
 #include <cstdio>
 #include <cstring>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-
-static void Cpu_Id(int regs[4], int leaf)
-{
-	__cpuid(regs, leaf);
-}
-#else
-#include <cpuid.h>
-
-static void Cpu_Id(int regs[4], int leaf)
-{
-	unsigned int eax = 0;
-	unsigned int ebx = 0;
-	unsigned int ecx = 0;
-	unsigned int edx = 0;
-
-	__get_cpuid(leaf, &eax, &ebx, &ecx, &edx);
-	regs[0] = (int)eax;
-	regs[1] = (int)ebx;
-	regs[2] = (int)ecx;
-	regs[3] = (int)edx;
-}
-#endif
 
 /***********************************************************************************************
  * Get_CPU_Type -- Find out what kind of CPU we are running on                                 *
@@ -85,64 +61,13 @@ static void Cpu_Id(int regs[4], int leaf)
  * HISTORY:                                                                                    *
  *    6/26/96 10:15AM ST : Created                                                             *
  *=============================================================================================*/
-
-extern "C" {
-
-char UseCMOV = 1;
-char HasCMOV = 1;
-char UseMMX = 1;
-char CPUType = 0;
-
-/*
- * Filled in by Detect_MMX_Availability from CPUID leaf 0. The buffer holds the twelve
- * vendor characters, the separating space the original wrote after them, and the
- * terminator Get_CPU_Type copies up to.
- */
-char VendorID[20] = "Not available";
-
-}
-
-
-/// <summary>
-/// Records the processor family in CPUType and the vendor in VendorID, and reports MMX
-/// support. The supported minimum hardware (SSE2, so a Pentium 4 or Athlon 64 onward) always
-/// has MMX, so this always sets UseMMX and returns true rather than reading the CPUID
-/// feature bit.
-/// </summary>
-/// <returns>bool; always true on the supported minimum hardware.</returns>
-bool __cdecl Detect_MMX_Availability(void)
-{
-	int regs[4];
-
-	char cputype = 4;
-
-	Cpu_Id(regs, 0);
-	int const maxleaf = regs[0];
-
-	std::memcpy(&VendorID[0], &regs[1], 4);
-	std::memcpy(&VendorID[4], &regs[3], 4);
-	std::memcpy(&VendorID[8], &regs[2], 4);
-	VendorID[12] = ' ';
-	VendorID[13] = '\0';
-
-	if (maxleaf >= 1) {
-		Cpu_Id(regs, 1);
-		cputype = (char)((regs[0] & 0x0F00) >> 8);
-	}
-
-	CPUType = cputype;
-
-	UseMMX = 1;
-	return(true);
-}
-
-
 void Get_CPU_Type(int & cpu_type, bool & mmx, char * vendor_id, int vendor_id_length)
 {
 	/*
 	**	Call the asm CPU detection code
 	*/
 	mmx = Detect_MMX_Availability();
+	Detect_CMOV_Availability();
 
 	/*
 	**	Return the promised results

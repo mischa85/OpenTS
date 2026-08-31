@@ -19,8 +19,7 @@
 *.pch
 
 # CMake and Visual Studio 2022
-[Bb]uild/
-[Bb]uild-*/
+[Bb]uild*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

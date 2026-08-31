@@ -130,7 +130,7 @@ VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, long framenum);
 long VQA_ReloadPalette(VQAHandleP *vqap, long framenum, int force);
 _STATIC long VQA_LoadLoop(VQAHandleP *vqap, long framenum);
 
-long __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
+intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 _STATIC long VQA_LoadFrame_Internal(VQAHandleP *vqap, long flags);
 
 long VQA_SeekGroup(VQAHandleP *vqap, long framenum, long groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
@@ -210,7 +210,7 @@ long VQA_LoadFrame(VQAHandleP *vqap, long flags)
 		cache = &vqap->LoopCache;
 		if (frame == vqap->LoopStartFrame0 && vqap->LoopID != cache->ID) {
 			if (frame != cache->Min) {
-				cache->Buffer = (char *)foffset;
+				cache->Buffer = foffset;
 				cache->Bytes = 0;
 				cache->Offset = 0;
 			}
@@ -245,7 +245,7 @@ long VQA_LoadFrame(VQAHandleP *vqap, long flags)
 		}
 		if ( frame >= cache->Min && frame <= cache->Max )
 		{
-			if (foffset == (long)cache->Buffer + cache->Bytes) {
+			if (foffset == cache->Buffer + cache->Bytes) {
 				if (frame < vqap->NumFrames - 1) {
 					tocache = VQAFRAME_OFFSET(foff[frame + 1]) - foffset;
 				} else {
@@ -267,10 +267,10 @@ long VQA_LoadFrame(VQAHandleP *vqap, long flags)
 				}
 			}
 
-			if ( foffset < (long)cache->Buffer + cache->Bytes )
+			if ( foffset < cache->Buffer + cache->Bytes )
 			{
 				restore_handler = true;
-				cache->Offset = foffset - (long)cache->Buffer;
+				cache->Offset = foffset - cache->Buffer;
 				oldhandler = config->StreamHandler;
 				config->StreamHandler = Memory_VQA_Stream_Handler;
 			}
@@ -1068,7 +1068,7 @@ long VQA_SeekLoop(VQAHandleP *vqap, long framenum, long flags)
 	foff = vqap->Foff;
 
 	if ((vqap->AltBufferFlags & VQAABUFF_ALTLOOP) && framenum == cache->Min && cache->Bytes != 0) {
-		if ((long)(unsigned char *)cache->Buffer + cache->Bytes <= (long)(unsigned char *)VQAFRAME_OFFSET(foff[vqap->LoopEndFrameMode2])) {
+		if (cache->Buffer + cache->Bytes <= (long)VQAFRAME_OFFSET(foff[vqap->LoopEndFrameMode2])) {
 			needs_seek = true;
 		}
 		cache->Offset = 0;
@@ -1081,7 +1081,7 @@ long VQA_SeekLoop(VQAHandleP *vqap, long framenum, long flags)
 	}
 
 	if (rc == VQAERR_NONE) {
-		if (needs_seek && vqap->Config.StreamHandler((VQAHandle *)vqap, VQACMD_SEEKPEEK, 0, long((int)cache->Buffer + cache->Bytes)) != 0) {
+		if (needs_seek && vqap->Config.StreamHandler((VQAHandle *)vqap, VQACMD_SEEKPEEK, 0, cache->Buffer + cache->Bytes) != 0) {
 			return(VQAERR_SEEK);
 		}
 	}

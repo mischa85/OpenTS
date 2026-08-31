@@ -13,6 +13,8 @@
 
 #ifndef VQAPLAY_H
 #define VQAPLAY_H
+
+#include <cstdint>
 /****************************************************************************
 *
 *         C O N F I D E N T I A L -- W E S T W O O D  S T U D I O S
@@ -161,7 +163,7 @@ class VQAClass;
 typedef void  (__cdecl *UNVQ_FUNC)(unsigned char *codebook, unsigned char *pointers, unsigned char *buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth);
 
 // Handlers must be this type
-typedef long (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
+typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
 // draw callback must be this type
 typedef long (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, long framenum);

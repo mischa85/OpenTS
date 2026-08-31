@@ -34,12 +34,13 @@
 
 #include "mpu.h"
 
-#include "platform.h"
+#include "win.h"
 
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
 #include <x86intrin.h>
 #endif
-
 #include <math.h>
 
 typedef union {
@@ -85,22 +86,6 @@ unsigned int Get_CPU_Rate(unsigned int & high)
 }
 
 
-/// <summary>
-/// Fetches the processor's time stamp counter, which increments every clock tick. The value
-/// is 64 bits wide; the low half is returned and the high half stored through the reference.
-/// RDTSC is available on every processor the supported minimum hardware covers (SSE2, so a
-/// Pentium 4 or Athlon 64 onward).
-/// </summary>
-/// <param name="high">Receives the high half of the 64 bit clock value.</param>
-/// <returns>unsigned int; the low half of the clock value.</returns>
-unsigned int Get_CPU_Clock(unsigned int & high)
-{
-	unsigned long long const stamp = __rdtsc();
-
-	high = (unsigned int)(stamp >> 32);
-	return((unsigned int)stamp);
-}
-
 
 /*
  * Based on code released by Intel
@@ -117,8 +102,6 @@ unsigned int Get_CPU_Clock(unsigned int & high)
 **
 **
 */
-
-#define ASM_RDTSC _asm _emit 0x0f _asm _emit 0x31
 
 // Max # of samplings to allow before giving up and returning current average.
 #define MAX_TRIES			20
@@ -138,18 +121,10 @@ static unsigned long TSC_High;
 /// <remarks>Only call this routine on a processor that supports the RDTSC opcode.</remarks>
 void RDTSC(void)
 {
-#ifdef _MSC_VER
-	_asm
-	{
-		ASM_RDTSC;
-		mov	TSC_Low, eax
-		mov	TSC_High, edx
-	}
-#else
 	unsigned long long const stamp = __rdtsc();
-	TSC_Low = (unsigned long)stamp;
+
+	TSC_Low = (unsigned long)(stamp & 0xFFFFFFFF);
 	TSC_High = (unsigned long)(stamp >> 32);
-#endif
 }
 
 
@@ -226,12 +201,7 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
-#ifdef _MSC_VER
-		ASM_RDTSC;
-		_asm	mov	stamp0, EAX
-#else
-		stamp0 = (unsigned int)__rdtsc();
-#endif
+		stamp0 = (unsigned long)(__rdtsc() & 0xFFFFFFFF);
 
 		t0.LowPart = t1.LowPart;		// Reset Initial Time
 		t0.HighPart = t1.HighPart;
@@ -244,12 +214,7 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
-#ifdef _MSC_VER
-		ASM_RDTSC;
-		_asm	mov	stamp1, EAX
-#else
-		stamp1 = (unsigned int)__rdtsc();
-#endif
+		stamp1 = (unsigned long)(__rdtsc() & 0xFFFFFFFF);
 
 
 		cycles = stamp1 - stamp0;					// # of cycles passed between reads

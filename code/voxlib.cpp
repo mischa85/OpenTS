@@ -15,6 +15,8 @@
 #include "wwfile.h"
 
 #include <algorithm>
+#include <climits>
+
 
 short VoxelPixelDeltaTable[VOXEL_BITMAP_WIDTH][2];
 unsigned char VoxelNormalTranslateTable[VOXEL_PALETTE_SIZE];
@@ -36,38 +38,12 @@ void __cdecl Draw_Voxel_Reverse(VoxelFuncArgumentStruct * state);
 void __cdecl Draw_Voxel_Regular_ZBuffer(VoxelFuncArgumentStruct * state);
 void __cdecl Draw_Voxel_Reverse_ZBuffer(VoxelFuncArgumentStruct * state);
 
-extern "C" {
-void __cdecl Draw_Voxel_Regular_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Regular_Lighting_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_Lighting_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Regular_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_UNUSED1_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_UNUSED2_ASM(VoxelFuncArgumentStruct * state);
-}
-
-VoxelFuncPtr VoxelDrawFunctions[32] = {
-
-	/// Assembly routines
-	&Draw_Voxel_Regular_Normals_ASM,
-	&Draw_Voxel_Reverse_Normals_ASM,
-	&Draw_Voxel_Regular_Normals_ZBuffer,
-	&Draw_Voxel_Reverse_Normals_ZBuffer,
-	&Draw_Voxel_Regular_Lighting_Normals_ASM,
-	&Draw_Voxel_Reverse_Lighting_Normals_ASM,
-	&Draw_Voxel_Regular_Normals_ZBuffer_Lighting,
-	&Draw_Voxel_Reverse_Normals_ZBuffer_Lighting,
-	&Draw_Voxel_Regular_ASM,
-	&Draw_Voxel_Reverse_ASM,
-	&Draw_Voxel_Regular_ZBuffer,
-	&Draw_Voxel_Reverse_ZBuffer,
-	&Draw_Voxel_Regular_ASM,
-	&Draw_Voxel_Reverse_ASM,
-	&Draw_Voxel_Regular_ZBuffer,
-	&Draw_Voxel_Reverse_ZBuffer,
-
-	/// The same set again, with the C++ drawers in place of the assembly ones.
+/*
+ * Indexed by the orientation's direction together with the depth buffer, lighting and normal
+ * type switches, which is why the last four entries repeat the four before them: the normal
+ * type does not change which drawer is wanted once lighting is off.
+ */
+VoxelFuncPtr VoxelDrawFunctions[16] = {
 	&Draw_Voxel_Regular_Normals,
 	&Draw_Voxel_Reverse_Normals,
 	&Draw_Voxel_Regular_Normals_ZBuffer,
@@ -818,22 +794,22 @@ void VoxelLibrary::Render_Object(VoxelRenderStruct & voxel, Vector3 & center)
 
 	/// The drawer sums these deltas down the length of the model, so an error of
 	/// one unit here becomes one unit per voxel by the far end.
-	arg.TransformMatrix[0].I = static_cast<unsigned short>(static_cast<int>(((double)corner_0.X + 128 - (double)center.X) * 256.0));
-	arg.TransformMatrix[0].J = static_cast<unsigned short>(static_cast<int>(((double)corner_0.Y + 128 - (double)center.Y) * 256.0));
-	arg.TransformMatrix[0].K = static_cast<unsigned short>(static_cast<int>(((double)corner_0.Z + 128 - (double)center.Z) * 256.0));
+	arg.TransformMatrix[0].I = short(float((double)corner_0.X + 128 - (double)center.X) * 256);
+	arg.TransformMatrix[0].J = short(float((double)corner_0.Y + 128 - (double)center.Y) * 256);
+	arg.TransformMatrix[0].K = short(float((double)corner_0.Z + 128 - (double)center.Z) * 256);
 
-	arg.TransformMatrix[1].I = static_cast<unsigned short>(static_cast<int>((corner_x.X - corner_0.X) / (double)x_size * 256.0));
-	arg.TransformMatrix[2].I = static_cast<unsigned short>(static_cast<int>((corner_y.X - corner_0.X) / (double)y_size * 256.0));
-	arg.TransformMatrix[3].I = static_cast<unsigned short>(static_cast<int>((corner_z.X - corner_0.X) / (double)z_size * 256.0));
+	arg.TransformMatrix[1].I = short(float(corner_x.X - corner_0.X) / (double)x_size * 256);
+	arg.TransformMatrix[2].I = short(float(corner_y.X - corner_0.X) / (double)y_size * 256);
+	arg.TransformMatrix[3].I = short(float(corner_z.X - corner_0.X) / (double)z_size * 256);
 
-	arg.TransformMatrix[1].J = static_cast<unsigned short>(static_cast<int>((corner_x.Y - corner_0.Y) / (double)x_size * 256.0));
-	arg.TransformMatrix[2].J = static_cast<unsigned short>(static_cast<int>((corner_y.Y - corner_0.Y) / (double)y_size * 256.0));
-	arg.TransformMatrix[3].J = static_cast<unsigned short>(static_cast<int>((corner_z.Y - corner_0.Y) / (double)z_size * 256.0));
+	arg.TransformMatrix[1].J = short(float(corner_x.Y - corner_0.Y) / (double)x_size * 256);
+	arg.TransformMatrix[2].J = short(float(corner_y.Y - corner_0.Y) / (double)y_size * 256);
+	arg.TransformMatrix[3].J = short(float(corner_z.Y - corner_0.Y) / (double)z_size * 256);
 
 	if (VoxelDrawSystem::EnableZBuffer) {
-		arg.TransformMatrix[1].K = static_cast<unsigned short>(static_cast<int>((corner_x.Z - corner_0.Z) / (double)x_size * 256.0));
-		arg.TransformMatrix[2].K = static_cast<unsigned short>(static_cast<int>((corner_y.Z - corner_0.Z) / (double)y_size * 256.0));
-		arg.TransformMatrix[3].K = static_cast<unsigned short>(static_cast<int>((corner_z.Z - corner_0.Z) / (double)z_size * 256.0));
+		arg.TransformMatrix[1].K = short(float(corner_x.Z - corner_0.Z) / (double)x_size * 256);
+		arg.TransformMatrix[2].K = short(float(corner_y.Z - corner_0.Z) / (double)y_size * 256);
+		arg.TransformMatrix[3].K = short(float(corner_z.Z - corner_0.Z) / (double)z_size * 256);
 	}
 
 	int funcnum = VoxelRenderOrientations[orientation].Reversed;
@@ -934,14 +910,14 @@ void VoxelLibrary::Render_Shadow(VoxelShadowRenderStruct & voxel, Vector3 & cent
 	arg.StrideY = x_size;
 	arg.StartIndex = 0;
 
-	arg.TransformMatrix[0].I = static_cast<unsigned short>(static_cast<int>((corner_0.X + 128 - center.X) * 256.0));
-	arg.TransformMatrix[0].J = static_cast<unsigned short>(static_cast<int>((corner_0.Y + 128 - center.Y) * 256.0));
+	arg.TransformMatrix[0].I = short(float(corner_0.X + 128 - center.X) * 256);
+	arg.TransformMatrix[0].J = short(float(corner_0.Y + 128 - center.Y) * 256);
 
-	arg.TransformMatrix[1].I = static_cast<unsigned short>(static_cast<int>((corner_x.X - corner_0.X) / x_size * 256.0));
-	arg.TransformMatrix[2].I = static_cast<unsigned short>(static_cast<int>((corner_y.X - corner_0.X) / y_size * 256.0));
+	arg.TransformMatrix[1].I = short(float(corner_x.X - corner_0.X) / x_size * 256);
+	arg.TransformMatrix[2].I = short(float(corner_y.X - corner_0.X) / y_size * 256);
 
-	arg.TransformMatrix[1].J = static_cast<unsigned short>(static_cast<int>((corner_x.Y - corner_0.Y) / x_size * 256.0));
-	arg.TransformMatrix[2].J = static_cast<unsigned short>(static_cast<int>((corner_y.Y - corner_0.Y) / y_size * 256.0));
+	arg.TransformMatrix[1].J = short(float(corner_x.Y - corner_0.Y) / x_size * 256);
+	arg.TransformMatrix[2].J = short(float(corner_y.Y - corner_0.Y) / y_size * 256);
 
 	_voxel_draw_shadow(&arg);
 }
@@ -1120,9 +1096,11 @@ void __cdecl Draw_Voxel_Regular_Normals(VoxelFuncArgumentStruct * state)
 							 */
 							ptr++;
 
-							/// Compute buffer index and write color
+							/// Compute buffer index and write color. A voxel covers two
+							/// buffer bytes, so the colour goes down twice.
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							VoxelDrawBuffer[buffer_index] = color_index;
+							VoxelDrawBuffer[buffer_index + 1] = color_index;
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -1206,9 +1184,11 @@ void __cdecl Draw_Voxel_Reverse_Normals(VoxelFuncArgumentStruct * state)
 							unsigned char color_index = *ptr;
 							ptr--;
 
-							/// Compute buffer index and write color
+							/// Compute buffer index and write color. A voxel covers two
+							/// buffer bytes, so the colour goes down twice.
 							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
 							VoxelDrawBuffer[buffer_index] = color_index;
+							VoxelDrawBuffer[buffer_index + 1] = color_index;
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -1986,10 +1966,9 @@ void __cdecl Draw_Voxel_Regular(VoxelFuncArgumentStruct * state)
 							unsigned char color_index = *ptr;
 							ptr++;
 
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							/// Compute buffer index and write color. Unlike the shaded
+							/// drawers, this one covers a single buffer byte per voxel.
+							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00)] = color_index;
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;
@@ -2067,10 +2046,9 @@ void __cdecl Draw_Voxel_Reverse(VoxelFuncArgumentStruct * state)
 							unsigned char color_index = *ptr;
 							ptr--;
 
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
+							/// Compute buffer index and write color. Unlike the shaded
+							/// drawers, this one covers a single buffer byte per voxel.
+							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00)] = color_index;
 
 							pixel_x += state->TransformMatrix[3].I;
 							pixel_y += state->TransformMatrix[3].J;

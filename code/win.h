@@ -36,11 +36,21 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
+#ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
 #include <windowsx.h>
 #include <winnt.h>
 #include <winuser.h>
+#else
+#include "platform.h"
+
+typedef void * HWND;
+typedef void * HINSTANCE;
+typedef void * HDC;
+typedef void * HBITMAP;
+typedef void * HGDIOBJ;
+#endif
 
 extern int			ShowCommand;
 extern HINSTANCE	ProgramInstance;
