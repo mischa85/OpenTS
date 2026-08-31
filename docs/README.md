@@ -13,6 +13,8 @@ Each document owns one class of project fact:
   accidents.
 - [Project direction](DIRECTION.md) — the architectural direction behind the
   roadmap.
+- [Porting](PORTING.md) — the native macOS/Linux port: strategy, stages, and
+  status.
 
 Contribution process and review expectations live in
 [CONTRIBUTING.md](../CONTRIBUTING.md), and the public manual for players and
