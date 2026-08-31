@@ -56,3 +56,10 @@ manual/data/.manual-generate-*/
 
 # Agent worktrees, which are checkouts of this repository placed inside it
 /.claude/worktrees/
+
+# Game data never enters the repository.
+discs/
+*.iso
+*.7z
+*.bin
+*.cue
