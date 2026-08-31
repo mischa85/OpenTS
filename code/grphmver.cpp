@@ -15,6 +15,7 @@
 #include "ini.h"
 #include "init.h"
 #include "msanim.h"
+#include "screenlayout.h"
 
 /// <summary>
 /// Creates a version text item from a graphic menu INI section.
@@ -81,7 +82,7 @@ bool MSVersionTextAnim::Advance(Surface * surface, Rect & rect)
 {
 	if (!Done) {
 		if (Active) {
-			Draw_Version_Text(surface);
+			Draw_Version_Text(surface, Shell_Rect());
 			Done = true;
 		}
 	}
@@ -108,7 +109,7 @@ MSVersionTextAnim::~MSVersionTextAnim(void)
 void MSVersionTextAnim::Redraw(Surface * surface, Rect const * rect)
 {
 	if (!Done && Active) {
-		Draw_Version_Text(surface);
+		Draw_Version_Text(surface, Shell_Rect());
 	}
 }
 
@@ -121,7 +122,7 @@ void MSVersionTextAnim::Redraw(Surface * surface, Rect const * rect)
 void MSVersionTextAnim::Restore(Rect const & rect)
 {
 	if (Active) {
-		Draw_Version_Text(AlternateSurface);
+		Draw_Version_Text(AlternateSurface, Shell_Rect());
 	}
 }
 

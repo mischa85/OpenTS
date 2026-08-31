@@ -138,6 +138,13 @@ class GraphicMenu
 		MSAnim * CurrentAnim;
 
 		/*
+		 * This is the size of the backdrop the items were placed against, and so the size of
+		 * the design space the page is magnified out of while it is up. It is empty until a
+		 * backdrop supplies one, which leaves the page drawn at the size of the frame.
+		 */
+		Point2D LayoutSize;
+
+		/*
 		 * These are the items the player may pick from. The menu owns them and destroys
 		 * them along with itself.
 		 */

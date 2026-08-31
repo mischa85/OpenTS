@@ -25,6 +25,7 @@
 #include "mixfile.h"
 #include "ownrdraw.h"
 #include "scheme.h"
+#include "screenlayout.h"
 #include "session.h"
 #include "shapeset.h"
 #include "surface.h"
@@ -123,7 +124,16 @@ void ProgressScreenClass::Set_Graphic_Data(const char * progbar, const char * ba
 	String = string;
 	if (background != NULL) {
 		Background = background;
-		Load_Title_Page(Background, false);
+
+		/*
+		 * The title page is filled out to the frame, which moves the slot in the artwork
+		 * that the caller placed its bars and captions against, so they are carried the
+		 * same distance.
+		 */
+		Point2D const picture = Load_Title_Page(Background, false);
+		if (pt.X != -1 || pt.Y != -1) {
+			pt = Fit_Point(pt, picture, HiddenSurface->Get_Rect());
+		}
 	}
 
 	ColorScheme * scheme = Fetch_Scheme_By_Name("Yellow");

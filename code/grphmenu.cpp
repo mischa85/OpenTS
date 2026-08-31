@@ -20,6 +20,7 @@
 #include "keyboard.h"
 #include "msanim.h"
 #include "ownrdraw.h"
+#include "screenlayout.h"
 #include "theme.h"
 
 GraphicMenu * _Graphic_Menu(INIClass const & ini, const char * name);
@@ -83,7 +84,17 @@ GraphicMenu * _Graphic_Menu(INIClass const & ini, const char * name)
 		}
 
 		menu->Set_Animation(anim);
-		pt = anim->Get_Rect().TopLeft;
+
+		/*
+		 * The items are placed against the backdrop, so its rectangle is both where they
+		 * are offset from and the design space the finished page is magnified out of. It
+		 * is taken from the backdrop rather than assumed, so that artwork drawn larger than
+		 * the shell's historical 640x400 is magnified whole instead of being cut down to
+		 * that.
+		 */
+		Rect const backdrop = anim->Get_Rect();
+		pt = backdrop.TopLeft;
+		menu->LayoutSize = Point2D(backdrop.Width, backdrop.Height);
 	}
 
 	if (ini.Get_String(name, "Theme", "", buffer, sizeof(buffer)) > 0) {
@@ -114,7 +125,8 @@ GraphicMenu * _Graphic_Menu(INIClass const & ini, const char * name)
 GraphicMenu::GraphicMenu(void) :
 	Engine(),
 	Items(),
-	CurrentAnim(NULL)
+	CurrentAnim(NULL),
+	LayoutSize(0, 0)
 {
 	BackgroundName.Set("Title.PCX");
 	ThemeName.Set("Intro");
@@ -182,6 +194,12 @@ int GraphicMenu::Presentation(void)
 {
 	Theme.Play_Song(Theme.From_Name(ThemeName.Peek()));
 
+	/*
+	 * The page is laid out against its backdrop and magnified out of it, so the design space
+	 * is claimed for as long as the page is up and given back before anything else draws.
+	 */
+	Set_Shell_Size(LayoutSize);
+
 	OwnerDraw::Capture_Mouse();
 
 	HiddenSurface->Fill(0);
@@ -204,7 +222,7 @@ int GraphicMenu::Presentation(void)
 		Engine.Wait_For_Focus();
 		Show_Mouse();
 
-		Point2D mouse(Get_Mouse_X(), Get_Mouse_Y());
+		Point2D mouse = Screen_To_Shell(Point2D(Get_Mouse_X(), Get_Mouse_Y()));
 
 		if (Keyboard->Check() != KN_NONE) {
 			KeyNumType key = Keyboard->Get();
@@ -243,6 +261,8 @@ int GraphicMenu::Presentation(void)
 	}
 
 	OwnerDraw::Release_Mouse();
+
+	Set_Shell_Size(Point2D(0, 0));
 
 	Theme.Fade_Out();
 

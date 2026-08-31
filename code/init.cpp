@@ -248,7 +248,6 @@ static bool Init_Rules(void);
 static void Init_Commands(void);
 static CampaignType Choose_Campaign(void);
 static void Init_Threads(void);
-void Draw_Version_Text(Surface * surface);
 void Version_Dialog(void);
 
 static BOOL CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -2129,12 +2128,23 @@ void Init_Random(void)
  * HISTORY:                                                                                    *
  *   06/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-void Load_Title_Page(const char * name, bool visible)
+Point2D Load_Title_Page(const char * name, bool visible)
 {
 	HiddenSurface->Fill(0);
-	Load_Title_Screen(name, HiddenSurface, &CCPalette);
+
+	/*
+	 * The title page is the whole of what this screen shows, so it is magnified to fill the
+	 * frame rather than left at the size it was drawn. It is filled out where it is drawn
+	 * rather than on its way to the screen, so that a dialog opening over it and every
+	 * later repaint of the frame carry the filled picture rather than the small one. The
+	 * size drawn is returned for a caller that has its own artwork to move with it.
+	 */
+	Point2D const size = Load_Title_Screen(name, HiddenSurface, &CCPalette, true);
+
 	if (visible)
 		Update_Visible_Surface(HiddenSurface);
+
+	return(size);
 }
 
 
@@ -3507,7 +3517,9 @@ void Title_Screen_Restore(bool force)
 /// nothing at all until the color schemes have been loaded.
 /// </summary>
 /// <param name="surface">The surface to print the version text upon.</param>
-void Draw_Version_Text(Surface * surface)
+/// <param name="area">The area to stamp within, whose bottom right corner the text is
+/// placed against. The whole surface is used when none is given.</param>
+void Draw_Version_Text(Surface * surface, Rect const & area)
 {
 	char version[128];
 	Rect rect;
@@ -3521,13 +3533,13 @@ void Draw_Version_Text(Surface * surface)
 
 	Cheat_Version_Suffix(version);
 
-	rect = surface->Get_Rect();
+	rect = area.Is_Valid() ? area : surface->Get_Rect();
 
 	Fancy_Text_Print(
 		"V%s",
 		*surface,
 		rect,
-		Point2D(rect.X + rect.Width - 2, rect.Y + rect.Height - 20),
+		Point2D(rect.Width - 2, rect.Height - 20),
 		Fetch_Scheme_By_Name("Green"),
 		TBLACK,
 		(TextPrintType)(TPF_EFNT|TPF_NOSHADOW|TPF_RIGHT),
@@ -3538,7 +3550,7 @@ void Draw_Version_Text(Surface * surface)
 		Fetch_String(TXT_COPYRIGHT),
 		*surface,
 		rect,
-		Point2D(rect.X + rect.Width - 2, rect.Y + rect.Height - 10),
+		Point2D(rect.Width - 2, rect.Height - 10),
 		Fetch_Scheme_By_Name("Green"),
 		TBLACK,
 		(TextPrintType)(TPF_EFNT|TPF_NOSHADOW|TPF_RIGHT)

@@ -12,6 +12,8 @@
 #include "point.h"
 #include "rect.h"
 
+class Surface;
+
 /*
  * The largest interface magnification the game will use. Beyond this the sidebar takes more
  * of the screen than the world it belongs to.
@@ -83,3 +85,65 @@ Rect Sidebar_To_Screen(Rect const & rect);
 /// <param name="point">The point in screen pixels.</param>
 /// <returns>Returns with the point in the sidebar surface's own coordinates.</returns>
 Point2D Screen_To_Sidebar(Point2D const & point);
+
+
+/// <summary>
+/// Says what size the screen coming up lays itself out at.
+/// </summary>
+/// <param name="size">The size of the screen's artwork, or an empty size to leave the
+/// frame unmagnified.</param>
+/// <remarks>A screen that has been converted to the design space sets this as it comes up
+/// and clears it as it goes away. A size rather than a rectangle is kept, because a mode
+/// change moves where the design space sits without changing how big it is.</remarks>
+void Set_Shell_Size(Point2D const & size);
+
+/// <summary>
+/// The rectangle the shell design space occupies in the surfaces the shell draws into.
+/// </summary>
+/// <returns>Returns with the design rectangle, centered in the surfaces the shell draws
+/// itself into. The whole of one of those surfaces is returned when no screen has claimed a
+/// design space.</returns>
+Rect Shell_Rect(void);
+
+/// <summary>
+/// Converts a rectangle of the shell design space into the screen rectangle it is
+/// magnified into.
+/// </summary>
+/// <param name="rect">The rectangle in shell design coordinates.</param>
+/// <returns>Returns with the same area expressed in screen pixels.</returns>
+Rect Shell_To_Screen(Rect const & rect);
+
+/// <summary>
+/// Converts a screen point into the shell design pixel drawn beneath it.
+/// </summary>
+/// <param name="point">The point in screen pixels.</param>
+/// <returns>Returns with the point in shell design coordinates.</returns>
+Point2D Screen_To_Shell(Point2D const & point);
+
+/// <summary>
+/// Copies a region of a shell surface onto the visible screen, magnified.
+/// </summary>
+/// <param name="surface">The surface holding the drawn shell screen.</param>
+/// <param name="rect">The region to copy, in shell design coordinates.</param>
+void Blit_Shell(Surface & surface, Rect const & rect);
+
+/// <summary>
+/// The largest rectangle of a picture's shape that a frame holds, centered in it.
+/// </summary>
+/// <param name="size">The size of the picture to fit.</param>
+/// <param name="frame">The rectangle to fit it into.</param>
+/// <returns>Returns with the fitted rectangle, or the frame itself if the size is
+/// empty.</returns>
+Rect Fit_Centered(Point2D const & size, Rect const & frame);
+
+/// <summary>
+/// Carries a point placed against a centered picture over to the same picture filled out.
+/// </summary>
+/// <param name="point">The point, placed against the picture centered at its own size.</param>
+/// <param name="size">The size of the picture.</param>
+/// <param name="frame">The rectangle the picture was fitted into.</param>
+/// <returns>Returns with where that point has moved to.</returns>
+/// <remarks>The loading screens place their captions against artwork centered at the size
+/// it was drawn. Filling the artwork out moves the slot the caption belongs in, and this is
+/// what moves the caption with it.</remarks>
+Point2D Fit_Point(Point2D const & point, Point2D const & size, Rect const & frame);

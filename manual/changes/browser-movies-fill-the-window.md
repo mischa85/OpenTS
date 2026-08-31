@@ -13,6 +13,6 @@ tablet, about a fifth of the screen — and the display options that carry the s
 reachable in that build to turn it on. Every other target keeps the setting off unless
 `sun.ini` or the display options say otherwise.
 
-Menu backdrops and title screens are unaffected, as they always were: a shell screen places
-its lettering and its choices against artwork of a fixed size, so that artwork stays the size
-it is drawn at.
+Menu backdrops and title screens are not affected by this setting. A shell screen places its
+lettering and its choices against artwork of a fixed size and is magnified out of that
+rectangle whole, which is its own change in this release.

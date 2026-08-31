@@ -22,6 +22,7 @@
 #include "msgloop.h"
 #include "mssfx.h"
 #include "rect.h"
+#include "screenlayout.h"
 #include "surface.h"
 #include "win.h"
 
@@ -218,7 +219,8 @@ void MSEngine::Advance(Surface * surface)
 	}
 
 	for (int i = 0; i < Anims.Count(); i++) {
-		Rect rect;
+		// An anim with nothing to update leaves this alone, so it starts as no region at all.
+		Rect rect(0, 0, 0, 0);
 		if (Anims[i]->Advance(surface, rect) == true) {
 			delete Anims[i];
 			Anims.Delete_Index(i);
@@ -344,12 +346,15 @@ void MSEngine::Add_Update_Rect(Rect const & rect)
 /// The pending list is emptied as a result.
 /// </summary>
 /// <param name="surface">The surface holding the freshly drawn frame.</param>
+/// <remarks>The regions are in the shell design space, which a screen that has claimed one
+/// is magnified out of on its way to the screen. A screen that has not claimed one has a
+/// design space the size of the frame, so its regions reach the screen unchanged.</remarks>
 void MSEngine::Blit_All(Surface * surface)
 {
 	if (RectCount > 0) {
 
 		for (int i = 0; i < RectCount; i++) {
-			VisibleSurface->Blit_From(Rects[i], *surface, Rects[i]);
+			Blit_Shell(*surface, Rects[i]);
 		}
 
 		RectCount = 0;
@@ -370,7 +375,7 @@ void MSEngine::Blit_Rect(Surface * surface, Rect const & rect)
 {
 	if (rect.Is_Valid()) {
 
-		VisibleSurface->Blit_From(rect, *surface, rect);
+		Blit_Shell(*surface, rect);
 
 		Video_Present_If_Dirty();
 	}

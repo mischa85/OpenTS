@@ -49,6 +49,7 @@
 #include "_rect.h"
 #include "_surface.h"
 #include "_tooltip.h"
+#include "bsurface.h"
 #include "ccfile.h"
 #include "cctooltip.h"
 #include "convert.h"
@@ -66,6 +67,7 @@
 #include "msgroute.h"
 #include "pcx.h"
 #include "resource.h"
+#include "screenlayout.h"
 #include "theme.h"
 #include "video.h"
 #include "win.h"
@@ -77,6 +79,8 @@
 #include "mainopt.h"
 #include "conquer.h"
 #include "opents_version.h"
+
+#include "color.hh"
 
 #include <algorithm>
 #if defined(__EMSCRIPTEN__)
@@ -531,7 +535,7 @@ void Create_Main_Window ( HINSTANCE instance , int command_show , int width , in
 
 
 /// <summary>
-/// Loads a title screen picture and centers it on the surface.
+/// Loads a title screen picture and places it on the surface.
 /// This routine is used by the startup and scenario loading sequences to put some
 /// artwork on the screen while the game gets itself ready. A paletted picture is
 /// drawn through a converter built from the palette supplied.
@@ -539,24 +543,49 @@ void Create_Main_Window ( HINSTANCE instance , int command_show , int width , in
 /// <param name="name">The name of the picture file to load.</param>
 /// <param name="surface">The surface to draw the title screen upon.</param>
 /// <param name="palette">The palette to load the picture's colors into.</param>
-void Load_Title_Screen(char const * name, Surface * surface, PaletteClass * palette)
+/// <param name="fill">Should the picture be magnified to fill the surface?</param>
+/// <returns>Returns with the size of the picture drawn, or an empty size if there was
+/// none.</returns>
+/// <remarks>The picture is centered at the size it was drawn unless the caller asks for it
+/// to be filled out, because a caller that goes on to place its own artwork against the
+/// picture -- the score screens and the mission restatement do -- places it at that size.
+/// A filled picture keeps its shape and leaves black beside it.</remarks>
+Point2D Load_Title_Screen(char const * name, Surface * surface, PaletteClass * palette, bool fill)
 {
 	Surface *load_buffer;
 	CCFileClass file(name);
 	load_buffer = Read_PCX_File (file, palette);
 
-	if (load_buffer) {
-		Point2D point;
-		int x = (surface->Get_Width() - load_buffer->Get_Width()) / 2;
-		int y = (surface->Get_Height() - load_buffer->Get_Height()) / 2;
-		if (palette && load_buffer->Bytes_Per_Pixel() == 1) {
-			ConvertClass *drawer = new ConvertClass(*palette, *palette, *surface);
-			Blit_Block(*surface, *drawer, *load_buffer, load_buffer->Get_Rect(), Point2D(x, y), surface->Get_Rect());
-			delete drawer;
-		} else {
-
-			surface->Blit_From(surface->Get_Rect(), Rect(x, y, load_buffer->Get_Width(), load_buffer->Get_Height()), *load_buffer, load_buffer->Get_Rect(), load_buffer->Get_Rect());
-		}
-		delete load_buffer;
+	if (load_buffer == NULL) {
+		return(Point2D(0, 0));
 	}
+
+	Point2D const size(load_buffer->Get_Width(), load_buffer->Get_Height());
+	Rect const dest = fill
+		? Fit_Centered(size, surface->Get_Rect())
+		: Rect((surface->Get_Width() - size.X) / 2, (surface->Get_Height() - size.Y) / 2, size.X, size.Y);
+
+	if (palette && load_buffer->Bytes_Per_Pixel() == 1) {
+		ConvertClass *drawer = new ConvertClass(*palette, *palette, *surface);
+		if (dest.Width == size.X && dest.Height == size.Y) {
+			Blit_Block(*surface, *drawer, *load_buffer, load_buffer->Get_Rect(), dest.TopLeft, surface->Get_Rect());
+		} else {
+			/*
+			 * Blit_Block converts the palette but does not magnify, so the conversion is
+			 * done once into a buffer of the picture's own size and the surface blit
+			 * magnifies what came out of it.
+			 */
+			BSurface converted(size.X, size.Y, surface->Bytes_Per_Pixel());
+			converted.Fill(TBLACK);
+			Blit_Block(converted, *drawer, *load_buffer, load_buffer->Get_Rect(), Point2D(0, 0), converted.Get_Rect());
+			surface->Blit_From(dest, converted, converted.Get_Rect());
+		}
+		delete drawer;
+	} else {
+		surface->Blit_From(surface->Get_Rect(), dest, *load_buffer, load_buffer->Get_Rect(), load_buffer->Get_Rect());
+	}
+
+	delete load_buffer;
+
+	return(size);
 }
