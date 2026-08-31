@@ -37,6 +37,20 @@ char Browser_Key_To_ASCII(unsigned short) { return('\0'); }
 int Browser_Mouse_X(void) { return(0); }
 int Browser_Mouse_Y(void) { return(0); }
 
+
+/*
+** Somewhere to type. In the engine this raises and dismisses the page's own keyboard;
+** here it is a flag, because whether the window manager asks at the right moment is the
+** part a harness can hold it to.
+*/
+static bool _TextInputWanted = false;
+
+void Browser_Begin_Text_Input(void) { _TextInputWanted = true; }
+void Browser_End_Text_Input(void) { _TextInputWanted = false; }
+
+bool Test_Text_Input_Wanted(void) { return(_TextInputWanted); }
+
+
 void Game_Point_To_Window(POINT &) {}
 
 

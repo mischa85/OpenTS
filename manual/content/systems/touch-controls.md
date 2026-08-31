@@ -73,6 +73,12 @@ the game is waiting for the name and puts it away afterwards. A phone or tablet 
 its keyboard except in answer to a gesture, so if it does not appear by itself, one tap
 anywhere brings it up.
 
+A text field in a dialog — the name in skirmish and multiplayer setup is the one most players
+meet — asks for the same keyboard, for as long as the field holds the focus. Tapping the field
+is what gives it the focus, and the keyboard goes away when the focus moves to another control
+or the dialog closes. The same rule about a gesture applies: if the keyboard does not appear
+with the tap that reached the field, the next one brings it up.
+
 ## Panning during a scripted sequence
 
 Two fingers move the map directly rather than through the input the engine drops while it is

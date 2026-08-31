@@ -14,5 +14,4 @@ The engine now says while it is waiting for that name, and the page asks for its
 for as long as it waits; a device that will not raise one except in answer to a gesture does so
 on the next tap. What is typed reaches the game through the ordinary key queue, including the
 characters a software keyboard reports without a key event of their own. Nothing changes on a
-target with a real keyboard. Text fields inside a dialog, such as the name in skirmish setup,
-do not raise a keyboard yet.
+target with a real keyboard.

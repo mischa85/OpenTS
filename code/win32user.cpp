@@ -166,6 +166,13 @@ static POINT _LastMouse = { -1, -1 };
 static unsigned char _LastKeyDown[256];
 static bool _InputStarted = false;
 
+/*
+** Defined with the rest of the page's input, alongside the rule that decides which windows
+** are fed keys from there at all. Focus is what reaches it, and focus is settled long
+** before that section.
+*/
+static void Update_Text_Input(void);
+
 
 /*
 ** ---------------------------------------------------------------------------------------
@@ -1087,7 +1094,10 @@ static void Destroy_Window(UserWindow * window)
 
 	SendMessageA(handle, WM_NCDESTROY, 0, 0);
 
-	if (_Focus == window) _Focus = nullptr;
+	if (_Focus == window) {
+		_Focus = nullptr;
+		Update_Text_Input();
+	}
 	if (_Active == window) _Active = nullptr;
 	if (_Foreground == window) _Foreground = nullptr;
 	if (_PaintWindow == window) _PaintWindow = nullptr;
@@ -1780,6 +1790,8 @@ HWND SetFocus(HWND window)
 	if (entry != nullptr) {
 		SendMessageA(window, WM_SETFOCUS, (WPARAM)(previous != nullptr ? Handle_Of(previous) : nullptr), 0);
 	}
+
+	Update_Text_Input();
 
 	return(previous != nullptr ? Handle_Of(previous) : nullptr);
 }
@@ -2710,6 +2722,39 @@ BOOL IsDialogMessageA(HWND dialog, LPMSG message)
 static bool Takes_Keys(UserWindow const * window)
 {
 	return(window != nullptr && window->Parent != nullptr && window->Enabled);
+}
+
+
+/// <summary>
+/// Tells the page whether what holds the focus is somewhere the player may type.
+/// </summary>
+/// <remarks>
+/// A device whose only keyboard is drawn on its screen raises one for whatever the page has
+/// focused, so the engine's own focus is what has to be relayed. WM_GETDLGCODE is the
+/// question Windows already asks a control about what it wants from the keyboard, and an
+/// edit control is the one that answers DLGC_WANTCHARS; a window the keys are not delivered
+/// to in the first place is not asked at all. Answering the question can move the focus
+/// again -- ownrdraw.cpp deflects focus away from an edit control it has not yet revealed --
+/// and the nested SetFocus that does so has already settled this, so its answer stands.
+///
+/// The hall of fame asks for a keyboard directly, because there is no control to focus and
+/// nothing here can speak for it.
+/// </remarks>
+static void Update_Text_Input(void)
+{
+	UserWindow * focus = _Focus;
+	bool wanted = false;
+
+	if (Takes_Keys(focus)) {
+		LRESULT code = SendMessageA(Handle_Of(focus), WM_GETDLGCODE, 0, 0);
+		wanted = ((code & DLGC_WANTCHARS) != 0) && (_Focus == focus);
+	}
+
+	if (wanted) {
+		Browser_Begin_Text_Input();
+	} else {
+		Browser_End_Text_Input();
+	}
 }
 
 

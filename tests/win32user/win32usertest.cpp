@@ -534,6 +534,56 @@ static void Check_Focus(HINSTANCE instance, HWND frame)
 }
 
 
+#if defined(__EMSCRIPTEN__)
+
+// What win32usersupport.cpp recorded in place of the page raising its keyboard.
+bool Test_Text_Input_Wanted(void);
+
+
+/*
+** A page has no keyboard of its own, so the window manager asks for one on behalf of
+** whatever holds the focus, and a device that draws its keyboard on the screen shows it
+** for as long as the request stands. Windows has no counterpart to ask about; what is
+** checked here is only that the request follows the focus, and the two WM_GETDLGCODE
+** answers it is decided from are the ones USER32 gives for the same two controls.
+*/
+static void Check_Text_Input(HINSTANCE instance, HWND frame)
+{
+	HWND edit = CreateWindowExA(0, "Edit", NULL, WS_CHILD | WS_VISIBLE,
+		0, 0, 100, 20, frame, (HMENU)(ULONG_PTR)3101, instance, NULL);
+	HWND button = CreateWindowExA(0, "Button", NULL, WS_CHILD | WS_VISIBLE,
+		0, 30, 100, 20, frame, (HMENU)(ULONG_PTR)3102, instance, NULL);
+
+	Check("CreateWindowEx builds the controls the focus moves between",
+		edit != NULL && button != NULL);
+	if (edit == NULL || button == NULL) {
+		return;
+	}
+
+	Check("An edit control asks for characters",
+		(SendMessageA(edit, WM_GETDLGCODE, 0, 0) & DLGC_WANTCHARS) != 0);
+	Check("A button does not",
+		(SendMessageA(button, WM_GETDLGCODE, 0, 0) & DLGC_WANTCHARS) == 0);
+
+	SetFocus(button);
+	Check("A button holding the focus asks for no keyboard", !Test_Text_Input_Wanted());
+
+	SetFocus(edit);
+	Check("An edit control holding the focus asks for one", Test_Text_Input_Wanted());
+
+	SetFocus(button);
+	Check("The focus leaving it takes the request back", !Test_Text_Input_Wanted());
+
+	SetFocus(edit);
+	DestroyWindow(edit);
+	Check("Destroying it takes the request back", !Test_Text_Input_Wanted());
+
+	DestroyWindow(button);
+}
+
+#endif	// __EMSCRIPTEN__
+
+
 static void Check_Destruction(HINSTANCE instance, HWND frame)
 {
 	HWND parent = CreateWindowExA(0, "OpenTSTestControl", NULL, WS_CHILD | WS_VISIBLE,
@@ -958,6 +1008,9 @@ int main(void)
 	Check_Destruction(instance, frame);
 	Check_Dialog_Templates(instance, frame);
 	Check_Stock_Controls(instance, frame);
+#if defined(__EMSCRIPTEN__)
+	Check_Text_Input(instance, frame);
+#endif
 
 	Check("A class with live windows cannot be unregistered",
 		UnregisterClassA("OpenTSTestFrame", instance) == FALSE);

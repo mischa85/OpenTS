@@ -427,8 +427,9 @@ Not established, and not to be read into the above:
   `CreateDialogIndirectParamA` builds the dialog and its controls out of the
   template (`code/win32user.cpp:2432`), converting dialog units at `:2463` and
   `:2485`. Dialogs open and are drawn. What has not been established is each
-  dialog doing its job: the options and load screens have been used, skirmish
-  setup has not.
+  dialog doing its job: the options and load screens have been used, and
+  skirmish setup has had its check boxes toggled and its name typed into, but no
+  game has been started from it.
 - **The mouse cursor.** `code/win32window.cpp:526` encodes each cursor frame as
   a PNG data URL for `canvas.style.cursor`, but what a player sees is still the
   browser's own arrow, and that path is under active work.
