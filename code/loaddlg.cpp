@@ -468,6 +468,9 @@ bool LoadOptionsClass::Dialog(void)
 							UpdateWindow(MainWindow);
 
 							if (!Load_File(entry->Filename)) {
+								// The attempt has already torn down screen state, so the
+								// backdrop is rebuilt rather than left to stale repaints.
+								Title_Screen_Restore(true);
 								WWMessageBox().Process(TXT_ERROR_LOADING_GAME, TXT_OK, TXT_NONE, TXT_NONE);
 								ShowWindow(dialog, SW_SHOW);
 								State = STATE_PENDING;
