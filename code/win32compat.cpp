@@ -278,9 +278,10 @@ int wsprintfA(LPSTR output, LPCSTR format, ...)
 
 
 /*
-** The engine reads its archives through RawFileClass, which calls the Win32 handle API
-** directly, so these are implemented over POSIX rather than stubbed. win32compat.h states
-** what a caller sees of the mapping; what follows are the decisions behind it.
+** Adapters over filesystem.h, which is where a name is resolved and a file is opened. What
+** is left here is what a Win32 caller expects on top of that: handles, the last-error slot,
+** the search family, and the attribute and time conversions. win32compat.h states what a
+** caller sees; what follows are the decisions behind it.
 */
 
 /*
@@ -319,9 +320,9 @@ static DWORD Win32_Error_From_Errno(int error)
 ** the position of a search through its matches. Checking the kind is what keeps a file
 ** handle passed to FindNextFileA from being read as a search.
 **
-** A file on the mounted image is a third kind. It has no descriptor and no position the
-** host is keeping, so both live on the handle. A mutex is a fourth, and holds nothing but
-** the count of acquisitions outstanding against it.
+** What a file handle remembers of the file itself is the stream, which knows whether it is
+** reading the host or a mounted disc. A mutex is the third kind, and holds nothing but the
+** count of acquisitions outstanding against it.
 */
 enum HandleKindType
 {
