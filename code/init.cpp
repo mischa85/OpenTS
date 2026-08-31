@@ -2484,10 +2484,7 @@ static bool Init_Secondary_Mixfiles(void)
 		}
 	}
 
-	if (MoviesMix == NULL) {
-		return(false);
-	}
-
+	// An install without the movie archives skips playback rather than not starting.
 	return(true);
 }
 
