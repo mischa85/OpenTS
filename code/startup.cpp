@@ -542,14 +542,15 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		Options.ScreenHeight = ConfigINI.Get_Int("Video", "ScreenHeight", Options.ScreenHeight);
 
 		/*
-		 * These are wanted before the window and the renderer exist, which is well
-		 * before the rest of the settings are read.
+		 * These are wanted before the window, the renderer and the drawing surfaces
+		 * exist, which is well before the rest of the settings are read.
 		 */
 		Options.Fullscreen = ConfigINI.Get_Bool("Video", "Fullscreen", Options.Fullscreen);
 		Options.WindowWidth = ConfigINI.Get_Int("Video", "WindowWidth", Options.WindowWidth);
 		Options.WindowHeight = ConfigINI.Get_Int("Video", "WindowHeight", Options.WindowHeight);
 		Options.VSync = ConfigINI.Get_Bool("Video", "VSync", Options.VSync);
 		Options.Renderer = ConfigINI.Get_Int("Video", "Renderer", Options.Renderer);
+		Options.UIScale = ConfigINI.Get_Int("Video", "UIScale", Options.UIScale);
 
 		/*
 		 * The command line asks for a window regardless of what the settings say.

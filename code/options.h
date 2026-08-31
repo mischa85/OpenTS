@@ -179,6 +179,13 @@ class OptionsClass {
 		 */
 		int CursorScale;
 
+		/*
+		 * This is how many times larger than its artwork the in-game interface is drawn. The
+		 * world keeps the frame's own resolution either way, so raising this magnifies the
+		 * sidebar rather than everything at once. Zero follows the height of the frame.
+		 */
+		int UIScale;
+
 		float SoundVolume;				// Volume for sound effects.
 		float VoiceVolume;				/// Volume for voices.
 		float ScoreVolume;				// Volume for scores.

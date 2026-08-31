@@ -136,11 +136,11 @@ The four buttons above the strips toggle the same modes as [Repair Mode](/comman
 
 ## What is fixed in the engine
 
-Almost nothing on this surface is laid out from a setting. The panel's side, its width, the number of strips, their positions, the size of a cameo slot, the 225-entry capacity, the distance a strip scrolls in one update, and the pacing of the power bar's blink and of the radar animation are all compile-time constants.
+Almost nothing on this surface is laid out from a setting. The panel's side, its width, the number of strips, their positions, the size of a cameo slot, the 225-entry capacity, the distance a strip scrolls in one update, and the pacing of the power bar's blink and of the radar animation are all compile-time constants. They are constants of the panel's own picture, which [`UIScale`](/keys/uiscale/) magnifies whole on its way to the screen; a panel drawn at double size is 336 screen pixels across and every figure in it doubles with it.
 
 The panel occupies the right edge of the screen and nothing moves it. The engine still carries a complete left-hand alternative for the sidebar, the tab bar, the radar and the tooltip regions, but which of the two is used is fixed in code and never read from `sun.ini` or from rules, so the left-hand layout is unreachable.
 
-The one figure that does vary is how many cameo slots a strip shows, and it is not a setting either: it is the height left over after the backdrop's top piece and bottom cap, divided by the height of its repeating middle piece. A taller screen therefore shows more cameos and a shorter one fewer.
+The one figure that does vary is how many cameo slots a strip shows: it is the height left over after the backdrop's top piece and bottom cap, divided by the height of its repeating middle piece. That height is the screen's, divided by [`UIScale`](/keys/uiscale/). A taller screen therefore shows more cameos and a shorter one fewer, and magnifying the panel shows fewer and larger ones.
 
 A strip stops at 60 slots however tall the picture is. The backdrop is built from that same count, so a picture tall enough for more than 60 rows ends its sidebar art below the sixtieth one rather than at the foot of the screen.
 
