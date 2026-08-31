@@ -29,6 +29,7 @@
 #include "mainopt.h"
 #include "misc.h"
 #include "movies.h"
+#include "msengine.h"
 #include "ownrdraw.h"
 #include "surface.h"
 #include "wincursor.h"
@@ -228,8 +229,9 @@ void Video_Clamp_Frame_Size(int & width, int & height)
 /// </summary>
 /// <remarks>
 /// A scenario part way through loading is filling surfaces that are about to be replaced, a
-/// movie holds the surface it draws into until it is torn down, and a paint is drawing into
-/// surfaces it would finish drawing into after they had gone.
+/// movie holds the surface it draws into until it is torn down, a shell screen laid itself
+/// out against the surfaces it came up on, and a paint is drawing into surfaces it would
+/// finish drawing into after they had gone.
 /// </remarks>
 static bool Mode_Change_Is_Safe(void)
 {
@@ -248,6 +250,13 @@ static bool Mode_Change_Is_Safe(void)
 	// A movie keeps the surface it was created on for as long as it lives, and pulling that
 	// surface out from under it traps in the player's own lock callback.
 	if (Movie_Holds_A_Surface()) {
+		return(false);
+	}
+
+	// The shell menus, the map selections and the score screens place their artwork against
+	// the size the screen came up at, and the loop each of them runs draws neither that
+	// artwork nor the backdrop beneath it again.
+	if (MSEngine::Is_Screen_Up()) {
 		return(false);
 	}
 

@@ -20,8 +20,9 @@ choosing any other size pins the game to it and scales it up to fill. `?display=
 and `?display=1024x768` on the page make that choice before the game starts.
 
 A resolution change replaces every drawing surface, so it waits for the window to stop
-moving and for the engine to reach a point that can take it: never while a movie is playing
-or a scenario is loading. Until then the frame already in hand is scaled to fill the
-window. An open dialog is no barrier. Resizing the window while the game is paused on one
-moves the frame with it, and the dialog and the screen behind it are drawn again at the new
-size.
+moving and for the engine to reach a point that can take it: never while a movie is
+playing, a scenario is loading, or a menu, briefing or score screen is up. Until then the
+frame already in hand is scaled to fill the window, and the new size is taken as soon as
+the game reaches a point that can take it. An open dialog is no barrier. Resizing the
+window while the game is paused on one moves the frame with it, and the dialog and the
+screen behind it are drawn again at the new size.
