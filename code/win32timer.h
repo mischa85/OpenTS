@@ -26,8 +26,9 @@
 //     rearmed from the current time; it never fires a burst to catch up.
 //
 // A caller that needs a hard cadence -- a 40 Hz mixer interrupt, say -- does not get one.
-// What it gets is a callback serviced as often as the engine passes through a wait, which
-// for the movie player is once per iteration of its own playback loop.
+// What it gets is a callback serviced as often as the engine passes through a wait or a
+// service point of its own. For the movie player that is once per iteration of its playback
+// loop, and once per frame advanced for a movie the game steps alongside itself.
 
 #pragma once
 

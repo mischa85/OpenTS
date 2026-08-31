@@ -20,6 +20,7 @@
 #include "vqa.h"
 #include "vqoption.h"
 #include "win.h"
+#include "win32timer.h"
 #include "video.h"
 
 
@@ -304,6 +305,15 @@ bool Movie_Advance_Frame(VQHandle * handle, bool &finished)
 		return(false);
 	}
 	CurrentVQ = handle;
+#if defined(__EMSCRIPTEN__)
+	/*
+	 * A movie stepped alongside the game has no playback loop of its own, so nothing else
+	 * runs the multimedia timer that carries its sound track. The player reads its time off
+	 * the play cursor that timer keeps ahead of, and a cursor that stops moving stops the
+	 * movie.
+	 */
+	Win32_Timer_Service();
+#endif
 	bool res = handle->VQA->Advance_Frame(finished);
 	CurrentVQ = NULL;
 	return(res);
