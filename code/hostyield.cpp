@@ -7,10 +7,11 @@
  * See LICENSE.md for applicable additional terms and warranty disclaimers.
  ******************************************************************************/
 
-// The native defaults for the yield trio the browser page supplies on the WebAssembly
-// target. A wait here really waits, one scheduler quantum at a time, so a cooperative
-// sleep behaves like an ordinary one; a host with a window replaces these with a pump
-// of its own by defining the three symbols itself.
+// The native defaults for the host contract browser.h states, for a process with no
+// window: the harnesses, and any headless run. A wait here really waits, one scheduler
+// quantum at a time, so a cooperative sleep behaves like an ordinary one, and every
+// measurement answers zero. A host with a window supplies the same symbols itself and
+// is linked instead of this.
 
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 
@@ -37,5 +38,23 @@ bool Browser_Yield_Is_Available(void)
 {
 	return(true);
 }
+
+
+int Browser_Mouse_X(void) { return(0); }
+int Browser_Mouse_Y(void) { return(0); }
+bool Browser_Mouse_Is_Hovering(void) { return(false); }
+unsigned short Browser_Key_Modifiers(void) { return(0); }
+bool Browser_Key_Is_Down(unsigned short) { return(false); }
+char Browser_Key_To_ASCII(unsigned short) { return('\0'); }
+int Browser_Canvas_Width(void) { return(0); }
+int Browser_Canvas_Height(void) { return(0); }
+int Browser_Canvas_CSS_Width(void) { return(0); }
+int Browser_Canvas_CSS_Height(void) { return(0); }
+int Browser_Screen_Width(void) { return(0); }
+int Browser_Screen_Height(void) { return(0); }
+char const * Browser_Canvas_Selector(void) { return(""); }
+void Host_Apply_Cursor(unsigned long const *, int, int, int, int) {}
+void * Host_Native_Window_Handle(void) { return(nullptr); }
+void * Host_Native_Display_Handle(void) { return(nullptr); }
 
 #endif

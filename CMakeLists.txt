@@ -99,7 +99,7 @@ if(NOT WIN32)
         "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"
         "${CMAKE_SOURCE_DIR}/code/isofile.cpp"
         "${CMAKE_SOURCE_DIR}/code/isodisc.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32window.cpp"
+        "${CMAKE_SOURCE_DIR}/code/win32codepage.cpp"
         "${CMAKE_SOURCE_DIR}/code/hostyield.cpp"
         "${CMAKE_SOURCE_DIR}/code/platform_posix.cpp"
     )
@@ -131,6 +131,13 @@ if(NOT WIN32 AND NOT EMSCRIPTEN)
     # builds as OpenTSPosixCompat.
     list(FILTER OPENTS_NATIVE_SRC EXCLUDE REGEX "_i\\.c$")
 
+    # The hosts live outside the library: the SDL host is the executable's own source, and
+    # the windowless default yield belongs only to the harnesses.
+    list(REMOVE_ITEM OPENTS_NATIVE_SRC
+        "${CMAKE_SOURCE_DIR}/code/sdlhost.cpp"
+        "${CMAKE_SOURCE_DIR}/code/hostyield.cpp"
+    )
+
     add_library(OpenTSEngine STATIC ${OPENTS_NATIVE_SRC} ${OPENTS_VQALIB_SRC})
     target_compile_features(OpenTSEngine PRIVATE cxx_std_20)
     target_include_directories(OpenTSEngine PRIVATE
@@ -152,6 +159,84 @@ if(NOT WIN32 AND NOT EMSCRIPTEN)
         INCLUDE_DIRECTORIES
             "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
     )
+
+    # The language resources, compiled from the same script the Visual Studio build turns
+    # into Language.dll, exactly as the WebAssembly target carries them.
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_FOUND)
+        set(OPENTS_LANGUAGE_DIR "${CMAKE_SOURCE_DIR}/code/language")
+        set(OPENTS_LANGUAGE_SOURCE "${OPENTS_GENERATED_DIR}/languageimage.cpp")
+
+        add_custom_command(
+            OUTPUT "${OPENTS_LANGUAGE_SOURCE}"
+            COMMAND "${Python3_EXECUTABLE}"
+                "${OPENTS_LANGUAGE_DIR}/rcimage.py"
+                "${OPENTS_LANGUAGE_DIR}/language.rc"
+                --include "${OPENTS_LANGUAGE_DIR}"
+                --include "${OPENTS_GENERATED_DIR}"
+                --source "${OPENTS_LANGUAGE_SOURCE}"
+            DEPENDS
+                "${OPENTS_LANGUAGE_DIR}/rcimage.py"
+                "${OPENTS_LANGUAGE_DIR}/language.rc"
+                "${OPENTS_LANGUAGE_DIR}/language.h"
+                "${OPENTS_LANGUAGE_DIR}/language.hm"
+                "${OPENTS_VERSION_HEADER}"
+                "${OPENTS_STAMP_HEADER}"
+            COMMENT "Compiling the language resources"
+            VERBATIM
+        )
+    endif()
+
+    # The native executable: the SDL host wrapped around the engine. Unsupported and in
+    # progress; docs/PORTING.md owns the status.
+    find_package(SDL2 QUIET CONFIG)
+    if(SDL2_FOUND AND Python3_FOUND)
+        add_executable(OpenTSNative
+            "${CMAKE_SOURCE_DIR}/code/sdlhost.cpp"
+            "${OPENTS_LANGUAGE_SOURCE}"
+        )
+        target_include_directories(OpenTSNative PRIVATE
+            "${CMAKE_SOURCE_DIR}/code"
+            "${OPENTS_GENERATED_DIR}"
+        )
+        target_compile_definitions(OpenTSNative PRIVATE NOMINMAX NO_BLOWFISH_DLL)
+        target_compile_options(OpenTSNative PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
+
+        if(TARGET SDL2::SDL2)
+            target_link_libraries(OpenTSNative PRIVATE SDL2::SDL2)
+        else()
+            target_include_directories(OpenTSNative PRIVATE ${SDL2_INCLUDE_DIRS})
+            target_link_libraries(OpenTSNative PRIVATE ${SDL2_LIBRARIES})
+        endif()
+
+        find_package(Threads REQUIRED)
+
+        # The engine archive is loaded whole: the class factories and globals it registers
+        # from static initializers must all be present, not only what the host names.
+        if(APPLE)
+            target_link_options(OpenTSNative PRIVATE
+                "SHELL:-Wl,-force_load,$<TARGET_FILE:OpenTSEngine>")
+            target_link_libraries(OpenTSNative PRIVATE
+                "-framework Cocoa" "-framework Metal" "-framework QuartzCore"
+                "-framework IOKit" "-framework CoreFoundation"
+                "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo")
+        else()
+            target_link_options(OpenTSNative PRIVATE
+                "SHELL:-Wl,--whole-archive" "$<TARGET_FILE:OpenTSEngine>" "SHELL:-Wl,--no-whole-archive")
+        endif()
+
+        add_dependencies(OpenTSNative OpenTSEngine)
+        target_link_libraries(OpenTSNative PRIVATE
+            OpenTSEngine
+            bgfx bx bimg
+            Threads::Threads
+        )
+
+        set_target_properties(OpenTSNative PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            OUTPUT_NAME "opents"
+        )
+    endif()
 endif()
 
 enable_testing()

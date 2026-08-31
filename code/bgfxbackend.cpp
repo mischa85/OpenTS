@@ -313,7 +313,17 @@ bool Backend_Init(BackendWindow window, int windowwidth, int windowheight, Backe
 	bgfx::Init init;
 	// The Emscripten context reads this back as the canvas selector rather than as a
 	// handle, which is why the seam lets the platform decide what a target is named.
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
 	init.platformData.nwh = (void *)window;
+#else
+	// The engine's window handle belongs to the Win32 substitute; the renderer needs the
+	// host's real one.
+	extern void * Host_Native_Window_Handle(void);
+	extern void * Host_Native_Display_Handle(void);
+	init.platformData.nwh = Host_Native_Window_Handle();
+	init.platformData.ndt = Host_Native_Display_Handle();
+	(void)window;
+#endif
 	init.resolution.width = (uint32_t)windowwidth;
 	init.resolution.height = (uint32_t)windowheight;
 	init.resolution.reset = _ResetFlags;

@@ -1764,8 +1764,6 @@ int WideCharToMultiByte(UINT codepage, DWORD flags, LPCWSTR wide, int widecount,
 #define CreateWindowEx		CreateWindowExA
 #define GetWindowLong		GetWindowLongA
 #define SetWindowLong		SetWindowLongA
-#define GetWindowLongPtr	GetWindowLongA
-#define SetWindowLongPtr	SetWindowLongA
 #define SetWindowText		SetWindowTextA
 #define GetWindowText		GetWindowTextA
 #define FindWindow			FindWindowA

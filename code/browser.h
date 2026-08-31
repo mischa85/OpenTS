@@ -17,7 +17,7 @@
 
 #pragma once
 
-#if defined(__EMSCRIPTEN__)
+#if !defined(_WIN32)
 
 #include "win.h"
 
@@ -130,5 +130,13 @@ void Browser_End_Text_Input(void);
 // The mouse the engine drives on a page. It is a WWMouseClass that reads its position
 // from the canvas rather than from an operating system that has one.
 Mouse * Browser_Create_Mouse(HWND window);
+
+#if !defined(__EMSCRIPTEN__)
+// Native additions to the contract: a renderer needs the host window itself, and cursors
+// are bitmaps handed to the host rather than CSS handed to a page.
+void * Host_Native_Window_Handle(void);
+void * Host_Native_Display_Handle(void);
+void Host_Apply_Cursor(unsigned long const * pixels, int width, int height, int hotx, int hoty);
+#endif
 
 #endif	// __EMSCRIPTEN__

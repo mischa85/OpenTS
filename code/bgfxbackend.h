@@ -13,7 +13,7 @@
 
 #pragma once
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
 
 // A page has no window handle. bgfx names the canvas it draws into with a CSS selector
 // instead, so the target the renderer starts on is whatever the platform can name.
