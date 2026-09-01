@@ -213,8 +213,19 @@ static void Update_Scale_Info(void)
 /// </remarks>
 void Video_Clamp_Frame_Size(int & width, int & height)
 {
-	if (width > VIDEO_FOLLOW_MAX_WIDTH) width = VIDEO_FOLLOW_MAX_WIDTH;
-	if (height > VIDEO_FOLLOW_MAX_HEIGHT) height = VIDEO_FOLLOW_MAX_HEIGHT;
+	int maxwidth = VIDEO_FOLLOW_MAX_WIDTH;
+	int maxheight = VIDEO_FOLLOW_MAX_HEIGHT;
+
+	int const displaywidth = Browser_Screen_Width();
+	int const displayheight = Browser_Screen_Height();
+
+	if (displaywidth > 0 && displayheight > 0) {
+		maxwidth = displaywidth;
+		maxheight = displayheight;
+	}
+
+	if (width > maxwidth) width = maxwidth;
+	if (height > maxheight) height = maxheight;
 
 	width &= ~3;
 	height &= ~3;
@@ -327,6 +338,107 @@ void Video_Request_Frame_Size(int width, int height)
 /// <summary>
 /// Resizes the frame to the canvas if one has been asked for and the engine can take it.
 /// </summary>
+/// <summary>Resizes the frame, putting an open dialog back together afterwards.</summary>
+/// <returns>bool; false when the renderer would not take the size.</returns>
+static bool Apply_Frame_Size(int width, int height)
+{
+	int oldwidth = Options.ScreenWidth;
+	int oldheight = Options.ScreenHeight;
+
+	int framewidth = VideoModeWidth;
+	int frameheight = VideoModeHeight;
+	bool underdialog = (WS_Top_Window() != NULL);
+
+	Options.ScreenWidth = width;
+	Options.ScreenHeight = height;
+
+	_ChangingMode = true;
+	bool changed = Change_Display_Mode(width, height);
+	_ChangingMode = false;
+
+	if (!changed) {
+		Options.ScreenWidth = oldwidth;
+		Options.ScreenHeight = oldheight;
+		return(false);
+	}
+
+	if (underdialog) {
+		Rebuild_Screen_Under_Dialogs(framewidth, frameheight);
+	}
+
+	return(true);
+}
+
+
+/*
+ * The widest frame a shell screen is laid out for, as a fraction. A screen places its
+ * artwork and its animations against the frame it came up on and never lays them out
+ * again, so a frame wider than this spreads them towards corners they were never drawn
+ * for. Sixteen by ten is the widest the shell art was drawn against.
+ */
+static int const SHELL_ASPECT_WIDTH = 16;
+static int const SHELL_ASPECT_HEIGHT = 10;
+
+// The frame the window had before a shell screen narrowed it, or zero when none has.
+static int _HeldWidth = 0;
+static int _HeldHeight = 0;
+
+
+/// <summary>Narrows the frame to an aspect the shell screens were laid out for.</summary>
+/// <remarks>
+/// Called before the screen counts itself up, while a mode change is still safe and before
+/// the screen has placed anything. The frame is left alone when it is already narrow
+/// enough, which is every display that is not unusually wide.
+/// </remarks>
+void Video_Enter_Shell_Frame(void)
+{
+	if (!_Initialized || !_FollowWindow || _HeldWidth != 0) {
+		return;
+	}
+
+	int const width = VideoModeWidth;
+	int const height = VideoModeHeight;
+
+	if (width <= 0 || height <= 0) {
+		return;
+	}
+
+	int narrowed = height * SHELL_ASPECT_WIDTH / SHELL_ASPECT_HEIGHT;
+	int narrowedheight = height;
+
+	Video_Clamp_Frame_Size(narrowed, narrowedheight);
+
+	if (width <= narrowed) {
+		return;
+	}
+
+	_HeldWidth = width;
+	_HeldHeight = height;
+
+	if (!Apply_Frame_Size(narrowed, narrowedheight)) {
+		_HeldWidth = 0;
+		_HeldHeight = 0;
+	}
+}
+
+
+/// <summary>Gives the frame back to the window after the last shell screen has gone.</summary>
+void Video_Leave_Shell_Frame(void)
+{
+	if (_HeldWidth == 0 || _HeldHeight == 0) {
+		return;
+	}
+
+	int const width = _HeldWidth;
+	int const height = _HeldHeight;
+
+	_HeldWidth = 0;
+	_HeldHeight = 0;
+
+	Apply_Frame_Size(width, height);
+}
+
+
 void Video_Service_Display(void)
 {
 	/*
@@ -363,29 +475,7 @@ void Video_Service_Display(void)
 	_RequestedWidth = 0;
 	_RequestedHeight = 0;
 
-	int oldwidth = Options.ScreenWidth;
-	int oldheight = Options.ScreenHeight;
-
-	int framewidth = VideoModeWidth;
-	int frameheight = VideoModeHeight;
-	bool underdialog = (WS_Top_Window() != NULL);
-
-	Options.ScreenWidth = width;
-	Options.ScreenHeight = height;
-
-	_ChangingMode = true;
-	bool changed = Change_Display_Mode(width, height);
-	_ChangingMode = false;
-
-	if (!changed) {
-		Options.ScreenWidth = oldwidth;
-		Options.ScreenHeight = oldheight;
-		return;
-	}
-
-	if (underdialog) {
-		Rebuild_Screen_Under_Dialogs(framewidth, frameheight);
-	}
+	Apply_Frame_Size(width, height);
 }
 
 #endif	// not _WIN32

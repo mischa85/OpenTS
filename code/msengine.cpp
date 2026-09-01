@@ -52,6 +52,14 @@ MSEngine::MSEngine(void)
 	Anims.Clear();
 	Sounds.Clear();
 
+#if !defined(_WIN32)
+	// Narrowed before the count goes up, while a mode change is still safe and before this
+	// screen has placed anything against the frame.
+	if (_engine_count == 0) {
+		Video_Enter_Shell_Frame();
+	}
+#endif
+
 	_engine_count++;
 }
 
@@ -77,6 +85,12 @@ MSEngine::~MSEngine(void)
 	Rects.Clear();
 
 	_engine_count--;
+
+#if !defined(_WIN32)
+	if (_engine_count == 0) {
+		Video_Leave_Shell_Frame();
+	}
+#endif
 }
 
 
