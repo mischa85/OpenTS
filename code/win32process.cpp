@@ -51,9 +51,8 @@
 static char const PROGRAM_FILE_NAME[] = "OpenTS.wasm";
 
 /*
-** The token GetModuleHandle hands back for the running program. Only its address is asked
-** of it: the engine keeps it in ProgramInstance and passes it back to the module and
-** resource calls, none of which read through it.
+** The token that stands for the running program. Only its address is ever wanted, so that
+** GetModuleFileName can tell our own module from a foreign handle; nothing reads through it.
 */
 static char ProcessModule = 0;
 
@@ -97,25 +96,6 @@ static char const * Program_Path(void)
 	}
 
 	return(path);
-}
-
-
-HMODULE GetModuleHandleA(LPCSTR name)
-{
-	if (name == nullptr) {
-		SetLastError(NO_ERROR);
-		return(Process_Module());
-	}
-
-	/*
-	** The named modules the engine looks for are KERNEL32.DLL and ntdll.dll, neither of
-	** which a page has loaded. Not loaded is both the truth and what Windows answers for a
-	** module that is not in the process, so each caller takes the branch it already keeps
-	** for an older Windows. Windows reports ERROR_MOD_NOT_FOUND, which win32compat.h has no
-	** constant for and no caller here reads.
-	*/
-	SetLastError(ERROR_FILE_NOT_FOUND);
-	return(nullptr);
 }
 
 
@@ -300,13 +280,6 @@ static void Build_Command_Line(void)
 	for (size_t index = 0; index <= length; index++) {
 		CommandLineWide[index] = (WCHAR)(unsigned char)CommandLineText[index];
 	}
-}
-
-
-LPSTR GetCommandLineA(void)
-{
-	Build_Command_Line();
-	return(CommandLineText);
 }
 
 
@@ -501,79 +474,8 @@ LPWSTR * CommandLineToArgvW(LPCWSTR commandline, int * count)
 
 
 /*
-** The slim reader/writer lock. The engine runs on the one thread the page lends it -- the
-** only CreateThread calls in the tree belong to the crash reporter, which this target does
-** not compile -- so a lock is never contended. Every acquisition succeeds at once and
-** every release has nothing to hand on, which makes these the whole of the lock rather
-** than a stub standing in for one. The state stays zero because there is nothing for it to
-** record; a second thread would make that a lie.
-*/
-void InitializeSRWLock(PSRWLOCK lock)
-{
-	if (lock != nullptr) {
-		lock->Ptr = nullptr;
-	}
-}
-
-
-/*
-**	A critical section is the same bargain as the slim locks below: one thread means the
-**	section is never held by anyone else, so entering always succeeds at once. Try_Enter
-**	must say so -- reporting failure would tell a caller it is contended and send it down
-**	a back-off path that can never end.
-*/
-void InitializeCriticalSection(LPCRITICAL_SECTION section)
-{
-	if (section != nullptr) {
-		memset(section, 0, sizeof(*section));
-	}
-}
-
-
-void DeleteCriticalSection(LPCRITICAL_SECTION)
-{
-}
-
-
-void EnterCriticalSection(LPCRITICAL_SECTION)
-{
-}
-
-
-void LeaveCriticalSection(LPCRITICAL_SECTION)
-{
-}
-
-
-BOOL TryEnterCriticalSection(LPCRITICAL_SECTION)
-{
-	return(TRUE);
-}
-
-
-void AcquireSRWLockExclusive(PSRWLOCK)
-{
-}
-
-
-void ReleaseSRWLockExclusive(PSRWLOCK)
-{
-}
-
-
-void AcquireSRWLockShared(PSRWLOCK)
-{
-}
-
-
-void ReleaseSRWLockShared(PSRWLOCK)
-{
-}
-
-
-/*
 ** ---------------------------------------------------------------------------------------
-** Modules, threads, and the process.
+** Modules and the process.
 ** ---------------------------------------------------------------------------------------
 */
 
@@ -586,40 +488,11 @@ void ReleaseSRWLockShared(PSRWLOCK)
 HMODULE LoadLibraryA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
 BOOL FreeLibrary(HMODULE) { return(WIN32_STUB(FALSE)); }
 FARPROC GetProcAddress(HMODULE, LPCSTR) { return(WIN32_STUB((FARPROC)nullptr)); }
-void ExitProcess(UINT code) { exit((int)code); }
 HANDLE GetCurrentProcess(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 HANDLE GetCurrentThread(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 DWORD GetCurrentThreadId(void) { return(1); }
 DWORD GetCurrentProcessId(void) { return(WIN32_STUB(0)); }
-BOOL SetPriorityClass(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
-BOOL SetThreadPriority(HANDLE, int) { return(WIN32_STUB(FALSE)); }
-HANDLE CreateThread(LPSECURITY_ATTRIBUTES, DWORD, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD) { return(WIN32_STUB((HANDLE)nullptr)); }
-BOOL TerminateThread(HANDLE, DWORD) { return(WIN32_STUB(FALSE)); }
-DWORD ResumeThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
-DWORD SuspendThread(HANDLE) { return(WIN32_STUB((DWORD)-1)); }
-BOOL GetVersionExA(LPOSVERSIONINFOA) { return(WIN32_STUB(FALSE)); }
-void GetSystemInfo(LPSYSTEM_INFO) { WIN32_STUB_VOID(); }
 void GlobalMemoryStatus(LPMEMORYSTATUS) { WIN32_STUB_VOID(); }
-BOOL TerminateProcess(HANDLE, UINT code) { exit((int)code); }
-void RaiseException(DWORD, DWORD, DWORD, ULONG_PTR const *) { WIN32_STUB_ABORT(); }
-HANDLE CreateToolhelp32Snapshot(DWORD, DWORD) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
-BOOL Module32First(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
-BOOL Module32Next(HANDLE, LPMODULEENTRY32) { return(WIN32_STUB(FALSE)); }
-BOOL IsDebuggerPresent(void) { return(FALSE); }
-PTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(PTOP_LEVEL_EXCEPTION_FILTER) { return(WIN32_STUB((PTOP_LEVEL_EXCEPTION_FILTER)nullptr)); }
 
-
-/*
-** ---------------------------------------------------------------------------------------
-** Debug help.
-** ---------------------------------------------------------------------------------------
-*/
-
-
-BOOL SymInitialize(HANDLE, LPCSTR, BOOL) { return(WIN32_STUB(FALSE)); }
-BOOL SymCleanup(HANDLE) { return(WIN32_STUB(FALSE)); }
-DWORD SymSetOptions(DWORD) { return(WIN32_STUB(0)); }
-BOOL SymFromAddr(HANDLE, DWORD64, DWORD64 *, PSYMBOL_INFO) { return(WIN32_STUB(FALSE)); }
-BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return(WIN32_STUB(FALSE)); }
 
 #endif	// __EMSCRIPTEN__

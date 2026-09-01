@@ -8,8 +8,7 @@
  ******************************************************************************/
 
 // Exercises the process and module entry points: CommandLineToArgvW and the quoting it
-// undoes, GetCommandLineA and GetCommandLineW, GetModuleHandleA, GetModuleFileNameA, and
-// the slim reader/writer lock.
+// undoes, GetCommandLineW, and GetModuleFileNameA.
 //
 // The command line cases build on both targets. On Windows they establish what the shell
 // API actually does with a backslash before a quote and with a run of quotes; on
@@ -223,20 +222,6 @@ static void Test_Empty_Command_Line(void)
 
 #if defined(__EMSCRIPTEN__)
 
-static void Test_Module_Handle(void)
-{
-	HMODULE const self = GetModuleHandleA(nullptr);
-
-	Check("the running program has a handle", self != nullptr);
-	Check("the handle is the same one every time", GetModuleHandleA(nullptr) == self);
-
-	// A page has loaded neither, and both callers in the engine take another path when
-	// they are told so.
-	Check("KERNEL32.DLL is not loaded", GetModuleHandleA("KERNEL32.DLL") == nullptr);
-	Check("ntdll.dll is not loaded", GetModuleHandleA("ntdll.dll") == nullptr);
-}
-
-
 static void Test_Module_File_Name(void)
 {
 	char path[MAX_PATH];
@@ -247,8 +232,8 @@ static void Test_Module_File_Name(void)
 	Check("the file name is a full path", length > 0 && path[0] == '/');
 
 	char again[MAX_PATH];
-	Check("the same handle answers the same way",
-				GetModuleFileNameA(GetModuleHandleA(nullptr), again, sizeof(again)) == length
+	Check("the same request answers the same way",
+				GetModuleFileNameA(nullptr, again, sizeof(again)) == length
 				&& strcmp(again, path) == 0);
 
 	// Win32 truncates into the buffer it was given and answers with the whole of it.
@@ -297,11 +282,9 @@ static void Test_Working_Directory_Survives(void)
 
 static void Test_Command_Line(void)
 {
-	char const * const narrow = GetCommandLineA();
 	WCHAR const * const wide = GetCommandLineW();
 
-	Check("the command line is not empty", narrow != nullptr && narrow[0] != '\0');
-	Check("both forms say the same thing", wide != nullptr && Wide_Equals(wide, narrow));
+	Check("the command line is not empty", wide != nullptr && wide[0] != L'\0');
 
 	int count = 0;
 	LPWSTR * const argv = CommandLineToArgvW(GetCommandLineW(), &count);
@@ -321,30 +304,6 @@ static void Test_Command_Line(void)
 	}
 }
 
-
-/*
-** The lock is uncontended by construction on this target. What is checked is that taking
-** it and letting it go are real calls that leave the caller running, in the order the
-** logger uses them.
-*/
-static void Test_Locks(void)
-{
-	SRWLOCK lock = SRWLOCK_INIT;
-
-	InitializeSRWLock(&lock);
-
-	AcquireSRWLockExclusive(&lock);
-	ReleaseSRWLockExclusive(&lock);
-
-	AcquireSRWLockShared(&lock);
-	ReleaseSRWLockShared(&lock);
-
-	AcquireSRWLockExclusive(&lock);
-	ReleaseSRWLockExclusive(&lock);
-
-	Check("the lock can be taken and released", true);
-}
-
 #endif	// __EMSCRIPTEN__
 
 
@@ -355,11 +314,9 @@ int main(void)
 	Test_Empty_Command_Line();
 
 #if defined(__EMSCRIPTEN__)
-	Test_Module_Handle();
 	Test_Module_File_Name();
 	Test_Working_Directory_Survives();
 	Test_Command_Line();
-	Test_Locks();
 #endif
 
 	printf("%d checks, %d failures\n", Checks, Failures);

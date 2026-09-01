@@ -1541,42 +1541,23 @@ DWORD GetLastError(void);
 void SetLastError(DWORD error);
 
 /* Process, module, and thread. */
-HMODULE GetModuleHandleA(LPCSTR name);
 DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size);
 HMODULE LoadLibraryA(LPCSTR name);
 BOOL FreeLibrary(HMODULE module);
 FARPROC GetProcAddress(HMODULE module, LPCSTR name);
-LPSTR GetCommandLineA(void);
 LPWSTR GetCommandLineW(void);
-void ExitProcess(UINT code);
 HANDLE GetCurrentProcess(void);
 HANDLE GetCurrentThread(void);
 DWORD GetCurrentThreadId(void);
 DWORD GetCurrentProcessId(void);
-BOOL SetPriorityClass(HANDLE process, DWORD priorityclass);
-BOOL SetThreadPriority(HANDLE thread, int priority);
-HANDLE CreateThread(LPSECURITY_ATTRIBUTES attributes, DWORD stacksize, LPTHREAD_START_ROUTINE start, LPVOID parameter, DWORD flags, LPDWORD threadid);
-BOOL TerminateThread(HANDLE thread, DWORD exitcode);
-DWORD ResumeThread(HANDLE thread);
-DWORD SuspendThread(HANDLE thread);
 void Sleep(DWORD milliseconds);
-BOOL GetVersionExA(LPOSVERSIONINFOA info);
-void GetSystemInfo(LPSYSTEM_INFO info);
 void GlobalMemoryStatus(LPMEMORYSTATUS status);
 void OutputDebugStringA(LPCSTR string);
-#define GetModuleHandle		GetModuleHandleA
 #define GetModuleFileName	GetModuleFileNameA
 #define LoadLibrary			LoadLibraryA
-#define GetCommandLine		GetCommandLineA
-#define GetVersionEx		GetVersionExA
 #define OutputDebugString	OutputDebugStringA
 
 /* Synchronization. */
-void InitializeCriticalSection(LPCRITICAL_SECTION section);
-void DeleteCriticalSection(LPCRITICAL_SECTION section);
-void EnterCriticalSection(LPCRITICAL_SECTION section);
-void LeaveCriticalSection(LPCRITICAL_SECTION section);
-BOOL TryEnterCriticalSection(LPCRITICAL_SECTION section);
 HANDLE CreateEventA(LPSECURITY_ATTRIBUTES attributes, BOOL manualreset, BOOL initialstate, LPCSTR name);
 BOOL SetEvent(HANDLE event);
 BOOL ResetEvent(HANDLE event);
@@ -1973,26 +1954,8 @@ BOOL SetConsoleTitleA(LPCSTR title);
 HANDLE GetStdHandle(DWORD handle);
 BOOL SetConsoleMode(HANDLE console, DWORD mode);
 BOOL GetConsoleMode(HANDLE console, LPDWORD mode);
-BOOL TerminateProcess(HANDLE process, UINT exitcode);
-void RaiseException(DWORD code, DWORD flags, DWORD count, ULONG_PTR const * arguments);
 LPWSTR * CommandLineToArgvW(LPCWSTR commandline, int * count);
 #define SetConsoleTitle		SetConsoleTitleA
-
-/*
-** The slim reader/writer lock. It is a lock in name only on a single-threaded target,
-** so it is a structure with no state and functions that report themselves.
-*/
-typedef struct _RTL_SRWLOCK {
-	PVOID Ptr;
-} SRWLOCK, * PSRWLOCK;
-
-#define SRWLOCK_INIT	{nullptr}
-
-void AcquireSRWLockExclusive(PSRWLOCK lock);
-void ReleaseSRWLockExclusive(PSRWLOCK lock);
-void AcquireSRWLockShared(PSRWLOCK lock);
-void ReleaseSRWLockShared(PSRWLOCK lock);
-void InitializeSRWLock(PSRWLOCK lock);
 
 /*
 ** OLE serialization and the automation string type, both reached from the save path.
@@ -2150,34 +2113,6 @@ typedef struct _DllVersionInfo {
 #define DLLVER_PLATFORM_NT			0x00000002
 
 typedef HRESULT (CALLBACK * DLLGETVERSIONPROC)(DLLVERSIONINFO *);
-
-/*
-** The process snapshot, from tlhelp32.h. The crash handler walks it to name the loaded
-** modules in its report.
-*/
-#define TH32CS_SNAPHEAPLIST	0x00000001
-#define TH32CS_SNAPPROCESS	0x00000002
-#define TH32CS_SNAPTHREAD	0x00000004
-#define TH32CS_SNAPMODULE	0x00000008
-#define TH32CS_SNAPALL		(TH32CS_SNAPHEAPLIST | TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD | TH32CS_SNAPMODULE)
-
-typedef struct tagMODULEENTRY32 {
-	DWORD dwSize;
-	DWORD th32ModuleID;
-	DWORD th32ProcessID;
-	DWORD GlblcntUsage;
-	DWORD ProccntUsage;
-	BYTE * modBaseAddr;
-	DWORD modBaseSize;
-	HMODULE hModule;
-	char szModule[256];
-	char szExePath[260];
-} MODULEENTRY32, * LPMODULEENTRY32;
-
-HANDLE CreateToolhelp32Snapshot(DWORD flags, DWORD processid);
-BOOL Module32First(HANDLE snapshot, LPMODULEENTRY32 entry);
-BOOL Module32Next(HANDLE snapshot, LPMODULEENTRY32 entry);
-
 
 /*
 ** The remainder of the window manager, the common controls, and GDI, as the dialog layer
@@ -2572,7 +2507,6 @@ int GetDateFormatA(LCID locale, DWORD flags, SYSTEMTIME const * date, LPCSTR for
 BOOL SetStdHandle(DWORD handle, HANDLE value);
 BOOL GetConsoleScreenBufferInfo(HANDLE console, PCONSOLE_SCREEN_BUFFER_INFO info);
 HWND GetConsoleWindow(void);
-BOOL IsDebuggerPresent(void);
 BOOL WriteConsoleA(HANDLE console, void const * buffer, DWORD towrite, LPDWORD written, LPVOID reserved);
 HIMAGELIST ImageList_Create(int cx, int cy, UINT flags, int initial, int grow);
 BOOL ImageList_Destroy(HIMAGELIST list);
@@ -2759,9 +2693,6 @@ typedef struct _EXCEPTION_POINTERS {
 	PEXCEPTION_RECORD ExceptionRecord;
 	PCONTEXT ContextRecord;
 } EXCEPTION_POINTERS, * PEXCEPTION_POINTERS, * LPEXCEPTION_POINTERS;
-
-typedef LONG (WINAPI * PTOP_LEVEL_EXCEPTION_FILTER)(LPEXCEPTION_POINTERS);
-PTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(PTOP_LEVEL_EXCEPTION_FILTER filter);
 
 /*
 ** The rest of the dialog and control surface.
@@ -3162,42 +3093,6 @@ typedef int32_t RPC_STATUS;
 	((void)SendMessageA((hwnd), TCM_ADJUSTRECT, (WPARAM)(BOOL)(larger), (LPARAM)(RECT *)(r)))
 #define TabCtrl_SetPadding(hwnd, cx, cy) \
 	((void)SendMessageA((hwnd), TCM_SETPADDING, 0, MAKELPARAM((cx), (cy))))
-
-/*
-** The debug-symbol lookup the crash report walks, from dbghelp.h.
-*/
-typedef struct _SYMBOL_INFO {
-	ULONG SizeOfStruct;
-	ULONG TypeIndex;
-	ULONGLONG Reserved[2];
-	ULONG Index;
-	ULONG Size;
-	ULONGLONG ModBase;
-	ULONG Flags;
-	ULONGLONG Value;
-	ULONGLONG Address;
-	ULONG Register;
-	ULONG Scope;
-	ULONG Tag;
-	ULONG NameLen;
-	ULONG MaxNameLen;
-	CHAR Name[1];
-} SYMBOL_INFO, * PSYMBOL_INFO;
-
-typedef struct _IMAGEHLP_LINE64 {
-	DWORD SizeOfStruct;
-	PVOID Key;
-	DWORD LineNumber;
-	PCHAR FileName;
-	DWORD64 Address;
-} IMAGEHLP_LINE64, * PIMAGEHLP_LINE64;
-
-
-BOOL SymInitialize(HANDLE process, LPCSTR searchpath, BOOL invade);
-BOOL SymCleanup(HANDLE process);
-DWORD SymSetOptions(DWORD options);
-BOOL SymFromAddr(HANDLE process, DWORD64 address, DWORD64 * displacement, PSYMBOL_INFO symbol);
-BOOL SymGetLineFromAddr64(HANDLE process, DWORD64 address, PDWORD displacement, PIMAGEHLP_LINE64 line);
 
 
 #define DECLSPEC_UUID(uuid)
