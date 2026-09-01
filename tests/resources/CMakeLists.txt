@@ -1,14 +1,16 @@
-# The resource reader is compiled straight into the harness. The entry point lives outside
-# code/ so that the recursive glob building OpenTS cannot pick it up.
+# Checks the generated language tables, so the harness is built against the same generated
+# source the engine links. The entry point lives outside code/ so that the recursive glob
+# building OpenTS cannot pick it up.
 add_executable(ResourceTest
     "${CMAKE_CURRENT_SOURCE_DIR}/restest.cpp"
-    "${CMAKE_SOURCE_DIR}/code/peresource.cpp"
+    "${OPENTS_LANGUAGE_SOURCE}"
 )
 
 target_compile_features(ResourceTest PRIVATE cxx_std_20)
 
 target_include_directories(ResourceTest PRIVATE
     "${CMAKE_SOURCE_DIR}/code"
+    "${OPENTS_GENERATED_DIR}"
 )
 
 if(MSVC)

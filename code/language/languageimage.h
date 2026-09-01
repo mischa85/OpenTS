@@ -8,12 +8,43 @@
  ******************************************************************************/
 
 // The language resources a target carries with it. rcimage.py compiles language.rc into
-// the directory a Win32 resource section holds and writes it out as the array declared
-// here, so that a target with no module loader reads the same strings and dialog
-// templates the Visual Studio build loads out of Language.dll.
+// the tables declared here, so that a target with no module loader reads the same strings
+// and dialog templates the Visual Studio build loads out of Language.dll.
+//
+// The strings arrive narrowed to the code page the game draws in, so nothing converts them
+// at runtime. A dialog template is the bytes the Win32 dialog interpreter expects and is
+// carried through unaltered. Both tables are sorted by identifier.
 
 #pragma once
 
 
-extern unsigned char const LanguageResourceImage[];
-extern unsigned int const LanguageResourceImageSize;
+struct LanguageStringEntry
+{
+	unsigned int Id;
+	char const * Text;
+};
+
+
+struct LanguageBlobEntry
+{
+	unsigned int Id;
+	unsigned char const * Data;
+	unsigned int Size;
+};
+
+
+struct LanguageVersionEntry
+{
+	char const * Key;
+	char const * Value;
+};
+
+
+extern LanguageStringEntry const LanguageStrings[];
+extern unsigned int const LanguageStringCount;
+
+extern LanguageBlobEntry const LanguageDialogs[];
+extern unsigned int const LanguageDialogCount;
+
+extern LanguageVersionEntry const LanguageVersion[];
+extern unsigned int const LanguageVersionCount;

@@ -42,7 +42,6 @@
 #else
 #include "crtcompat.h"
 #include "language/languageimage.h"
-#include "peresource.h"
 #endif
 
 #include <vector>
@@ -57,20 +56,79 @@ HINSTANCE LanguageResources;
  * loader on this target. The directory is held for the life of the process because a fetched
  * resource is a pointer into it, which is the lifetime a locked resource has on Windows.
  */
-static PEResourceClass LanguageImage;
+/*
+ * The language tables the build compiles language.rc into. They are linked in rather than
+ * read, so there is nothing to load and nothing that can fail to parse. Both are sorted by
+ * identifier, which is what lets a lookup bisect them.
+ */
+static LanguageStringEntry const * Find_String_Entry(unsigned int id)
+{
+	unsigned int low = 0;
+	unsigned int high = LanguageStringCount;
+
+	while (low < high) {
+		unsigned int const middle = low + (high - low) / 2;
+
+		if (LanguageStrings[middle].Id < id) {
+			low = middle + 1;
+		} else if (LanguageStrings[middle].Id > id) {
+			high = middle;
+		} else {
+			return(&LanguageStrings[middle]);
+		}
+	}
+
+	return(NULL);
+}
+
+
+static LanguageBlobEntry const * Find_Dialog_Entry(unsigned int id)
+{
+	unsigned int low = 0;
+	unsigned int high = LanguageDialogCount;
+
+	while (low < high) {
+		unsigned int const middle = low + (high - low) / 2;
+
+		if (LanguageDialogs[middle].Id < id) {
+			low = middle + 1;
+		} else if (LanguageDialogs[middle].Id > id) {
+			high = middle;
+		} else {
+			return(&LanguageDialogs[middle]);
+		}
+	}
+
+	return(NULL);
+}
+
+
+static bool Copy_Version_Value(char const * key, char * buffer, int size)
+{
+	for (unsigned int index = 0; index < LanguageVersionCount; index++) {
+		if (strcmp(LanguageVersion[index].Key, key) == 0) {
+			strncpy(buffer, LanguageVersion[index].Value, (std::size_t)size - 1);
+			buffer[size - 1] = '\0';
+			return(true);
+		}
+	}
+
+	return(false);
+}
 
 
 /*
  * Either half of a resource lookup is a MAKEINTRESOURCE identifier when nothing is set in
- * the upper half of the pointer, and a name otherwise.
+ * the upper half of the pointer, and a name otherwise. Only numbered lookups are served
+ * here, so a name answers with an identifier no table holds.
  */
-static PEResourceNameClass Resource_Name(LPCSTR name)
+static unsigned int Resource_Number(LPCSTR name)
 {
 	if (((std::uintptr_t)name >> 16) == 0) {
-		return(PEResourceNameClass((unsigned int)(std::uintptr_t)name));
+		return((unsigned int)(std::uintptr_t)name);
 	}
 
-	return(PEResourceNameClass(name));
+	return(0);
 }
 
 #endif
@@ -282,13 +340,13 @@ char const * Fetch_String(int id)
 	_buffers[oldest].TimeStamp = _time;
 
 #ifndef _WIN32
-	if (!LanguageImage.Is_Loaded()) {
-		Init_Language_Resources(false);
-	}
-
-	if (LanguageImage.Fetch_String((unsigned int)id, stringptr, sizeof(_buffers[oldest].String)) == 0) {
+	LanguageStringEntry const * const entry = Find_String_Entry((unsigned int)id);
+	if (entry == NULL) {
 		return("");
 	}
+
+	strncpy(stringptr, entry->Text, sizeof(_buffers[oldest].String) - 1);
+	stringptr[sizeof(_buffers[oldest].String) - 1] = '\0';
 #else
 	if (LanguageResources == NULL) {
 		Init_Language_Resources(false);
@@ -371,11 +429,18 @@ void const * Fetch_Resource(LPCSTR resname, LPCSTR restype, unsigned int * ressi
 	}
 
 #ifndef _WIN32
-	std::size_t size = 0;
-	void const * data = LanguageImage.Fetch_Resource(Resource_Name(restype), Resource_Name(resname), &size);
-	if (data == NULL) {
+	// Only the dialog templates are fetched this way; the string table has its own call.
+	if (Resource_Number(restype) != 5) {
 		return(NULL);
 	}
+
+	LanguageBlobEntry const * const entry = Find_Dialog_Entry(Resource_Number(resname));
+	if (entry == NULL) {
+		return(NULL);
+	}
+
+	void const * const data = entry->Data;
+	std::size_t const size = entry->Size;
 #else
 	/// The superfluous MAKEINTRESOURCE cast is the game's, and the C4302 warning with it.
 	HRSRC handle = FindResource(LanguageResources, MAKEINTRESOURCE(resname), restype);
@@ -465,26 +530,9 @@ bool Init_Language_Resources(bool show_error)
 {
 #ifndef _WIN32
 
-	if (!LanguageImage.Is_Loaded()) {
-
-		/*
-		 * Nothing is read here. A global constructor can reach Fetch_String, so this runs
-		 * before the mixfile and search path objects are constructed and could not touch
-		 * them anyway.
-		 */
-		if (!LanguageImage.Load_Directory(LanguageResourceImage, LanguageResourceImageSize)) {
-
-			if (show_error == true) {
-				MessageBox(NULL,
-					"The language resources built into this program cannot be read.",
-					"Tiberian Sun",
-					MB_ICONERROR);
-			}
-
-			return(false);
-		}
-	}
-
+	// The tables are linked into the program, so there is nothing to read and nothing that
+	// can fail. The call is kept because the Windows build still loads a module here.
+	(void)show_error;
 	return(true);
 
 #else
@@ -534,11 +582,11 @@ void Get_Language_Version(char *version_string)
 	if (version_string != NULL) {
 		version_string[0] = '\0';
 
-		if (LanguageImage.Fetch_Version_String("InternalName", name, sizeof(name))) {
+		if (Copy_Version_Value("InternalName", name, sizeof(name))) {
 
 			sprintf(version_string, "Language: %s ", name);
 
-			if (LanguageImage.Fetch_Version_String("FileVersion", version, sizeof(version))) {
+			if (Copy_Version_Value("FileVersion", version, sizeof(version))) {
 				strcat(version_string, version);
 			}
 		}

@@ -1172,21 +1172,79 @@ BANNER = """\
 
 #include "language/languageimage.h"
 
-
-unsigned char const LanguageResourceImage[%d] = {
 """
 
 
-def write_source(path, image):
-    lines = []
-    for start in range(0, len(image), 16):
-        chunk = image[start:start + 16]
-        lines.append("\t" + " ".join("0x%02X," % byte for byte in chunk))
+def c_string(text):
+    """Quotes text as a C string literal, in octal so no escape runs into the next byte."""
+    out = ['"']
+    for byte in text:
+        if byte == 0x22 or byte == 0x5C or byte == 0x3F:
+            out.append("\\%03o" % byte)
+        elif 0x20 <= byte < 0x7F:
+            out.append(chr(byte))
+        else:
+            out.append("\\%03o" % byte)
+    out.append('"')
+    return "".join(out)
+
+
+def narrow(text):
+    """The bytes the game draws, in the single-byte code page its fonts are built for."""
+    return text.encode("cp1252", "replace")
+
+
+def collect_version_strings(version):
+    """Pulls the string values out of a version resource, whatever block they sit in."""
+    found = {}
+
+    def walk(entries):
+        for kind, name, body in entries:
+            if kind == "block":
+                walk(body)
+            elif kind == "value" and body and isinstance(body[0], str):
+                found.setdefault(name, body[0])
+
+    if version is not None:
+        walk(version[1])
+    return found
+
+
+def write_source(path, script):
+    out = [BANNER]
+
+    strings = sorted(script.strings.items())
+    out.append("\nLanguageStringEntry const LanguageStrings[] = {\n")
+    for identifier, text in strings:
+        out.append("\t{%d, %s},\n" % (identifier, c_string(narrow(text))))
+    out.append("};\n\nunsigned int const LanguageStringCount = %d;\n" % len(strings))
+
+    dialogs = []
+    for identifier, dialog in sorted(script.dialogs.items()):
+        if not isinstance(identifier, int):
+            raise Error("dialog %r is not numbered" % identifier)
+        dialogs.append((identifier, build_dialog(dialog)))
+
+    for identifier, blob in dialogs:
+        out.append("\n\nstatic unsigned char const Dialog%d[%d] = {\n" % (identifier, len(blob)))
+        for begin in range(0, len(blob), 16):
+            chunk = blob[begin:begin + 16]
+            out.append("\t" + " ".join("0x%02X," % byte for byte in chunk) + "\n")
+        out.append("};\n")
+
+    out.append("\n\nLanguageBlobEntry const LanguageDialogs[] = {\n")
+    for identifier, blob in dialogs:
+        out.append("\t{%d, Dialog%d, %d},\n" % (identifier, identifier, len(blob)))
+    out.append("};\n\nunsigned int const LanguageDialogCount = %d;\n" % len(dialogs))
+
+    version = sorted(collect_version_strings(script.version).items())
+    out.append("\n\nLanguageVersionEntry const LanguageVersion[] = {\n")
+    for key, value in version:
+        out.append("\t{%s, %s},\n" % (c_string(narrow(key)), c_string(narrow(value))))
+    out.append("};\n\nunsigned int const LanguageVersionCount = %d;\n" % len(version))
 
     with open(path, "w", newline="\n") as handle:
-        handle.write(BANNER % len(image))
-        handle.write("\n".join(lines))
-        handle.write("\n};\n\n\nunsigned int const LanguageResourceImageSize = %d;\n" % len(image))
+        handle.write("".join(out))
 
 
 def main(argv):
@@ -1205,14 +1263,13 @@ def main(argv):
     processor.process(arguments.script)
 
     script = parse_script(expand([t for t in processor.output if t.kind != "newline"], processor.defines))
-    image = build_image(script)
 
     if arguments.binary:
         with open(arguments.binary, "wb") as handle:
-            handle.write(image)
+            handle.write(build_image(script))
 
     if arguments.source:
-        write_source(arguments.source, image)
+        write_source(arguments.source, script)
 
     return 0
 
