@@ -37,11 +37,6 @@
 bool Parse_GUID_Text(char const * text, GUID & guid);
 void Compose_GUID_Text(GUID const & guid, char * buffer, size_t size);
 
-/*
- * POSIX-only helpers with no Windows namesake.
- */
-char const * const * Platform_Command_Line_Arguments(int * argc);
-
 #endif
 
 
@@ -50,3 +45,9 @@ char const * const * Platform_Command_Line_Arguments(int * argc);
  * leaves the buffer unspecified.
  */
 bool Platform_Executable_Path(char * buffer, size_t size);
+
+/*
+ * The command line already split the way the host split it, with the program itself at
+ * index zero. The array and the strings last as long as the process.
+ */
+char const * const * Platform_Command_Line_Arguments(int * argc);

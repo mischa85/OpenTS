@@ -13,12 +13,57 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#include <unistd.h>
+#elif defined(__APPLE__)
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
 #else
 #include <unistd.h>
+#endif
+
+
+#if defined(__EMSCRIPTEN__)
+
+// The wasm binary the browser fetched is not a file in the filesystem the engine reads, so
+// no name here can be opened. Every caller wants the directory rather than the file.
+static char const PROGRAM_FILE_NAME[] = "OpenTS.wasm";
+
+/*
+** The host's argument list, which is the whole of this target's command line: the page
+** builds it from its query string and hands it over as Module.arguments, and a shell
+** running the module under node passes its own arguments through the same array. The list
+** does not carry the program itself, which is supplied here to match every other target.
+**
+** The internal name is read first and the incoming property second, so that a host which
+** supplied arguments some other way is still answered; a build that renames the internal
+** falls back rather than reporting nothing.
+*/
+EM_JS(int, Process_Argument_Count, (void), {
+	var args = (typeof programArgs !== "undefined" && programArgs) ||
+		(typeof Module !== "undefined" && Module["arguments"]) || [];
+	return args.length;
+});
+
+EM_JS(int, Process_Argument, (int index, char * buffer, int size), {
+	var args = (typeof programArgs !== "undefined" && programArgs) ||
+		(typeof Module !== "undefined" && Module["arguments"]) || [];
+	var text = (index >= 0 && index < args.length) ? "" + args[index] : "";
+
+	var count = 0;
+	while (count < text.length && count + 1 < size) {
+		var code = text.charCodeAt(count);
+		HEAPU8[buffer + count] = (code > 127) ? 63 : code;
+		count++;
+	}
+	HEAPU8[buffer + count] = 0;
+	return count;
+});
+
 #endif
 
 
@@ -57,7 +102,19 @@ void Compose_GUID_Text(GUID const & guid, char * buffer, size_t size)
 
 bool Platform_Executable_Path(char * buffer, size_t size)
 {
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+	char working[MAX_PATH];
+
+	if (getcwd(working, sizeof(working)) == nullptr) {
+		return(false);
+	}
+
+	size_t const length = strlen(working);
+	char const * const separator = (length > 0 && working[length - 1] == '/') ? "" : "/";
+
+	int const written = snprintf(buffer, size, "%s%s%s", working, separator, PROGRAM_FILE_NAME);
+	return(written > 0 && (size_t)written < size);
+#elif defined(__APPLE__)
 	uint32_t capacity = (uint32_t)size;
 	return(_NSGetExecutablePath(buffer, &capacity) == 0);
 #else
@@ -73,7 +130,31 @@ bool Platform_Executable_Path(char * buffer, size_t size)
 
 char const * const * Platform_Command_Line_Arguments(int * argc)
 {
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+	static std::vector<std::string> arguments;
+	static std::vector<char const *> pointers;
+
+	if (pointers.empty()) {
+		char program[MAX_PATH];
+
+		arguments.push_back(Platform_Executable_Path(program, sizeof(program)) ? program : PROGRAM_FILE_NAME);
+
+		int const count = Process_Argument_Count();
+		for (int index = 0; index < count; index++) {
+			char text[1024];
+
+			Process_Argument(index, text, sizeof(text));
+			arguments.push_back(text);
+		}
+
+		for (std::string const & argument : arguments) {
+			pointers.push_back(argument.c_str());
+		}
+	}
+
+	*argc = (int)pointers.size();
+	return(pointers.data());
+#elif defined(__APPLE__)
 	*argc = *_NSGetArgc();
 	return((char const * const *)*_NSGetArgv());
 #else

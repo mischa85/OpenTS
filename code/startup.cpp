@@ -160,7 +160,6 @@
 #include "zbuffer.h"
 
 #ifdef _WIN32
-#include <shellapi.h>
 #include <conio.h>
 #include <io.h>
 #endif
@@ -359,8 +358,8 @@ static bool RegisterClasses(void)
 }
 
 /// <summary>
-/// Builds the argument list the game parses from the command line the shell handed over.
-/// The shell's own quoting decides where one argument ends and the next begins, so a
+/// Builds the argument list the game parses from the command line the host handed over.
+/// The host's own quoting decides where one argument ends and the next begins, so a
 /// directory whose name holds spaces arrives as the single argument it was written as.
 /// </summary>
 /// <param name="path_to_exe">Full path to the running executable, which becomes the first
@@ -376,21 +375,13 @@ static int Build_Arguments(char const * path_to_exe, char ** & argv)
 	pointers.clear();
 	arguments.push_back(path_to_exe);
 
-	int wide_count = 0;
-	LPWSTR * wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_count);
+	int count = 0;
+	char const * const * const supplied = Platform_Command_Line_Arguments(&count);
 
-	if (wide_argv != NULL) {
-		// Index zero names the executable, which the caller has already established.
-		for (int index = 1; index < wide_count; index++) {
-			int length = WideCharToMultiByte(CP_ACP, 0, wide_argv[index], -1, NULL, 0, NULL, NULL);
-			if (length <= 1) continue;
-
-			std::string argument(length - 1, '\0');
-			WideCharToMultiByte(CP_ACP, 0, wide_argv[index], -1, argument.data(), length, NULL, NULL);
-			arguments.push_back(argument);
-		}
-
-		LocalFree(wide_argv);
+	// Index zero names the executable, which the caller has already established.
+	for (int index = 1; index < count; index++) {
+		if (supplied[index] == NULL || supplied[index][0] == '\0') continue;
+		arguments.push_back(supplied[index]);
 	}
 
 	for (std::string & argument : arguments) {
