@@ -15,25 +15,13 @@
 #include "win.h"
 
 
-/// <summary>
-/// Asks Windows for one millisecond timer resolution.
-/// This routine is called when the timer is created so that the readings it hands out
-/// are fine grained enough for the game to pace itself by.
-/// </summary>
 MillisecondSystemTimerClass::MillisecondSystemTimerClass(void)
 {
-	timeBeginPeriod(1);
 }
 
 
-/// <summary>
-/// Returns the system timer to its normal resolution.
-/// This routine undoes the resolution request made when the timer was created, so that
-/// the rest of the system is not left paying for the finer granularity.
-/// </summary>
 MillisecondSystemTimerClass::~MillisecondSystemTimerClass(void)
 {
-	timeEndPeriod(1);
 }
 
 
@@ -42,7 +30,7 @@ MillisecondSystemTimerClass::~MillisecondSystemTimerClass(void)
 /// This is the sampling routine that the timer templates call whenever they need to
 /// know how much time has passed.
 /// </summary>
-/// <returns>Returns with the number of milliseconds elapsed since Windows started.</returns>
+/// <returns>Returns with the number of milliseconds elapsed since the clock's first reading.</returns>
 int MillisecondSystemTimerClass::operator () (void) const
 {
 	return(Host_Milliseconds());
@@ -53,7 +41,7 @@ int MillisecondSystemTimerClass::operator () (void) const
 /// Converts the timer into its current millisecond reading.
 /// This routine lets the timer object be used wherever a plain time value is expected.
 /// </summary>
-/// <returns>Returns with the number of milliseconds elapsed since Windows started.</returns>
+/// <returns>Returns with the number of milliseconds elapsed since the clock's first reading.</returns>
 MillisecondSystemTimerClass::operator int (void) const
 {
 	return(Host_Milliseconds());

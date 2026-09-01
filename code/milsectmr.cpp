@@ -17,7 +17,6 @@
 #include "mpu.h"
 #include "win.h"
 
-#define PERIOD_RESOLUTION 1 /// Use 1-millisecond target resolution.
 
 /// Microsoft's macros for widening a large integer into a double.
 #define ULi2Double(x) ((double)((x).u.HighPart) * 4.294967296E9 + (double)((x).u.LowPart))
@@ -30,8 +29,8 @@
 /// <summary>
 /// Creates the millisecond timer and works out how to drive it.
 /// This routine will ask the processor for its clock rate so that the cycle counter can be
-/// scaled into milliseconds. Machines that will not report a rate fall back to the Windows
-/// multimedia timer, whose resolution is raised to one millisecond for the life of the timer.
+/// scaled into milliseconds. Machines that will not report a rate fall back to the host
+/// clock, which needs nothing asked of it.
 /// </summary>
 MillisecondTimerClass::MillisecondTimerClass(void)
 {
@@ -39,31 +38,19 @@ MillisecondTimerClass::MillisecondTimerClass(void)
 	Frequency = 1.0;
 	unsigned int low = Get_CPU_Rate(high);
 
-	if (low == 0 && high == 0) {
-		timeBeginPeriod(PERIOD_RESOLUTION);
-
-	} else {
+	if (low != 0 || high != 0) {
 		double dl = low;
 		double dh = high;
 
 		DebugString("MillisecondTimerClass low = %u, high = %u\n", low, high);
 
 		Frequency = LI_TO_DBL(dh, dl) / 1000; // 1000 = rate.
-
 	}
 }
 
 
-/// <summary>
-/// Releases the millisecond timer.
-/// If this timer had to raise the system timer resolution in order to work, the resolution
-/// is dropped back here so that the rest of the system is not left paying for it.
-/// </summary>
 MillisecondTimerClass::~MillisecondTimerClass(void)
 {
-	if (Frequency != 1.0) {
-		timeEndPeriod(PERIOD_RESOLUTION);
-	}
 }
 
 
