@@ -617,13 +617,6 @@ typedef struct tWAVEFORMATEX {
 #define FILE_CURRENT			1
 #define FILE_END				2
 
-#define DRIVE_UNKNOWN			0
-#define DRIVE_NO_ROOT_DIR		1
-#define DRIVE_REMOVABLE			2
-#define DRIVE_FIXED				3
-#define DRIVE_REMOTE			4
-#define DRIVE_CDROM				5
-#define DRIVE_RAMDISK			6
 
 #define NO_ERROR					0L
 #define ERROR_SUCCESS				0L
@@ -1647,10 +1640,6 @@ BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES attributes);
 BOOL RemoveDirectoryA(LPCSTR path);
 DWORD GetCurrentDirectoryA(DWORD length, LPSTR buffer);
 BOOL SetCurrentDirectoryA(LPCSTR path);
-UINT GetDriveTypeA(LPCSTR root);
-DWORD GetLogicalDrives(void);
-BOOL GetDiskFreeSpaceA(LPCSTR root, LPDWORD sectorspercluster, LPDWORD bytespersector, LPDWORD freeclusters, LPDWORD totalclusters);
-BOOL GetVolumeInformationA(LPCSTR root, LPSTR name, DWORD namesize, LPDWORD serial, LPDWORD componentlength, LPDWORD flags, LPSTR filesystem, DWORD filesystemsize);
 DWORD GetTempPathA(DWORD length, LPSTR buffer);
 BOOL FileTimeToSystemTime(FILETIME const * filetime, LPSYSTEMTIME systemtime);
 BOOL SystemTimeToFileTime(SYSTEMTIME const * systemtime, LPFILETIME filetime);
@@ -1668,9 +1657,6 @@ LONG CompareFileTime(FILETIME const * first, FILETIME const * second);
 #define RemoveDirectory		RemoveDirectoryA
 #define GetCurrentDirectory	GetCurrentDirectoryA
 #define SetCurrentDirectory	SetCurrentDirectoryA
-#define GetDriveType		GetDriveTypeA
-#define GetDiskFreeSpace	GetDiskFreeSpaceA
-#define GetVolumeInformation GetVolumeInformationA
 #define GetTempPath			GetTempPathA
 
 /* Memory. */
