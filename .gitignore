@@ -61,5 +61,9 @@ manual/data/.manual-generate-*/
 discs/
 *.iso
 *.7z
+*.zip
 *.bin
 *.cue
+*.img
+*.mdf
+*.nrg
