@@ -40,7 +40,13 @@ void Compose_GUID_Text(GUID const & guid, char * buffer, size_t size);
 /*
  * POSIX-only helpers with no Windows namesake.
  */
-bool Platform_Executable_Path(char * buffer, size_t size);
 char const * const * Platform_Command_Line_Arguments(int * argc);
 
 #endif
+
+
+/*
+ * The full path of the running program, which every target can answer for itself. False
+ * leaves the buffer unspecified.
+ */
+bool Platform_Executable_Path(char * buffer, size_t size);

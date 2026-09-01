@@ -69,6 +69,7 @@
 #include "data.h"
 #include "dbgprint.h"
 #include "dllver.h"
+#include "platform.h"
 #include "drive.h"
 #include "droppod.h"
 #include "dsaudio.h"
@@ -543,7 +544,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 	/*
 	**	Get the full path to the .EXE
 	*/
-	GetModuleFileName (instance, &path_to_exe[0], sizeof(path_to_exe));
+	Platform_Executable_Path(&path_to_exe[0], sizeof(path_to_exe));
 
 	/*
 	**	Get pointers to command line arguments just like if we were in DOS

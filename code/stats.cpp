@@ -57,6 +57,7 @@ int WestwoodOnline_PortNumber = 1234;
 #include "session.h"
 #include "stats.h"
 #include "stimer.h"
+#include "platform.h"
 #include "timer.h"
 #include "unit.h"
 #include "unittype.h"
@@ -422,7 +423,7 @@ void Send_Statistics_Packet(void)
 	char path_to_exe[280];
 	FILETIME write_time;		//File time is 64 bits
 
-	GetModuleFileName (ProgramInstance, path_to_exe, sizeof(path_to_exe));
+	Platform_Executable_Path(path_to_exe, sizeof(path_to_exe));
 	RawFileClass file;
 	file.Set_Name(path_to_exe);
 	file.Open();

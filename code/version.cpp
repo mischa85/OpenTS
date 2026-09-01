@@ -45,6 +45,7 @@
 #include "version.h"
 
 #include "globals.h"
+#include "platform.h"
 #include "rawfile.h"
 #include "winstub.h"
 
@@ -513,7 +514,7 @@ char const * Version_Name(void)
 
 		empty = false;
 
-		if (GetModuleFileName(ProgramInstance, filename, sizeof(filename)) > 0) {
+		if (Platform_Executable_Path(filename, sizeof(filename))) {
 			handle = 1;
 			size = GetFileVersionInfoSize(filename, &handle);
 			if (size > 0) {
