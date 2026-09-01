@@ -48,4 +48,5 @@ unsigned int Fetch_Resource_Size(void const * data);
 void * Hires_Load(char * name);
 
 bool Init_Language_Resources(bool show_error);
+void Shutdown_Language_Resources(void);
 void Get_Language_Version(char *version_string);

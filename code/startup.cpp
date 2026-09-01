@@ -167,8 +167,6 @@
 #include <string>
 #include <vector>
 
-extern	HINSTANCE LanguageResources;
-
 #define APP_GUID "29e3bb2a-2f36-11d3-a72c-0090272fa661"
 #define AUTOPLAY_GUID "b350c6d2-2f36-11d3-a72c-0090272fa661"
 
@@ -1131,9 +1129,7 @@ void __cdecl Prog_End(void)
 	}
 	RegisteredClasses.Clear();
 
-	if (LanguageResources) {
-		FreeLibrary(LanguageResources);
-	}
+	Shutdown_Language_Resources();
 
 	if (AutoPlayMutex != NULL) {
 		CloseHandle(AutoPlayMutex);

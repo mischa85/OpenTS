@@ -46,7 +46,9 @@
 
 #include <vector>
 
+#ifdef _WIN32
 HINSTANCE LanguageResources;
+#endif
 
 #ifndef _WIN32
 
@@ -559,6 +561,22 @@ bool Init_Language_Resources(bool show_error)
 
 	return(true);
 
+#endif
+}
+
+
+/// <summary>
+/// Releases the language resources.
+/// Safe to call whether or not Init_Language_Resources ever succeeded, and safe to call
+/// twice. No string or dialog template may be fetched afterwards.
+/// </summary>
+void Shutdown_Language_Resources(void)
+{
+#ifdef _WIN32
+	if (LanguageResources != NULL) {
+		FreeLibrary(LanguageResources);
+		LanguageResources = NULL;
+	}
 #endif
 }
 
