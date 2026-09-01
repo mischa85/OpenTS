@@ -463,8 +463,7 @@ bool AnimTypeClass::Read_INI(CCINIClass const & ini)
 
 
 /// <summary>
-/// Re-attaches the artwork this animation type names.
-/// This routine reacquires the artwork appropriate for the theater the scenario is
+/// Re-attaches the artwork this animation type names, for the theater the scenario is
 /// being restored into.
 /// </summary>
 void AnimTypeClass::Post_Load(void)
