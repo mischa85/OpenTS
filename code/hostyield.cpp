@@ -46,6 +46,7 @@ bool Browser_Mouse_Is_Hovering(void) { return(false); }
 unsigned short Browser_Key_Modifiers(void) { return(0); }
 bool Browser_Key_Is_Down(unsigned short) { return(false); }
 char Browser_Key_To_ASCII(unsigned short) { return('\0'); }
+void Browser_Set_Window_Mode(bool, int, int) {}
 int Browser_Canvas_Width(void) { return(0); }
 int Browser_Canvas_Height(void) { return(0); }
 int Browser_Canvas_CSS_Width(void) { return(0); }

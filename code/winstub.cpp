@@ -50,6 +50,9 @@
 #include "_surface.h"
 #include "_tooltip.h"
 #include "bsurface.h"
+#if !defined(_WIN32)
+#include "browser.h"
+#endif
 #include "ccfile.h"
 #include "cctooltip.h"
 #include "convert.h"
@@ -521,6 +524,17 @@ void Create_Main_Window ( HINSTANCE instance , int command_show , int width , in
 								instance,
 								NULL );
 	}
+
+#if !defined(_WIN32)
+	/*
+	 * The host opened something to draw into before the configuration had been read, so
+	 * this is the first point at which it can be told what was asked for. On Windows the
+	 * window created above is the real one and there is nothing to relay.
+	 */
+	Browser_Set_Window_Mode(!WindowedMode,
+		(Options.WindowWidth > 0) ? Options.WindowWidth : width,
+		(Options.WindowHeight > 0) ? Options.WindowHeight : height);
+#endif
 
 	ShowWindow (MainWindow, SW_NORMAL);
 	ShowCommand = command_show;

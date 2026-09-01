@@ -47,6 +47,14 @@ char const * Browser_Canvas_Selector(void);
 
 bool Browser_Init(void);
 
+/// <summary>Asks the host to present the game fullscreen, or windowed at this size.</summary>
+/// <remarks>
+/// The engine settles this from its configuration, which it reads long after the host has
+/// had to open something to draw into. A host with no say in the matter -- a page, or a
+/// harness with no window at all -- ignores the request.
+/// </remarks>
+void Browser_Set_Window_Mode(bool fullscreen, int width, int height);
+
 // Picks up whatever the page has changed since the last pass -- the canvas size, the
 // visibility, and the input events that arrived while the engine was elsewhere -- and
 // delivers it to the engine. Cheap enough to call from every wait the engine has.

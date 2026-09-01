@@ -1394,6 +1394,15 @@ unsigned int Browser_Frame_Serial(void)
 }
 
 
+/*
+ * A page decides its own layout, and the canvas is sized by the document rather than by
+ * the game. The request is accepted and dropped; "?display=" is how a page is told.
+ */
+void Browser_Set_Window_Mode(bool, int, int)
+{
+}
+
+
 int Browser_Canvas_Width(void)
 {
 	return(_CanvasWidth);

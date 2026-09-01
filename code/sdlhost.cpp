@@ -48,6 +48,12 @@ struct HostEvent
 
 SDL_Window * _Window = nullptr;
 bool _Initialized = false;
+bool _Fullscreen = false;
+
+// What to restore the window to when fullscreen is turned off. The engine's configured
+// size, or what the window was before it was made fullscreen.
+int _WindowedWidth = 1280;
+int _WindowedHeight = 800;
 
 int _CanvasWidth = 0;
 int _CanvasHeight = 0;
@@ -381,6 +387,44 @@ void * Host_Native_Display_Handle(void)
 }
 
 
+/*
+ * SDL_WINDOW_FULLSCREEN_DESKTOP rather than a real mode change: it keeps the desktop's
+ * resolution and covers it, which is what the engine already means by fullscreen -- see
+ * the WS_POPUP branch of Create_Main_Window. A mode change would also cost every other
+ * window on the display its layout.
+ */
+void Browser_Set_Window_Mode(bool fullscreen, int width, int height)
+{
+	if (_Window == nullptr) {
+		return;
+	}
+
+	if (width > 0 && height > 0) {
+		_WindowedWidth = width;
+		_WindowedHeight = height;
+	}
+
+	if (fullscreen == _Fullscreen) {
+		if (!fullscreen) {
+			SDL_SetWindowSize(_Window, _WindowedWidth, _WindowedHeight);
+		}
+		return;
+	}
+
+	if (SDL_SetWindowFullscreen(_Window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0) {
+		fprintf(stderr, "OpenTS: the window mode could not be changed: %s\n", SDL_GetError());
+		return;
+	}
+
+	_Fullscreen = fullscreen;
+
+	if (!fullscreen) {
+		SDL_SetWindowSize(_Window, _WindowedWidth, _WindowedHeight);
+		SDL_SetWindowPosition(_Window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+	}
+}
+
+
 void Browser_Service(void)
 {
 	if (!_Initialized) {
@@ -397,6 +441,14 @@ void Browser_Service(void)
 
 			case SDL_KEYDOWN:
 			case SDL_KEYUP:
+				// Alt+Enter is the host's, as the close box is. Swallowing it keeps the
+				// engine from also reading a Return while the window is changing mode.
+				if (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT) != 0) {
+					if (event.type == SDL_KEYDOWN && event.key.repeat == 0) {
+						Browser_Set_Window_Mode(!_Fullscreen, 0, 0);
+					}
+					break;
+				}
 				Handle_Key(event.key);
 				break;
 
