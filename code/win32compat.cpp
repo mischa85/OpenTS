@@ -19,6 +19,7 @@
 #include "hostfile.h"
 #include "iso9660.h"
 #include "misc.h"
+#include "platform.h"
 #include "video.h"
 #include "win32compat.h"
 
@@ -2316,7 +2317,7 @@ DWORD GetFileVersionInfoSizeA(LPCSTR filename, LPDWORD handle)
 
 	char module[MAX_PATH];
 
-	if (filename != nullptr && GetModuleFileNameA(nullptr, module, sizeof(module)) > 0
+	if (filename != nullptr && Platform_Executable_Path(module, sizeof(module))
 			&& strcmp(filename, module) == 0) {
 		return(0);
 	}

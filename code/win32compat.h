@@ -1541,8 +1541,6 @@ DWORD GetLastError(void);
 void SetLastError(DWORD error);
 
 /* Process, module, and thread. */
-DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size);
-LPWSTR GetCommandLineW(void);
 HANDLE GetCurrentProcess(void);
 HANDLE GetCurrentThread(void);
 DWORD GetCurrentThreadId(void);
@@ -1550,7 +1548,6 @@ DWORD GetCurrentProcessId(void);
 void Sleep(DWORD milliseconds);
 void GlobalMemoryStatus(LPMEMORYSTATUS status);
 void OutputDebugStringA(LPCSTR string);
-#define GetModuleFileName	GetModuleFileNameA
 #define OutputDebugString	OutputDebugStringA
 
 /* Synchronization. */
@@ -1950,7 +1947,6 @@ BOOL SetConsoleTitleA(LPCSTR title);
 HANDLE GetStdHandle(DWORD handle);
 BOOL SetConsoleMode(HANDLE console, DWORD mode);
 BOOL GetConsoleMode(HANDLE console, LPDWORD mode);
-LPWSTR * CommandLineToArgvW(LPCWSTR commandline, int * count);
 #define SetConsoleTitle		SetConsoleTitleA
 
 /*
