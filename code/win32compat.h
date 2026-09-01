@@ -1421,8 +1421,6 @@ inline HRESULT DirectSoundCreate(GUID * device, LPDIRECTSOUND * directsound, IUn
 ** Clocks. These are the one group with a correct answer available off the host, so they
 ** compute it instead of reporting a stub.
 */
-DWORD GetTickCount(void);
-DWORD timeGetTime(void);
 BOOL QueryPerformanceCounter(LARGE_INTEGER * count);
 BOOL QueryPerformanceFrequency(LARGE_INTEGER * frequency);
 void GetSystemTime(SYSTEMTIME * time);

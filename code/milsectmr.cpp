@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "milsectmr.h"
 
@@ -97,5 +98,5 @@ MillisecondTimerClass::operator double () const
 		return(LI_TO_DBL(dh, dl) / Frequency);
 	}
 
-	return(timeGetTime());
+	return(Host_Milliseconds());
 }

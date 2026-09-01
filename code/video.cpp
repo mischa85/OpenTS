@@ -12,6 +12,7 @@
 // window it lands, and hands it to the renderer behind video.h.
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "video.h"
 
@@ -331,7 +332,7 @@ void Video_Request_Frame_Size(int width, int height)
 
 	// Restarted on every report, so a drag is one mode change at the end rather than one
 	// per animation frame along the way.
-	_RequestedAt = timeGetTime();
+	_RequestedAt = Host_Milliseconds();
 }
 
 
@@ -461,7 +462,7 @@ void Video_Service_Display(void)
 		return;
 	}
 
-	if ((timeGetTime() - _RequestedAt) < RESIZE_SETTLE_TIME) {
+	if ((Host_Milliseconds() - _RequestedAt) < RESIZE_SETTLE_TIME) {
 		return;
 	}
 
@@ -732,7 +733,7 @@ void Video_Present(void)
 	_Presenting = false;
 
 	_FrameIsDirty = false;
-	_LastPresentTime = timeGetTime();
+	_LastPresentTime = Host_Milliseconds();
 }
 
 
@@ -760,7 +761,7 @@ void Video_Present_If_Dirty(void)
 	_LastPresentSerial = Browser_Frame_Serial();
 #else
 
-	unsigned int now = timeGetTime();
+	unsigned int now = Host_Milliseconds();
 	if ((now - _LastPresentTime) < _PresentInterval) {
 		return;
 	}

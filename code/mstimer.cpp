@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "mstimer.h"
 
@@ -44,7 +45,7 @@ MillisecondSystemTimerClass::~MillisecondSystemTimerClass(void)
 /// <returns>Returns with the number of milliseconds elapsed since Windows started.</returns>
 int MillisecondSystemTimerClass::operator () (void) const
 {
-	return(timeGetTime());
+	return(Host_Milliseconds());
 }
 
 
@@ -55,5 +56,5 @@ int MillisecondSystemTimerClass::operator () (void) const
 /// <returns>Returns with the number of milliseconds elapsed since Windows started.</returns>
 MillisecondSystemTimerClass::operator int (void) const
 {
-	return(timeGetTime());
+	return(Host_Milliseconds());
 }

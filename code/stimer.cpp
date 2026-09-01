@@ -30,6 +30,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "stimer.h"
 
@@ -54,7 +55,7 @@
 /// <returns>Returns with the current system time, expressed in timer ticks.</returns>
 int SystemTimerClass::operator () (void) const
 {
-	return(timeGetTime()/16);
+	return(Host_Milliseconds()/16);
 }
 
 
@@ -66,5 +67,5 @@ int SystemTimerClass::operator () (void) const
 /// <returns>Returns with the current system time, expressed in timer ticks.</returns>
 SystemTimerClass::operator int (void) const
 {
-	return(timeGetTime()/16);
+	return(Host_Milliseconds()/16);
 }

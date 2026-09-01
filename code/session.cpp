@@ -45,6 +45,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "session.h"
 
@@ -939,7 +940,7 @@ unsigned int SessionClass::Compute_Unique_ID(void)
 	//------------------------------------------------------------------------
 //	time(&tm);
 //	id = (unsigned long)tm;
-	id = timeGetTime();
+	id = Host_Milliseconds();
 
 	//------------------------------------------------------------------------
 	// Now add in the free space on the hard drive

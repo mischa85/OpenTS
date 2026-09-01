@@ -92,6 +92,7 @@ endif()
 if(NOT WIN32)
     add_library(OpenTSPosixCompat STATIC
         "${CMAKE_SOURCE_DIR}/code/filesystem.cpp"
+        "${CMAKE_SOURCE_DIR}/code/hostclock.cpp"
         "${CMAKE_SOURCE_DIR}/code/hostfile.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32stub.cpp"

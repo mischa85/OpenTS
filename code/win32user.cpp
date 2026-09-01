@@ -33,6 +33,7 @@
 // dialog or one of its controls -- and would otherwise be doubled.
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "win32user.h"
 
@@ -564,7 +565,7 @@ static bool Queue_Message(HWND window, UINT message, WPARAM wparam, LPARAM lpara
 	entry.message = message;
 	entry.wParam = wparam;
 	entry.lParam = lparam;
-	entry.time = GetTickCount();
+	entry.time = Host_Milliseconds();
 	entry.pt.x = _LastMouse.x;
 	entry.pt.y = _LastMouse.y;
 
@@ -657,7 +658,7 @@ UINT_PTR SetTimer(HWND window, UINT_PTR id, UINT elapse, TIMERPROC callback)
 		return(WIN32_UNSUPPORTED("SetTimer: a timer belonging to no window", 0));
 	}
 
-	DWORD due = GetTickCount() + elapse;
+	DWORD due = Host_Milliseconds() + elapse;
 
 	for (unsigned int index = 0; index < _Timers.size(); index++) {
 		if (_Timers[index].Window == entry && _Timers[index].ID == id) {
@@ -701,7 +702,7 @@ BOOL KillTimer(HWND window, UINT_PTR id)
 /// <returns>Returns with the position of the timer, or -1 when none is due.</returns>
 static int Timer_Awaiting_Tick(void)
 {
-	DWORD now = GetTickCount();
+	DWORD now = Host_Milliseconds();
 
 	for (unsigned int index = 0; index < _Timers.size(); index++) {
 		if ((LONG)(now - _Timers[index].Due) >= 0) {
@@ -793,13 +794,13 @@ BOOL PeekMessageA(LPMSG message, HWND window, UINT filtermin, UINT filtermax, UI
 		tick.message = WM_TIMER;
 		tick.wParam = (WPARAM)_Timers[(unsigned int)due].ID;
 		tick.lParam = 0;
-		tick.time = GetTickCount();
+		tick.time = Host_Milliseconds();
 		tick.pt.x = _LastMouse.x;
 		tick.pt.y = _LastMouse.y;
 
 		if (Message_Matches(tick, window, filtermin, filtermax)) {
 			if ((remove & PM_REMOVE) != 0) {
-				_Timers[(unsigned int)due].Due = GetTickCount() + _Timers[(unsigned int)due].Elapse;
+				_Timers[(unsigned int)due].Due = Host_Milliseconds() + _Timers[(unsigned int)due].Elapse;
 			}
 			*message = tick;
 			return(TRUE);

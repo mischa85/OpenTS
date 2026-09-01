@@ -18,6 +18,7 @@
 // callbacks it armed.
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "win32timer.h"
 
@@ -126,7 +127,7 @@ MMRESULT timeSetEvent(UINT delay, UINT resolution, LPTIMECALLBACK callback, DWOR
 		event->Callback = callback;
 		event->User = user;
 		event->Period = delay;
-		event->Due = timeGetTime() + delay;
+		event->Due = Host_Milliseconds() + delay;
 		event->IsPeriodic = ((flags & TIME_PERIODIC) != 0);
 		return(event->Id);
 	}
@@ -169,7 +170,7 @@ void Win32_Timer_Service(void)
 
 	_Servicing = true;
 
-	DWORD now = timeGetTime();
+	DWORD now = Host_Milliseconds();
 
 	for (int index = 0; index < WIN32_TIMER_EVENTS; index++) {
 		Win32TimerEventType * event = &_TimerEvents[index];
@@ -231,12 +232,12 @@ void Sleep(DWORD milliseconds)
 		return;
 	}
 
-	DWORD start = timeGetTime();
+	DWORD start = Host_Milliseconds();
 
 	do {
 		Browser_Yield();
 		Win32_Timer_Service();
-	} while ((DWORD)(timeGetTime() - start) < milliseconds);
+	} while ((DWORD)(Host_Milliseconds() - start) < milliseconds);
 }
 
 #endif	// __EMSCRIPTEN__

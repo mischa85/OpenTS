@@ -170,9 +170,9 @@ BOOL IsEqualGUID(REFGUID first, REFGUID second)
 
 
 /*
-** The clocks. A monotonic host clock is available and correct, so these compute their
-** answer instead of reporting a stub. GetTickCount and timeGetTime are both defined as
-** milliseconds since the first call, which is what the engine uses them for.
+** The performance counter. A monotonic host clock is available and correct, so this
+** computes its answer instead of reporting a stub. The engine's coarse clock is not here:
+** hostclock.h answers that one the same way on every target.
 */
 static bool ClockStarted = false;
 static struct timespec ClockOrigin;
@@ -190,18 +190,6 @@ static unsigned long long Monotonic_Nanoseconds(void)
 
 	return((unsigned long long)(now.tv_sec - ClockOrigin.tv_sec) * 1000000000ULL
 		+ (unsigned long long)now.tv_nsec - (unsigned long long)ClockOrigin.tv_nsec);
-}
-
-
-DWORD GetTickCount(void)
-{
-	return((DWORD)(Monotonic_Nanoseconds() / 1000000ULL));
-}
-
-
-DWORD timeGetTime(void)
-{
-	return(GetTickCount());
 }
 
 

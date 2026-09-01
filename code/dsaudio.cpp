@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "dsaudio.h"
 
@@ -1783,7 +1784,7 @@ void DSAudio::File_Stream_Preload(int handle)
 	int index = st->FilePending;
 	bool deferred = false;
 
-	unsigned int const now = timeGetTime();
+	unsigned int const now = Host_Milliseconds();
 	bool patient = st->IsDeferrable;
 
 	if (patient && st->DeferredAt != 0) {
@@ -2195,7 +2196,7 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
 				**	alone until an answer could have arrived, rather than asking again on
 				**	every pass. What has been buffered goes on playing throughout.
 				*/
-				unsigned int const now = timeGetTime();
+				unsigned int const now = Host_Milliseconds();
 
 				if (st->IsDeferrable && st->DeferredAt != 0 &&
 					(unsigned int)(now - st->DeferredTry) < DEFER_RETRY) {

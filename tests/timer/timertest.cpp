@@ -18,6 +18,7 @@
 // testable at all: it comes around every forty nine days on a real one.
 
 #include "win32timer.h"
+#include "hostclock.h"
 
 #include <cstdio>
 
@@ -338,7 +339,7 @@ void Test_Sleep(void)
 ** the test steps and the yield is a fixed sixteen milliseconds, which is what an animation
 ** frame costs a real one.
 */
-DWORD timeGetTime(void)
+uint32_t Host_Milliseconds(void)
 {
 	return(Now);
 }
