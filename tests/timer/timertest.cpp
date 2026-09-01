@@ -339,7 +339,7 @@ void Test_Wait(void)
 ** the test steps and the yield is a fixed sixteen milliseconds, which is what an animation
 ** frame costs a real one.
 */
-uint32_t Host_Milliseconds(void)
+static uint32_t Test_Clock(void)
 {
 	return(Now);
 }
@@ -379,6 +379,8 @@ void Win32_Unsupported_Reached(char const * description)
 
 int main(void)
 {
+	Win32_Timer_Set_Clock(Test_Clock);
+
 	Test_Device_Caps();
 	Test_Arming();
 	Test_Table_Is_Bounded();

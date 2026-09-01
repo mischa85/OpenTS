@@ -36,10 +36,16 @@
 
 #include "win32compat.h"
 
+#include <cstdint>
+
 
 // Runs every armed callback whose deadline has passed, and rearms the periodic ones. Cheap
 // enough to call from every wait the engine has; reentrant calls return without doing
 // anything, so a callback may service, wait, or kill a timer without recursing.
 void Win32_Timer_Service(void);
+
+// Replaces the clock deadlines are measured against, so that a test can step time by hand
+// rather than wait for it. Null restores the host clock.
+void Win32_Timer_Set_Clock(uint32_t (*clock)(void));
 
 #endif	// __EMSCRIPTEN__

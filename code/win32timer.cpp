@@ -51,6 +51,22 @@ struct Win32TimerEventType
 	bool IsPeriodic;
 };
 
+// Null everywhere but under a test, which steps time by hand instead of waiting for it.
+static uint32_t (*_Clock)(void) = nullptr;
+
+
+static uint32_t Timer_Now(void)
+{
+	return(_Clock != nullptr ? _Clock() : Host_Milliseconds());
+}
+
+
+void Win32_Timer_Set_Clock(uint32_t (*clock)(void))
+{
+	_Clock = clock;
+}
+
+
 static const int WIN32_TIMER_EVENTS = 8;
 
 static Win32TimerEventType _TimerEvents[WIN32_TIMER_EVENTS];
@@ -128,7 +144,7 @@ MMRESULT timeSetEvent(UINT delay, UINT resolution, LPTIMECALLBACK callback, DWOR
 		event->Callback = callback;
 		event->User = user;
 		event->Period = delay;
-		event->Due = Host_Milliseconds() + delay;
+		event->Due = Timer_Now() + delay;
 		event->IsPeriodic = ((flags & TIME_PERIODIC) != 0);
 		return(event->Id);
 	}
@@ -171,7 +187,7 @@ void Win32_Timer_Service(void)
 
 	_Servicing = true;
 
-	DWORD now = Host_Milliseconds();
+	DWORD now = Timer_Now();
 
 	for (int index = 0; index < WIN32_TIMER_EVENTS; index++) {
 		Win32TimerEventType * event = &_TimerEvents[index];
@@ -233,12 +249,12 @@ void Host_Wait(uint32_t milliseconds)
 		return;
 	}
 
-	DWORD start = Host_Milliseconds();
+	DWORD start = Timer_Now();
 
 	do {
 		Browser_Yield();
 		Win32_Timer_Service();
-	} while ((DWORD)(Host_Milliseconds() - start) < milliseconds);
+	} while ((DWORD)(Timer_Now() - start) < milliseconds);
 }
 
 #endif	// __EMSCRIPTEN__
