@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "msengine.h"
 
@@ -422,7 +423,7 @@ void MSEngine::Wait_Delay(int delay)
 				timer.Start();
 			}
 
-			Sleep(0);
+			Host_Wait(0);
 
 		} while (timer.Value() > 0);
 
@@ -451,7 +452,7 @@ void MSEngine::Wait_For_Focus(void)
 
 		while (!GameInFocus) {
 			DebugString("MSEngine - Sleeping\n");
-			Sleep(500);
+			Host_Wait(500);
 			Windows_Message_Handler();
 		}
 

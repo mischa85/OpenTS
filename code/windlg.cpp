@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "windlg.h"
 
@@ -332,7 +333,7 @@ int WS_Wait_Dialog(HWND window, bool (*callback)(void), bool, bool place_on_top)
 		 */
 		Video_Present_If_Dirty();
 
-		Sleep(0);
+		Host_Wait(0);
 	}
 
 	if (place_on_top) {

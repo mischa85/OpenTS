@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "ownrdraw.h"
 
@@ -1926,7 +1927,7 @@ cleanup:
 							frame++;
 							int wait = start_time.millitm + frame * (40 - counter / half) + 1000 * (start_time.time - now.time) - now.millitm;
 							if (wait > 0) {
-								Sleep(wait);
+								Host_Wait(wait);
 							}
 
 							if (Audio_Available() && GameInFocus == true) {
@@ -1941,7 +1942,7 @@ cleanup:
 							 */
 							Video_Present_If_Dirty();
 
-							Sleep(0);
+							Host_Wait(0);
 
 							step += 12;
 							counter += 240;

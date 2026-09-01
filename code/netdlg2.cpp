@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "netdlg2.h"
 
@@ -677,7 +678,7 @@ bool Net2Remote_Connect(void)
 		//.....................................................................
 		while (_netresponse == 0) {
 			Ipx.Service();
-			Sleep(0);
+			Host_Wait(0);
 			Call_Back();
 			Ipx.Service();
 			Title_Screen_Restore();

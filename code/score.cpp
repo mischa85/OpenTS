@@ -43,6 +43,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "score.h"
 
@@ -1070,7 +1071,7 @@ void ScoreClass::Call_Back_Delay(int time)
 				cd.Start();
 			}
 
-			Sleep(0);
+			Host_Wait(0);
 
 		} while (cd > 0);
 
@@ -1131,7 +1132,7 @@ void ScoreClass::Timing(void)
 	}
 
 	while (!GameInFocus) {
-		Sleep(500);
+		Host_Wait(500);
 		Windows_Message_Handler();
 	}
 

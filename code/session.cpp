@@ -1162,7 +1162,7 @@ void SessionClass::Update_Progress(int percent)
 				Call_Back();
 
 				while (Ipx.Global_Num_Send() > 5 && timer > 0) {
-					Sleep(20);
+					Host_Wait(20);
 					Windows_Message_Handler();
 					Call_Back();
 				}

@@ -42,6 +42,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "hostclock.h"
 
 #include "taction.h"
 
@@ -2003,7 +2004,7 @@ bool TActionClass::TAction_ZOOM_IN(HouseClass * , ObjectClass * , TriggerClass *
 	Map.Flag_To_Redraw();
 	Map.Render();
 
-	Sleep(1000);
+	Host_Wait(1000);
 	return(true);
 }
 

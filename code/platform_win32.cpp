@@ -9,6 +9,7 @@
 
 #ifdef _WIN32
 
+#include "hostclock.h"
 #include "platform.h"
 
 #include <shellapi.h>
@@ -73,6 +74,12 @@ uint64_t Platform_Physical_Memory(void)
 uint32_t Platform_Process_Id(void)
 {
 	return((uint32_t)GetCurrentProcessId());
+}
+
+
+void Host_Wait(uint32_t milliseconds)
+{
+	::Sleep((DWORD)milliseconds);
 }
 
 #endif

@@ -39,7 +39,7 @@
 
 // Runs every armed callback whose deadline has passed, and rearms the periodic ones. Cheap
 // enough to call from every wait the engine has; reentrant calls return without doing
-// anything, so a callback may service, sleep, or kill a timer without recursing.
+// anything, so a callback may service, wait, or kill a timer without recursing.
 void Win32_Timer_Service(void);
 
 #endif	// __EMSCRIPTEN__

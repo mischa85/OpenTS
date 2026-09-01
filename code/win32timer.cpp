@@ -11,15 +11,16 @@
 // promise is kept: a small table of armed callbacks, a deadline apiece taken from the same
 // millisecond clock timeGetTime reads, and a service routine the engine's waits reach.
 //
-// Sleep belongs here for the same reason. A page owns the thread the engine borrows, so a
-// wait that keeps it is a wait that stops the page; the only sleep a tab can perform is to
-// hand the thread back until the time has passed, which is what browser.h's yield does.
-// Servicing the timer on the way through is what keeps a sleeping caller from starving the
+// Host_Wait belongs here for the same reason. A page owns the thread the engine borrows,
+// so a wait that keeps it is a wait that stops the page; the only wait a tab can perform is
+// to hand the thread back until the time has passed, which is what browser.h's yield does.
+// Servicing the timer on the way through is what keeps a waiting caller from starving the
 // callbacks it armed.
 
 #include "always.h"
 #include "hostclock.h"
 
+#include "hostclock.h"
 #include "win32timer.h"
 
 #if !defined(_WIN32)
@@ -58,7 +59,7 @@ static Win32TimerEventType _TimerEvents[WIN32_TIMER_EVENTS];
 // handle names a timer that no longer exists instead of naming whatever took its place.
 static UINT _NextTimerID = 1;
 
-// A callback is free to sleep, and a sleep services the timer; without this a periodic
+// A callback is free to wait, and a wait services the timer; without this a periodic
 // callback would be re-entered from inside itself.
 static bool _Servicing = false;
 
@@ -209,12 +210,12 @@ void Win32_Timer_Service(void)
 /// <summary>
 /// Waits the requested number of milliseconds, handing the thread back while it waits.
 /// </summary>
-/// <param name="milliseconds">How long to wait. Zero gives the page a turn without waiting.</param>
-/// <remarks>The wait is at least as long as asked and rounds up to whatever gap the page
+/// <param name="milliseconds">How long to wait. Zero gives the host a turn without waiting.</param>
+/// <remarks>The wait is at least as long as asked and rounds up to whatever gap the host
 /// puts between two animation frames, so a request shorter than a frame costs a frame. A
 /// hidden tab is not given frames at all and its waits are as long as the browser's
 /// throttling makes them.</remarks>
-void Sleep(DWORD milliseconds)
+void Host_Wait(uint32_t milliseconds)
 {
 	/*
 	**	Without the yield scaffold nothing carries a wait, and spinning here would keep the

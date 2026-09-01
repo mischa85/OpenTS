@@ -1539,7 +1539,6 @@ DWORD GetLastError(void);
 void SetLastError(DWORD error);
 
 /* Waiting, and the debugger's output stream. */
-void Sleep(DWORD milliseconds);
 void OutputDebugStringA(LPCSTR string);
 #define OutputDebugString	OutputDebugStringA
 

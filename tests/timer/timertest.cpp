@@ -11,7 +11,7 @@
 // What is covered is the contract win32timer.h states: a callback is delivered from the
 // service pass and never before its deadline, a periodic one that was missed for several
 // periods is delivered once rather than in a burst, a one shot disarms itself, and a
-// callback may kill a timer or sleep from inside itself.
+// callback may kill a timer or wait from inside itself.
 //
 // The clock and the yield are supplied here rather than by the platform, so the test steps
 // time instead of waiting on it. That is also what makes the wrap of the millisecond clock
@@ -303,29 +303,29 @@ void Test_Clock_Wrap(void)
 }
 
 
-void Test_Sleep(void)
+void Test_Wait(void)
 {
 	Reset();
 	Now = 10000;
 
-	Sleep(0);
-	Report_Value("a zero sleep does not wait on a frame", Yields, 0);
-	Report_Value("a zero sleep still offers the page a turn", PacedYields, 1);
+	Host_Wait(0);
+	Report_Value("a zero wait does not cost a frame", Yields, 0);
+	Report_Value("a zero wait still offers the host a turn", PacedYields, 1);
 
 	Reset();
 	DWORD start = Now;
-	Sleep(50);
+	Host_Wait(50);
 
-	Report("a sleep waits at least as long as it was asked to", (DWORD)(Now - start) >= 50);
-	Report("a sleep hands the thread back rather than spinning", Yields > 0);
+	Report("a wait lasts at least as long as it was asked to", (DWORD)(Now - start) >= 50);
+	Report("a wait hands the thread back rather than spinning", Yields > 0);
 
 	Reset();
 	start = Now;
 	UINT id = timeSetEvent(16, 1, Counting_Callback, 0, TIME_PERIODIC);
-	Sleep(100);
+	Host_Wait(100);
 
-	Report("a sleeping caller does not starve the timers it armed", Calls[0] > 0);
-	Report_Value("the timer runs once per yield the sleep takes", Calls[0], Yields);
+	Report("a waiting caller does not starve the timers it armed", Calls[0] > 0);
+	Report_Value("the timer runs once per yield the wait takes", Calls[0], Yields);
 
 	timeKillEvent(id);
 	Kill_All();
@@ -387,7 +387,7 @@ int main(void)
 	Test_One_Shot();
 	Test_Callback_May_Kill_And_Service();
 	Test_Clock_Wrap();
-	Test_Sleep();
+	Test_Wait();
 
 	std::printf("\n%s\n", (Failures == 0) ? "All timer tests passed." : "Timer tests FAILED.");
 	return((Failures == 0) ? 0 : 1);

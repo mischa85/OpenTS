@@ -34,6 +34,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "hostclock.h"
 
 #include "_alpha.h"
 #include "_command.h"
@@ -498,7 +499,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * , int command_sho
 				if (GetLastError () == ERROR_ALREADY_EXISTS) {
 					CloseHandle (AutoPlayMutex);
 					AutoPlayMutex = NULL;
-					Sleep (2500);
+					Host_Wait(2500);
 				} else {
 					DebugString("Create AutoPlayMutex.\n");
 				}

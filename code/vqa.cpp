@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hostclock.h"
 
 #include "vqa.h"
 
@@ -563,7 +564,7 @@ int VQAClass::Play_VQA(int last_frame_to_play, bool nobreakout)
 
 		if (sleeping == true) {
 			if (!GameInFocus) {
-				Sleep((1000/30));
+				Host_Wait((1000/30));
 				continue;
 			} else {
 				sleeping = false;
