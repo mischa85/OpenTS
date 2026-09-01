@@ -389,7 +389,7 @@ void * Host_Native_Display_Handle(void)
 
 /*
  * SDL_WINDOW_FULLSCREEN_DESKTOP rather than a real mode change: it keeps the desktop's
- * resolution and covers it, which is what the engine already means by fullscreen -- see
+ * resolution and covers it, which is what the engine already means by fullscreen. See
  * the WS_POPUP branch of Create_Main_Window. A mode change would also cost every other
  * window on the display its layout.
  */

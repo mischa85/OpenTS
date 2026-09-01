@@ -16,10 +16,10 @@
 
 
 /// <summary>
-/// Asks Windows for one millisecond timer resolution.
-/// The reading itself no longer needs this -- hostclock.h answers that from a clock of its
-/// own -- but the request is process wide, and every wait the game paces itself with is
-/// rounded up to the resolution in force.
+/// Requests one millisecond timer resolution for as long as this object exists.
+/// The reading itself no longer needs it, since hostclock.h answers that from a clock of
+/// its own. The request is process wide, though, and every wait the game paces itself with
+/// is rounded up to whatever resolution is in force.
 /// </summary>
 MillisecondSystemTimerClass::MillisecondSystemTimerClass(void)
 {
@@ -43,7 +43,7 @@ MillisecondSystemTimerClass::~MillisecondSystemTimerClass(void)
 /// This is the sampling routine that the timer templates call whenever they need to
 /// know how much time has passed.
 /// </summary>
-/// <returns>Returns with the number of milliseconds elapsed since the clock's first reading.</returns>
+/// <returns>Returns with the host clock's millisecond reading.</returns>
 int MillisecondSystemTimerClass::operator () (void) const
 {
 	return(Host_Milliseconds());
@@ -54,7 +54,7 @@ int MillisecondSystemTimerClass::operator () (void) const
 /// Converts the timer into its current millisecond reading.
 /// This routine lets the timer object be used wherever a plain time value is expected.
 /// </summary>
-/// <returns>Returns with the number of milliseconds elapsed since the clock's first reading.</returns>
+/// <returns>Returns with the host clock's millisecond reading.</returns>
 MillisecondSystemTimerClass::operator int (void) const
 {
 	return(Host_Milliseconds());

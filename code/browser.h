@@ -50,8 +50,8 @@ bool Browser_Init(void);
 /// <summary>Asks the host to present the game fullscreen, or windowed at this size.</summary>
 /// <remarks>
 /// The engine settles this from its configuration, which it reads long after the host has
-/// had to open something to draw into. A host with no say in the matter -- a page, or a
-/// harness with no window at all -- ignores the request.
+/// had to open something to draw into. A host with no say in the matter, such as a page or
+/// a harness with no window at all, ignores the request.
 /// </remarks>
 void Browser_Set_Window_Mode(bool fullscreen, int width, int height);
 
