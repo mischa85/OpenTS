@@ -11,11 +11,11 @@
 
 #include "dllver.h"
 
+// A module's own version query. Only Windows has modules to ask, so the rest of the file
+// is compiled only there.
 #ifdef _WIN32
+
 #include <shlwapi.h>
-#else
-#include "win32compat.h"
-#endif
 
 /// Sample code from https://learn.microsoft.com/en-us/windows/win32/controls/common-control-versions
 
@@ -70,3 +70,5 @@ DWORD GetDllVersion(LPCTSTR lpszDllName)
 	}
 	return(dwVersion);
 }
+
+#endif	// _WIN32
