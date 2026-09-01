@@ -485,9 +485,6 @@ LPWSTR * CommandLineToArgvW(LPCWSTR commandline, int * count)
 ** Win32 original returns on failure, after naming itself once.
 */
 
-HMODULE LoadLibraryA(LPCSTR) { return(WIN32_STUB((HMODULE)nullptr)); }
-BOOL FreeLibrary(HMODULE) { return(WIN32_STUB(FALSE)); }
-FARPROC GetProcAddress(HMODULE, LPCSTR) { return(WIN32_STUB((FARPROC)nullptr)); }
 HANDLE GetCurrentProcess(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 HANDLE GetCurrentThread(void) { return(WIN32_STUB(INVALID_HANDLE_VALUE)); }
 DWORD GetCurrentThreadId(void) { return(1); }

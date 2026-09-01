@@ -1542,9 +1542,6 @@ void SetLastError(DWORD error);
 
 /* Process, module, and thread. */
 DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size);
-HMODULE LoadLibraryA(LPCSTR name);
-BOOL FreeLibrary(HMODULE module);
-FARPROC GetProcAddress(HMODULE module, LPCSTR name);
 LPWSTR GetCommandLineW(void);
 HANDLE GetCurrentProcess(void);
 HANDLE GetCurrentThread(void);
@@ -1554,7 +1551,6 @@ void Sleep(DWORD milliseconds);
 void GlobalMemoryStatus(LPMEMORYSTATUS status);
 void OutputDebugStringA(LPCSTR string);
 #define GetModuleFileName	GetModuleFileNameA
-#define LoadLibrary			LoadLibraryA
 #define OutputDebugString	OutputDebugStringA
 
 /* Synchronization. */
@@ -2097,22 +2093,6 @@ BOOL InitCommonControls(void);
 	(((devicetype) << 16) | ((access) << 14) | ((function) << 2) | (method))
 
 BOOL DeviceIoControl(HANDLE device, DWORD code, LPVOID inbuffer, DWORD insize, LPVOID outbuffer, DWORD outsize, LPDWORD returned, LPOVERLAPPED overlapped);
-
-/*
-** The shell library version query, from shlwapi.h.
-*/
-typedef struct _DllVersionInfo {
-	DWORD cbSize;
-	DWORD dwMajorVersion;
-	DWORD dwMinorVersion;
-	DWORD dwBuildNumber;
-	DWORD dwPlatformID;
-} DLLVERSIONINFO;
-
-#define DLLVER_PLATFORM_WINDOWS		0x00000001
-#define DLLVER_PLATFORM_NT			0x00000002
-
-typedef HRESULT (CALLBACK * DLLGETVERSIONPROC)(DLLVERSIONINFO *);
 
 /*
 ** The remainder of the window manager, the common controls, and GDI, as the dialog layer
