@@ -22,6 +22,8 @@
 #elif defined(__APPLE__)
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
 #else
 #include <unistd.h>
 #endif
@@ -182,6 +184,34 @@ char const * const * Platform_Command_Line_Arguments(int * argc)
 	*argc = count;
 	return((char const * const *)arguments);
 #endif
+}
+
+
+uint64_t Platform_Physical_Memory(void)
+{
+#if defined(__APPLE__)
+	uint64_t bytes = 0;
+	size_t size = sizeof(bytes);
+
+	if (sysctlbyname("hw.memsize", &bytes, &size, nullptr, 0) != 0) {
+		return(0);
+	}
+	return(bytes);
+#else
+	long const pages = sysconf(_SC_PHYS_PAGES);
+	long const page_size = sysconf(_SC_PAGESIZE);
+
+	if (pages <= 0 || page_size <= 0) {
+		return(0);
+	}
+	return((uint64_t)pages * (uint64_t)page_size);
+#endif
+}
+
+
+uint32_t Platform_Process_Id(void)
+{
+	return((uint32_t)getpid());
 }
 
 #endif

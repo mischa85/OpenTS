@@ -22,6 +22,7 @@
 
 #include <cassert>
 #include <mutex>
+#include <thread>
 
 /// use of this is a bug..
 #ifndef DSBCAPS_GETCURRENTPOSITION2
@@ -208,7 +209,8 @@ VQAErrorType __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *par
 	DSCAPS dscaps;
 
 	DebugString("Opening VQ audio handler\n");
-	DebugString("Current thread ID is %08x\n", GetCurrentThreadId());
+	DebugString("Current thread ID is %016llx\n",
+					(unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
 	if (!Audio_Available()) {
 		return(VQAERR_AUDIO);

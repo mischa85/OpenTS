@@ -59,4 +59,20 @@ char const * const * Platform_Command_Line_Arguments(int * argc)
 	return(pointers.data());
 }
 
+
+uint64_t Platform_Physical_Memory(void)
+{
+	MEMORYSTATUS status;
+
+	status.dwLength = sizeof(status);
+	GlobalMemoryStatus(&status);
+	return((uint64_t)status.dwTotalPhys);
+}
+
+
+uint32_t Platform_Process_Id(void)
+{
+	return((uint32_t)GetCurrentProcessId());
+}
+
 #endif

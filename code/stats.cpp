@@ -403,10 +403,7 @@ void Send_Statistics_Packet(void)
 	/*
 	**	Memory
 	*/
-	MEMORYSTATUS	mem_info;
-	mem_info.dwLength=sizeof(mem_info);
-	GlobalMemoryStatus(&mem_info);
-	stats.Add_Field (FIELD_MEMORY, (int)mem_info.dwTotalPhys);
+	stats.Add_Field (FIELD_MEMORY, (int)Platform_Physical_Memory());
 
 	/*
 	**	Game speed setting.

@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 /*
  * The operating system surface the portable code builds on. On Windows this is <windows.h>
  * itself. Everywhere else the same surface is answered by the compatibility layer in
@@ -51,3 +53,14 @@ bool Platform_Executable_Path(char * buffer, size_t size);
  * index zero. The array and the strings last as long as the process.
  */
 char const * const * Platform_Command_Line_Arguments(int * argc);
+
+/*
+ * How much physical memory the machine has, in bytes. Zero when the host will not say.
+ */
+uint64_t Platform_Physical_Memory(void);
+
+/*
+ * The process's own identifier, for naming something that another copy of the program
+ * must not collide with.
+ */
+uint32_t Platform_Process_Id(void);

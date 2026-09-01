@@ -517,7 +517,7 @@ bool Make_Root(void)
 	}
 
 	char name[MAX_PATH];
-	std::snprintf(name, sizeof(name), "%sopents-gamedirs-%lu", temp, (unsigned long)GetCurrentProcessId());
+	std::snprintf(name, sizeof(name), "%sopents-gamedirs-%lu", temp, (unsigned long)Platform_Process_Id());
 	Root = name;
 
 	Make_Directory(Root);

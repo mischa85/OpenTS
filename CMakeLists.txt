@@ -95,7 +95,6 @@ if(NOT WIN32)
         "${CMAKE_SOURCE_DIR}/code/hostfile.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32compat.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32stub.cpp"
-        "${CMAKE_SOURCE_DIR}/code/win32process.cpp"
         "${CMAKE_SOURCE_DIR}/code/win32timer.cpp"
         "${CMAKE_SOURCE_DIR}/code/docfile.cpp"
         "${CMAKE_SOURCE_DIR}/code/iso9660.cpp"

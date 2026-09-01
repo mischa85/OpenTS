@@ -44,6 +44,7 @@ endif()
 target_compile_options(GameDirs PRIVATE ${OPENTS_HARNESS_COMPILE_OPTIONS})
 
 if(WIN32)
+    target_sources(GameDirs PRIVATE "${CMAKE_SOURCE_DIR}/code/platform_win32.cpp")
     target_link_libraries(GameDirs PRIVATE kernel32 user32 shell32)
 else()
     find_package(Threads REQUIRED)

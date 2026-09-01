@@ -327,7 +327,7 @@ static void Init_Locked(void)
 		// A second process started in the same second must not disturb the first one's log.
 		if (DebugFile < 0) {
 			snprintf(DebugFileName, sizeof(DebugFileName), "%s/DEBUG_%s_%u.LOG",
-						DebugDirectory, timestamp, (unsigned)GetCurrentProcessId());
+						DebugDirectory, timestamp, (unsigned)getpid());
 			DebugFile = open(DebugFileName, O_WRONLY | O_CREAT | O_EXCL, 0644);
 		}
 #endif

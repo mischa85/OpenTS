@@ -1540,13 +1540,8 @@ inline BOOL CopyRect(LPRECT destination, LPCRECT source) { *destination = *sourc
 DWORD GetLastError(void);
 void SetLastError(DWORD error);
 
-/* Process, module, and thread. */
-HANDLE GetCurrentProcess(void);
-HANDLE GetCurrentThread(void);
-DWORD GetCurrentThreadId(void);
-DWORD GetCurrentProcessId(void);
+/* Waiting, and the debugger's output stream. */
 void Sleep(DWORD milliseconds);
-void GlobalMemoryStatus(LPMEMORYSTATUS status);
 void OutputDebugStringA(LPCSTR string);
 #define OutputDebugString	OutputDebugStringA
 
