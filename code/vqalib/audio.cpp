@@ -113,7 +113,6 @@ static void StartAddr(void)
 VQAErrorType VQA_OpenAudio(VQAHandleP *vqap)
 {
 	VQAAudio *audio;
-	VQAErrorType          rc;
 
 	/* Dereference data memebers for quicker access. */
 	audio = &vqap->Audio;
@@ -134,8 +133,8 @@ VQAErrorType VQA_OpenAudio(VQAHandleP *vqap)
 	params.Callback1 = (void *)VQA_AudioFillCallback;
 	params.Callback2 = (void *)VQA_AudioDoneCallback;
 
-	intptr_t const opened = vqap->Config.AudioHandler((VQAHandle *)vqap, VQAAUDIO_OPEN, &params, sizeof(params));
-	rc = (VQAErrorType)opened;
+	auto const opened = vqap->Config.AudioHandler((VQAHandle *)vqap, VQAAUDIO_OPEN, &params, sizeof(params));
+
 	if (opened >= VQAERR_OK || opened == VQAERR_NONE) {
 
 		/* Lock the memory occupied by this module. */
@@ -144,7 +143,7 @@ VQAErrorType VQA_OpenAudio(VQAHandleP *vqap)
 		}
 		return(VQAERR_NONE);
 	}
-	return(rc);
+	return((VQAErrorType)opened);
 }
 
 
