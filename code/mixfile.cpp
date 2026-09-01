@@ -535,8 +535,14 @@ bool MixFileClass::Offset(char const * filename, void ** realptr, MixFileClass *
 	**	Create the key block that will be used to binary search for the file.
 	*/
 
-	/// Can't call strupr on a const string.
-	int crc = (CRCEngine()(strupr((char *)filename), strlen(filename))); //Calculate_CRC(strupr((char *)filename), strlen(filename));
+	// The header stores each name by the CRC of its uppercase form. Callers pass string
+	// literals, so the uppercasing works on a copy rather than on the caller's string.
+	char keyname[_MAX_PATH];
+	strncpy(keyname, filename, sizeof(keyname) - 1);
+	keyname[sizeof(keyname) - 1] = '\0';
+	strupr(keyname);
+
+	int crc = (CRCEngine()(keyname, strlen(keyname)));
 
 	SubBlock key;
 	key.CRC = crc;
