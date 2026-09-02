@@ -8,12 +8,12 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "milsectmr.h"
 
 #include "dbgprint.h"
 #include "getcpu.h"
+#include "hostclock.h"
 #include "mpu.h"
 #include "win.h"
 
@@ -40,7 +40,9 @@ MillisecondTimerClass::MillisecondTimerClass(void)
 	unsigned int low = Get_CPU_Rate(high);
 
 	if (low == 0 && high == 0) {
+#ifdef _WIN32
 		timeBeginPeriod(PERIOD_RESOLUTION);
+#endif
 
 	} else {
 		double dl = low;
@@ -64,7 +66,9 @@ MillisecondTimerClass::~MillisecondTimerClass(void)
 	// The constructor leaves Frequency at 1.0 exactly when it took the multimedia timer
 	// path, which is the case that raised the resolution.
 	if (Frequency == 1.0) {
+#ifdef _WIN32
 		timeEndPeriod(PERIOD_RESOLUTION);
+#endif
 	}
 }
 

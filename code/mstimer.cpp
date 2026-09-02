@@ -8,10 +8,10 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "mstimer.h"
 
+#include "hostclock.h"
 #include "win.h"
 
 
@@ -23,7 +23,9 @@
 /// </summary>
 MillisecondSystemTimerClass::MillisecondSystemTimerClass(void)
 {
+#ifdef _WIN32
 	timeBeginPeriod(1);
+#endif
 }
 
 
@@ -34,7 +36,9 @@ MillisecondSystemTimerClass::MillisecondSystemTimerClass(void)
 /// </summary>
 MillisecondSystemTimerClass::~MillisecondSystemTimerClass(void)
 {
+#ifdef _WIN32
 	timeEndPeriod(1);
+#endif
 }
 
 
