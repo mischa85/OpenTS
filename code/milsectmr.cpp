@@ -30,8 +30,9 @@
 /// <summary>
 /// Creates the millisecond timer and works out how to drive it.
 /// This routine will ask the processor for its clock rate so that the cycle counter can be
-/// scaled into milliseconds. Machines that will not report a rate fall back to the Windows
-/// multimedia timer, whose resolution is raised to one millisecond for the life of the timer.
+/// scaled into milliseconds. Machines that will not report a rate fall back to the host
+/// clock instead. The resolution raised here no longer sharpens that reading, but the
+/// request is process wide and the game's waits are rounded up to whatever is in force.
 /// </summary>
 MillisecondTimerClass::MillisecondTimerClass(void)
 {
@@ -58,13 +59,13 @@ MillisecondTimerClass::MillisecondTimerClass(void)
 
 /// <summary>
 /// Releases the millisecond timer.
-/// If this timer had to raise the system timer resolution in order to work, the resolution
-/// is dropped back here so that the rest of the system is not left paying for it.
+/// If this timer raised the system timer resolution, it is dropped back here so that the
+/// rest of the system is not left paying for it.
 /// </summary>
 MillisecondTimerClass::~MillisecondTimerClass(void)
 {
-	// The constructor leaves Frequency at 1.0 exactly when it took the multimedia timer
-	// path, which is the case that raised the resolution.
+	// The constructor leaves Frequency at 1.0 exactly when it took the fallback path,
+	// which is the case that raised the resolution.
 	if (Frequency == 1.0) {
 #ifdef _WIN32
 		timeEndPeriod(PERIOD_RESOLUTION);
@@ -76,8 +77,8 @@ MillisecondTimerClass::~MillisecondTimerClass(void)
 /// <summary>
 /// Fetches the current time, expressed in milliseconds.
 /// This routine is used every time the timer is read. The performance counter supplies the
-/// value when the machine has one, since it is finer grained than the system timer.
-/// Otherwise the Windows multimedia timer is consulted instead.
+/// value when the machine has one, since it is finer grained than the host clock. Otherwise
+/// the host clock is read instead.
 /// </summary>
 /// <returns>Returns with the current time in milliseconds.</returns>
 MillisecondTimerClass::operator double () const
