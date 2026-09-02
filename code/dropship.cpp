@@ -30,6 +30,7 @@
 #include "dsurface.h"
 #include "font.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "house.h"
 #include "infatype.h"
 #include "keyboard.h"
@@ -50,6 +51,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 #include <cstring>
 
 void Draw_Cost(int cost, int maxcost, Surface & surface, Point2D const & drawpoint, char const * title, bool center, ConvertClass & drawer, Blitter const * blitter);
@@ -206,13 +208,13 @@ int DropshipLoadoutClass::Get_Allowable_Index(TechnoTypeClass * ttype)
 
 struct ButtonFadeEffect
 {
-	unsigned int StartTime;
+	uint32_t StartTime;
 	int CandidateIndex;
 	float Alpha;
 	float Direction;
 	bool StopAtLow;
 
-	ButtonFadeEffect(unsigned int start_time, int candidate_index, float alpha, float direction, bool stop_at_low) :
+	ButtonFadeEffect(uint32_t start_time, int candidate_index, float alpha, float direction, bool stop_at_low) :
 		StartTime(start_time),
 		CandidateIndex(candidate_index),
 		Alpha(alpha),
@@ -235,7 +237,7 @@ struct CrossDissolveEffect
 	BSurface *FromSurface;
 	BSurface *ToSurface;
 	int Alpha;
-	unsigned int StartTime;
+	uint32_t StartTime;
 	Blitter const *FromBlitter;
 	Blitter const *ToBlitter;
 	bool WasDrawn;
@@ -247,7 +249,7 @@ struct CrossDissolveEffect
 		FromSurface(from_surface),
 		ToSurface(to_surface),
 		Alpha(0),
-		StartTime(::timeGetTime()),
+		StartTime(Host_Milliseconds()),
 		FromBlitter(from_blitter),
 		ToBlitter(to_blitter),
 		WasDrawn(false)
@@ -549,7 +551,7 @@ void Dropship_Screen(void)
 	bool recent_click = false;
 
 	unsigned int light_frame[ARRAY_SIZE(_green_light_ys)];
-	unsigned int light_start[ARRAY_SIZE(_green_light_ys)];
+	uint32_t light_start[ARRAY_SIZE(_green_light_ys)];
 	memset(light_frame, 0xFF, sizeof(light_frame));
 	memset(light_start, 0, sizeof(light_start));
 
@@ -557,10 +559,10 @@ void Dropship_Screen(void)
 
 	DynamicVectorClass<ButtonFadeEffect *> button_fades;
 
-	unsigned int money_display_time = ::timeGetTime();
-	unsigned int screen_start_time = money_display_time;
+	uint32_t money_display_time = Host_Milliseconds();
+	uint32_t screen_start_time = money_display_time;
 	int loadout_anim_frame = 0;
-	unsigned int last_input_time = 0;
+	uint32_t last_input_time = 0;
 	int pilot_frame = -1;
 
 	CDTimerClass<SystemTimerClass> pilot_timer = _pilot_delay;
@@ -613,7 +615,7 @@ void Dropship_Screen(void)
 		KeyNumType input = button_list->Input();
 		if (!recent_click && (input & KN_BUTTON) != 0) {
 			input = (KeyNumType)(input & ~KN_BUTTON);
-			last_input_time = ::timeGetTime();
+			last_input_time = Host_Milliseconds();
 
 			if (input <= _cameo_count && selected_count < dropship_count * SLOT_PER_DROPSHIP) {
 				int candidate_index = cameo_top + input - 1;
@@ -650,13 +652,13 @@ void Dropship_Screen(void)
 						int light_row = (input - 1) / 2;
 						if (light_frame[light_row] == (unsigned int)-1) {
 							light_frame[light_row] = 0;
-							light_start[light_row] = ::timeGetTime();
+							light_start[light_row] = Host_Milliseconds();
 						}
 
 						force_light_redraw = true;
 						for (j = 0; ; ++j) {
 							if (j >= button_fades.Count()) {
-								ButtonFadeEffect *fade = new ButtonFadeEffect(::timeGetTime(), candidate_index, 127.0f, -1.0f, false);
+								ButtonFadeEffect *fade = new ButtonFadeEffect(Host_Milliseconds(), candidate_index, 127.0f, -1.0f, false);
 								if (usage_index != -1 && Scen->AllowableUnitCounts[usage_index] >= Scen->AllowableUnitMaximums[usage_index]) {
 									force_info_redraw = true;
 									fade->StopAtLow = true;
@@ -709,7 +711,7 @@ void Dropship_Screen(void)
 						if (Scen->AllowableUnitCounts[usage_index] >= Scen->AllowableUnitMaximums[usage_index]) {
 							for (j = 0; j < candidates.Count(); ++j) {
 								if (candidates[j] == selections[remove_index]) {
-									ButtonFadeEffect *fade = new ButtonFadeEffect(::timeGetTime(), j, 127.0f, -1.0f, false);
+									ButtonFadeEffect *fade = new ButtonFadeEffect(Host_Milliseconds(), j, 127.0f, -1.0f, false);
 									fade->Direction = 1.0f;
 									fade->Alpha = 63.0f;
 									button_fades.Add(fade);
@@ -780,7 +782,7 @@ void Dropship_Screen(void)
 		for (i = 0; i < ARRAY_SIZE(_green_light_ys); ++i) {
 			if (light_frame[i] != (unsigned int)-1) {
 				int frame = light_frame[i];
-				int next_frame = (timeGetTime() - light_start[i]) / _light_rate;
+				int next_frame = (Host_Milliseconds() - light_start[i]) / _light_rate;
 				if (next_frame != frame || force_light_redraw) {
 					int light_y = y + _green_light_ys[i];
 					int light_x = x + _light_x;
@@ -816,14 +818,14 @@ void Dropship_Screen(void)
 			ButtonFadeEffect *effect = button_fades[i];
 			int alpha;
 			if (effect->Direction < 0.0f) {
-				alpha = 127 - (_fade_rate * timeGetTime() - _fade_rate * effect->StartTime) / _fade_scale;
+				alpha = 127 - (_fade_rate * Host_Milliseconds() - _fade_rate * effect->StartTime) / _fade_scale;
 				if (alpha < _fade_low) {
 					alpha = _fade_low;
 					effect->Direction = 1.0f;
-					effect->StartTime = timeGetTime();
+					effect->StartTime = Host_Milliseconds();
 				}
 			} else {
-				alpha = (_fade_rate * timeGetTime() - _fade_rate * effect->StartTime) / _fade_scale + _fade_low;
+				alpha = (_fade_rate * Host_Milliseconds() - _fade_rate * effect->StartTime) / _fade_scale + _fade_low;
 				if (alpha > 127) {
 					alpha = 127;
 				}
@@ -867,7 +869,7 @@ void Dropship_Screen(void)
 						--j;
 					}
 
-					int alpha = std::min(255ul, (_dissolve_rate * timeGetTime() - _dissolve_rate * effect->StartTime) / _dissolve_scale);
+					int alpha = std::min<uint32_t>(255, (_dissolve_rate * Host_Milliseconds() - _dissolve_rate * effect->StartTime) / _dissolve_scale);
 
 					if (alpha != effect->Alpha || overlap_drawn) {
 						effect->Alpha = alpha;
@@ -899,17 +901,17 @@ void Dropship_Screen(void)
 			}
 		}
 
-		recent_click = (::timeGetTime() - last_input_time) < _click_delay;
+		recent_click = (Host_Milliseconds() - last_input_time) < _click_delay;
 
 		int loadout_count = loadout_shape->Get_Count();
-		int next_loadout_frame = ((::timeGetTime() - screen_start_time) / _loadout_rate) % loadout_count;
+		int next_loadout_frame = ((Host_Milliseconds() - screen_start_time) / _loadout_rate) % loadout_count;
 		if (next_loadout_frame != loadout_anim_frame) {
 			loadout_anim_frame = next_loadout_frame;
 			Draw_Shape(*HiddenSurface, *drawer_dropship, loadout_shape, loadout_anim_frame, Point2D(0, 0), Rect(Point2D(x, y) + Point2D(_loadout_x, _loadout_y), loadout_shape->Get_Width(), loadout_shape->Get_Height()), SHAPE_NORMAL);
 			redraw = true;
 		}
 
-		unsigned int now = ::timeGetTime();
+		unsigned int now = Host_Milliseconds();
 		if ((unsigned int)money != money_display) {
 			unsigned int elapsed = now - money_display_time;
 			if (elapsed >= _money_rate) {
@@ -933,7 +935,7 @@ void Dropship_Screen(void)
 		}
 
 		if (pilot_frame >= 0) {
-			int next_pilot_frame = (::timeGetTime() - pilot_start_time) / _pilot_rate;
+			int next_pilot_frame = (Host_Milliseconds() - pilot_start_time) / _pilot_rate;
 			if (next_pilot_frame != pilot_frame) {
 				if (next_pilot_frame < pilotlight_shape->Get_Count()) {
 					pilot_frame = next_pilot_frame;
@@ -950,7 +952,7 @@ void Dropship_Screen(void)
 			if (pilot_timer == 0) {
 				if (Scen->RandomNumber(0, INT_MAX - 1) / (double)(INT_MAX - 1) < _pilot_chance) {
 					pilot_frame = 0;
-					pilot_start_time = ::timeGetTime();
+					pilot_start_time = Host_Milliseconds();
 					Draw_Shape(*HiddenSurface, *drawer_dropship, pilotlight_shape, 0, Point2D(0, 0), Rect(x + _pilot_x, y + _pilot_y, pilotlight_shape->Get_Width(), pilotlight_shape->Get_Height()), SHAPE_NORMAL);
 					redraw = true;
 				}
