@@ -20,6 +20,8 @@
 /// The reading itself no longer needs it, since hostclock.h answers that from a clock of
 /// its own. The request is process wide, though, and every wait the game paces itself with
 /// is rounded up to whatever resolution is in force.
+/// Windows is the only host with a resolution to bid for. Elsewhere a wait is already
+/// granted to about a millisecond, so the guard below deliberately has no other branch.
 /// </summary>
 MillisecondSystemTimerClass::MillisecondSystemTimerClass(void)
 {
