@@ -66,7 +66,7 @@ struct Ahandle {
 	BOOL AudioBufInUse[MAX_BUFFERS];
 	void * AudioBuf[MAX_BUFFERS];
 	unsigned int AudioBufSize[MAX_BUFFERS];
-	UINT TimerHandle;
+	uint32_t TimerHandle;
 	DSBUFFERDESC BufferDesc;
 	WAVEFORMATEX DsBuffFormat;
 	LPDIRECTSOUNDBUFFER SecondaryBufferPtr;

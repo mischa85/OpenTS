@@ -20,6 +20,7 @@
 #include "always.h"
 
 #include "hostclock.h"
+#include "hosttimer.h"
 #include "win32timer.h"
 
 #if !defined(_WIN32)
@@ -41,14 +42,13 @@ bool Browser_Yield_Is_Available(void);
 ** and the movie player's audio refill -- so the table is small on purpose, and a request
 ** it cannot hold fails the way Windows fails one it cannot hold.
 */
-struct Win32TimerEventType
+struct HostTimerType
 {
-	UINT Id;					// Zero when the slot is free. Never zero for an armed timer.
-	LPTIMECALLBACK Callback;
-	DWORD_PTR User;
-	UINT Period;				// Milliseconds between calls.
-	DWORD Due;					// The timeGetTime reading the next call is owed at.
-	bool IsPeriodic;
+	uint32_t Id;				// Zero when the slot is free. Never zero for an armed timer.
+	HostTimerCallbackType Callback;
+	void * User;
+	uint32_t Period;			// Milliseconds between calls.
+	uint32_t Due;				// The clock reading the next call is owed at.
 };
 
 // Null everywhere but under a test, which steps time by hand instead of waiting for it.
@@ -67,9 +67,9 @@ void Win32_Timer_Set_Clock(uint32_t (*clock)(void))
 }
 
 
-static const int WIN32_TIMER_EVENTS = 8;
+static const int HOST_TIMERS = 8;
 
-static Win32TimerEventType _TimerEvents[WIN32_TIMER_EVENTS];
+static HostTimerType _Timers[HOST_TIMERS];
 
 // Identifiers are handed out in sequence rather than as slot numbers, so that a stale
 // handle names a timer that no longer exists instead of naming whatever took its place.
@@ -79,74 +79,31 @@ static UINT _NextTimerID = 1;
 // callback would be re-entered from inside itself.
 static bool _Servicing = false;
 
-/*
-** The clock is timeGetTime, so a period finer than its millisecond is not expressible.
-** The upper bound is Windows' own, which is what the callers were written against.
-*/
-static const UINT WIN32_TIMER_PERIOD_MIN = 1;
-static const UINT WIN32_TIMER_PERIOD_MAX = 1000000;
-
-
 /// <summary>
-/// Reports the range of timer periods this target accepts.
+/// Arms a callback to run every period until it is disarmed.
 /// </summary>
-/// <param name="caps">Filled in with the shortest and longest period timeSetEvent takes.</param>
-/// <param name="size">Size of the structure, as Windows requires it be passed.</param>
-/// <returns>MMRESULT; TIMERR_NOERROR, or TIMERR_NOCANDO for a request that cannot be answered.</returns>
-/// <remarks>The period is what the dispatcher measures against the clock. How closely it is
-/// kept is a separate question that win32timer.h answers: delivery waits on the engine.</remarks>
-MMRESULT timeGetDevCaps(LPTIMECAPS caps, UINT size)
+/// <returns>The timer's handle, or zero when no slot is free or the period is zero.</returns>
+/// <remarks>The callback runs on the engine's thread, from inside a wait. This target has
+/// no thread to deliver it on, so a caller that never waits never sees it.</remarks>
+uint32_t Host_Timer_Arm(uint32_t period, HostTimerCallbackType callback, void * user)
 {
-	if (caps == nullptr || size < sizeof(TIMECAPS)) {
-		return(TIMERR_NOCANDO);
-	}
-
-	caps->wPeriodMin = WIN32_TIMER_PERIOD_MIN;
-	caps->wPeriodMax = WIN32_TIMER_PERIOD_MAX;
-	return(TIMERR_NOERROR);
-}
-
-
-/// <summary>
-/// Arms a callback to be run once, or every period, until it is killed.
-/// </summary>
-/// <param name="delay">Milliseconds until the first call, and between calls when periodic.</param>
-/// <param name="resolution">The accuracy Windows was asked for. There is none to give here.</param>
-/// <param name="callback">The routine to run. It runs on the engine's thread.</param>
-/// <param name="user">Passed back to the callback untouched.</param>
-/// <param name="flags">TIME_ONESHOT or TIME_PERIODIC.</param>
-/// <returns>MMRESULT; the timer's identifier, or zero if it could not be armed.</returns>
-MMRESULT timeSetEvent(UINT delay, UINT resolution, LPTIMECALLBACK callback, DWORD_PTR user, UINT flags)
-{
-	(void)resolution;
-
-	if (callback == nullptr || delay < WIN32_TIMER_PERIOD_MIN || delay > WIN32_TIMER_PERIOD_MAX) {
+	if (callback == nullptr || period == 0) {
 		return(0);
 	}
 
-	/*
-	**	Windows can also signal an event or pulse one instead of calling back. Neither has a
-	**	meaning on a target with one thread, so the request fails rather than silently
-	**	becoming a callback the caller never asked for.
-	*/
-	if ((flags & ~(UINT)TIME_PERIODIC) != 0) {
-		return(WIN32_UNSUPPORTED("timeSetEvent with anything but a function callback", 0));
-	}
+	for (int index = 0; index < HOST_TIMERS; index++) {
+		HostTimerType * timer = &_Timers[index];
 
-	for (int index = 0; index < WIN32_TIMER_EVENTS; index++) {
-		Win32TimerEventType * event = &_TimerEvents[index];
-
-		if (event->Id != 0) continue;
+		if (timer->Id != 0) continue;
 
 		if (_NextTimerID == 0) _NextTimerID = 1;
 
-		event->Id = _NextTimerID++;
-		event->Callback = callback;
-		event->User = user;
-		event->Period = delay;
-		event->Due = Timer_Now() + delay;
-		event->IsPeriodic = ((flags & TIME_PERIODIC) != 0);
-		return(event->Id);
+		timer->Id = _NextTimerID++;
+		timer->Callback = callback;
+		timer->User = user;
+		timer->Period = period;
+		timer->Due = Timer_Now() + period;
+		return(timer->Id);
 	}
 
 	return(0);
@@ -154,25 +111,19 @@ MMRESULT timeSetEvent(UINT delay, UINT resolution, LPTIMECALLBACK callback, DWOR
 
 
 /// <summary>
-/// Disarms a timer. A callback may kill its own timer from inside itself.
+/// Disarms a timer. A callback may disarm its own timer from inside itself.
 /// </summary>
-/// <param name="id">The identifier timeSetEvent returned.</param>
-/// <returns>MMRESULT; TIMERR_NOERROR, or TIMERR_NOCANDO if no such timer is armed.</returns>
-MMRESULT timeKillEvent(UINT id)
+void Host_Timer_Disarm(uint32_t timer)
 {
-	if (id == 0) {
-		return(TIMERR_NOCANDO);
-	}
+	if (timer == 0) return;
 
-	for (int index = 0; index < WIN32_TIMER_EVENTS; index++) {
-		if (_TimerEvents[index].Id == id) {
-			_TimerEvents[index].Id = 0;
-			_TimerEvents[index].Callback = nullptr;
-			return(TIMERR_NOERROR);
+	for (int index = 0; index < HOST_TIMERS; index++) {
+		if (_Timers[index].Id == timer) {
+			_Timers[index].Id = 0;
+			_Timers[index].Callback = nullptr;
+			return;
 		}
 	}
-
-	return(TIMERR_NOCANDO);
 }
 
 
@@ -187,36 +138,31 @@ void Win32_Timer_Service(void)
 
 	_Servicing = true;
 
-	DWORD now = Timer_Now();
+	uint32_t const now = Timer_Now();
 
-	for (int index = 0; index < WIN32_TIMER_EVENTS; index++) {
-		Win32TimerEventType * event = &_TimerEvents[index];
+	for (int index = 0; index < HOST_TIMERS; index++) {
+		HostTimerType * timer = &_Timers[index];
 
-		if (event->Id == 0) continue;
+		if (timer->Id == 0) continue;
 
 		/*
 		**	The clock wraps every forty nine days, so the comparison is on the signed
 		**	difference rather than on the readings themselves.
 		*/
-		if ((LONG)(now - event->Due) < 0) continue;
+		if ((int32_t)(now - timer->Due) < 0) continue;
 
-		UINT id = event->Id;
-		LPTIMECALLBACK callback = event->Callback;
-		DWORD_PTR user = event->User;
+		HostTimerCallbackType const callback = timer->Callback;
+		uint32_t const id = timer->Id;
+		void * const user = timer->User;
 
 		/*
 		**	Rearm from now, not from the deadline that just passed: the engine may have been
 		**	away for many periods, and a caller that wanted one call per period is better
 		**	served by one late call than by a burst of them.
 		*/
-		if (event->IsPeriodic) {
-			event->Due = now + event->Period;
-		} else {
-			event->Id = 0;
-			event->Callback = nullptr;
-		}
+		timer->Due = now + timer->Period;
 
-		callback(id, 0, user, 0, 0);
+		callback(id, user);
 	}
 
 	_Servicing = false;

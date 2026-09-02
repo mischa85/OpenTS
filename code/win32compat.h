@@ -1954,26 +1954,6 @@ HRESULT OleSaveToStream(IPersistStream * persist, IStream * stream);
 HRESULT OleLoadFromStream(IStream * stream, REFIID riid, void ** object);
 #define MB_PRECOMPOSED	0x00000001
 
-/*
-** The multimedia timer, from mmsystem.h.
-*/
-typedef UINT MMRESULT;
-typedef void (CALLBACK * LPTIMECALLBACK)(UINT, UINT, DWORD_PTR, DWORD_PTR, DWORD_PTR);
-
-typedef struct timecaps_tag {
-	UINT wPeriodMin;
-	UINT wPeriodMax;
-} TIMECAPS, * LPTIMECAPS;
-
-#define TIMERR_NOERROR	0
-#define TIMERR_NOCANDO	97
-#define TIME_ONESHOT	0x0000
-#define TIME_PERIODIC	0x0001
-
-MMRESULT timeGetDevCaps(LPTIMECAPS caps, UINT size);
-MMRESULT timeSetEvent(UINT delay, UINT resolution, LPTIMECALLBACK callback, DWORD_PTR user, UINT flags);
-MMRESULT timeKillEvent(UINT id);
-
 #define DSCAPS_PRIMARYMONO		0x00000001
 #define DSCAPS_PRIMARYSTEREO	0x00000002
 #define DSCAPS_PRIMARY8BIT		0x00000004

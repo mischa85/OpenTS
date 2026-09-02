@@ -7,12 +7,11 @@
  * See LICENSE.md for applicable additional terms and warranty disclaimers.
  ******************************************************************************/
 
-// The Windows multimedia timer, as much of it as a page can honestly carry. win32compat.h
-// declares the entry points; this is where timeSetEvent and its relatives are implemented,
-// and it exists apart from win32compat.cpp because the implementation needs a service
-// routine of its own rather than one more stub.
+// The periodic callback for a target with no thread to deliver it on. hosttimer.h declares
+// what it promises; this is where it is kept, and it exists apart from win32compat.cpp
+// because the implementation needs a service routine of its own rather than one more stub.
 //
-// What a page does not have is the timer thread. timeSetEvent on Windows arms a callback
+// What a page does not have is the timer thread. Windows arms a callback
 // that arrives asynchronously, interrupting whatever the engine was doing; here the engine
 // is the only thread there is, so a registered callback is not delivered until the engine
 // asks for it. Win32_Timer_Service is that ask, and every guarantee the timer offers is a

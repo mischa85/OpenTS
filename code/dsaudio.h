@@ -115,7 +115,7 @@ class DSAudio
 		bool Lock_Global_Mutex(void);
 		void Unlock_Global_Mutex(void);
 
-		static void CALLBACK Sound_Timer_Callback(UINT, UINT, DWORD_PTR, DWORD_PTR, DWORD_PTR);
+		static void Sound_Timer_Callback(uint32_t timer, void * user);
 		int Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short, short int *, void **, int *), int volume, int handle);
 		void File_Stream_Preload(int handle);
 		static bool File_Callback(short int id, short int *odd, void **buffer, int *size);
@@ -217,13 +217,12 @@ class DSAudio
 		/*
 		**	Windows Handle for sound timer
 		*/
-		UINT SoundTimerHandle;
+		uint32_t SoundTimerHandle;
 
 		/*
 		 * This is the multimedia timer period, expressed in milliseconds, that the audio
 		 * system asks Windows for. It is clamped to what the timer device can provide.
 		 */
-		unsigned int TimerResolution;
 
 		/*
 		 * If the audio system has been shut down, then this flag will be true. Every entry

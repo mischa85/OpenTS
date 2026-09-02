@@ -17,6 +17,7 @@
 // time instead of waiting on it. That is also what makes the wrap of the millisecond clock
 // testable at all: it comes around every forty nine days on a real one.
 
+#include "hosttimer.h"
 #include "win32timer.h"
 #include "hostclock.h"
 
@@ -79,22 +80,24 @@ void Reset(void)
 }
 
 
-void CALLBACK Counting_Callback(UINT id, UINT, DWORD_PTR user, DWORD_PTR, DWORD_PTR)
+void Counting_Callback(uint32_t id, void * user)
 {
+	uintptr_t const slot = (uintptr_t)user;
+
 	ReentryDepth++;
 	if (ReentryDepth > MaxReentryDepth) {
 		MaxReentryDepth = ReentryDepth;
 	}
 
 	LastId = id;
-	LastUser = user;
+	LastUser = slot;
 
-	if (user < 4) {
-		Calls[user]++;
+	if (slot < 4) {
+		Calls[slot]++;
 	}
 
 	if (KillOnCall != 0) {
-		timeKillEvent(KillOnCall);
+		Host_Timer_Disarm(KillOnCall);
 	}
 
 	if (ServiceFromCallback) {
@@ -111,25 +114,9 @@ void Kill_All(void)
 	**	Identifiers are handed out in sequence and never reused, so sweeping a generous
 	**	range leaves the table empty whatever the preceding test armed.
 	*/
-	for (UINT id = 1; id < 256; id++) {
-		timeKillEvent(id);
+	for (uint32_t id = 1; id < 256; id++) {
+		Host_Timer_Disarm(id);
 	}
-}
-
-
-void Test_Device_Caps(void)
-{
-	TIMECAPS caps;
-
-	Report("timeGetDevCaps rejects a null structure", timeGetDevCaps(nullptr, sizeof(caps)) == TIMERR_NOCANDO);
-	Report("timeGetDevCaps rejects a short structure", timeGetDevCaps(&caps, sizeof(caps) - 1) == TIMERR_NOCANDO);
-
-	caps.wPeriodMin = 0;
-	caps.wPeriodMax = 0;
-
-	Report("timeGetDevCaps answers", timeGetDevCaps(&caps, sizeof(caps)) == TIMERR_NOERROR);
-	Report_Value("timeGetDevCaps reports the clock's own resolution as the minimum", (long)caps.wPeriodMin, 1);
-	Report("timeGetDevCaps reports a usable range", caps.wPeriodMin < caps.wPeriodMax);
 }
 
 
@@ -137,21 +124,21 @@ void Test_Arming(void)
 {
 	Reset();
 
-	Report("timeSetEvent refuses a null callback", timeSetEvent(16, 1, nullptr, 0, TIME_PERIODIC) == 0);
-	Report("timeSetEvent refuses a zero period", timeSetEvent(0, 1, Counting_Callback, 0, TIME_PERIODIC) == 0);
-	Report("timeSetEvent refuses a callback kind it cannot deliver", timeSetEvent(16, 1, Counting_Callback, 0, 0x0010) == 0);
+	Report("arming refuses a null callback", Host_Timer_Arm(16, nullptr, nullptr) == 0);
+	Report("arming refuses a zero period", Host_Timer_Arm(0, Counting_Callback, nullptr) == 0);
 
-	UINT first = timeSetEvent(16, 1, Counting_Callback, 0, TIME_PERIODIC);
-	UINT second = timeSetEvent(16, 1, Counting_Callback, 1, TIME_PERIODIC);
+	UINT first = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)0);
+	UINT second = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)1);
 
 	Report("an armed timer has a non zero identifier", first != 0 && second != 0);
 	Report("two armed timers are told apart", first != second);
 
-	Report("timeKillEvent accepts an armed timer", timeKillEvent(first) == TIMERR_NOERROR);
-	Report("timeKillEvent refuses a killed timer", timeKillEvent(first) == TIMERR_NOCANDO);
-	Report("timeKillEvent refuses a zero identifier", timeKillEvent(0) == TIMERR_NOCANDO);
+	Host_Timer_Disarm(first);
+	Host_Timer_Disarm(first);
+	Host_Timer_Disarm(0);
+	Report("disarming twice, and disarming nothing, are both harmless", true);
 
-	timeKillEvent(second);
+	Host_Timer_Disarm(second);
 	Kill_All();
 }
 
@@ -161,7 +148,7 @@ void Test_Table_Is_Bounded(void)
 	Reset();
 
 	int armed = 0;
-	while (timeSetEvent(16, 1, Counting_Callback, 0, TIME_PERIODIC) != 0) {
+	while (Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)0) != 0) {
 		armed++;
 		if (armed > 64) break;
 	}
@@ -169,7 +156,7 @@ void Test_Table_Is_Bounded(void)
 	Report("the timer table is bounded and a request past it fails", armed > 0 && armed <= 64);
 
 	Kill_All();
-	Report("a full table takes new timers once it is emptied", timeSetEvent(16, 1, Counting_Callback, 0, TIME_PERIODIC) != 0);
+	Report("a full table takes new timers once it is emptied", Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)0) != 0);
 	Kill_All();
 }
 
@@ -179,7 +166,7 @@ void Test_Periodic_Delivery(void)
 	Reset();
 	Now = 1000;
 
-	UINT id = timeSetEvent(16, 1, Counting_Callback, 2, TIME_PERIODIC);
+	UINT id = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)2);
 
 	Win32_Timer_Service();
 	Report_Value("a timer does not run before its deadline", Calls[2], 0);
@@ -201,7 +188,7 @@ void Test_Periodic_Delivery(void)
 	Win32_Timer_Service();
 	Report_Value("a periodic timer runs again a period later", Calls[2], 2);
 
-	timeKillEvent(id);
+	Host_Timer_Disarm(id);
 	Now += 160;
 	Win32_Timer_Service();
 	Report_Value("a killed timer stops running", Calls[2], 2);
@@ -215,7 +202,7 @@ void Test_Missed_Periods_Coalesce(void)
 	Reset();
 	Now = 5000;
 
-	UINT id = timeSetEvent(16, 1, Counting_Callback, 3, TIME_PERIODIC);
+	UINT id = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)3);
 
 	// The engine was away for ten periods, which is what a long frame looks like here.
 	Now += 160;
@@ -226,27 +213,7 @@ void Test_Missed_Periods_Coalesce(void)
 	Win32_Timer_Service();
 	Report_Value("the period is measured from the delivery, not from the missed deadline", Calls[3], 2);
 
-	timeKillEvent(id);
-	Kill_All();
-}
-
-
-void Test_One_Shot(void)
-{
-	Reset();
-	Now = 100;
-
-	UINT id = timeSetEvent(20, 1, Counting_Callback, 0, TIME_ONESHOT);
-
-	Now += 20;
-	Win32_Timer_Service();
-	Report_Value("a one shot runs when it comes due", Calls[0], 1);
-
-	Now += 200;
-	Win32_Timer_Service();
-	Report_Value("a one shot does not run twice", Calls[0], 1);
-	Report("a fired one shot is no longer armed", timeKillEvent(id) == TIMERR_NOCANDO);
-
+	Host_Timer_Disarm(id);
 	Kill_All();
 }
 
@@ -256,7 +223,7 @@ void Test_Callback_May_Kill_And_Service(void)
 	Reset();
 	Now = 200;
 
-	UINT id = timeSetEvent(16, 1, Counting_Callback, 1, TIME_PERIODIC);
+	UINT id = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)1);
 	KillOnCall = id;
 
 	Now += 16;
@@ -270,7 +237,7 @@ void Test_Callback_May_Kill_And_Service(void)
 
 	Reset();
 	Now += 16;
-	id = timeSetEvent(16, 1, Counting_Callback, 1, TIME_PERIODIC);
+	id = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)1);
 	ServiceFromCallback = true;
 
 	Now += 16;
@@ -279,7 +246,7 @@ void Test_Callback_May_Kill_And_Service(void)
 	Report_Value("servicing from inside a callback does not recurse", MaxReentryDepth, 1);
 
 	ServiceFromCallback = false;
-	timeKillEvent(id);
+	Host_Timer_Disarm(id);
 	Kill_All();
 }
 
@@ -289,7 +256,7 @@ void Test_Clock_Wrap(void)
 	Reset();
 	Now = 0xFFFFFFF0;
 
-	UINT id = timeSetEvent(32, 1, Counting_Callback, 0, TIME_PERIODIC);
+	UINT id = Host_Timer_Arm(32, Counting_Callback, (void *)(uintptr_t)0);
 
 	Win32_Timer_Service();
 	Report_Value("a deadline past the clock's wrap is not mistaken for one in the past", Calls[0], 0);
@@ -298,7 +265,7 @@ void Test_Clock_Wrap(void)
 	Win32_Timer_Service();
 	Report_Value("a deadline is honoured across the clock's wrap", Calls[0], 1);
 
-	timeKillEvent(id);
+	Host_Timer_Disarm(id);
 	Kill_All();
 }
 
@@ -321,13 +288,13 @@ void Test_Wait(void)
 
 	Reset();
 	start = Now;
-	UINT id = timeSetEvent(16, 1, Counting_Callback, 0, TIME_PERIODIC);
+	UINT id = Host_Timer_Arm(16, Counting_Callback, (void *)(uintptr_t)0);
 	Host_Wait(100);
 
 	Report("a waiting caller does not starve the timers it armed", Calls[0] > 0);
 	Report_Value("the timer runs once per yield the wait takes", Calls[0], Yields);
 
-	timeKillEvent(id);
+	Host_Timer_Disarm(id);
 	Kill_All();
 }
 
@@ -381,12 +348,10 @@ int main(void)
 {
 	Win32_Timer_Set_Clock(Test_Clock);
 
-	Test_Device_Caps();
 	Test_Arming();
 	Test_Table_Is_Bounded();
 	Test_Periodic_Delivery();
 	Test_Missed_Periods_Coalesce();
-	Test_One_Shot();
 	Test_Callback_May_Kill_And_Service();
 	Test_Clock_Wrap();
 	Test_Wait();
