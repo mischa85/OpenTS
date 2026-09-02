@@ -94,10 +94,10 @@ intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, uint32_t action, void *
 			error = 1;
 			break;
 
-		/* VQACMD_SEEK asks that you perform a seek relative to the current
-		 * position. NBytes is a signed number, indicating seek direction
-		 * (positive for forward, negative for backward). Buffer has no meaning
-		 * here.
+		/* VQACMD_SEEK asks that you perform a seek from the origin Buffer
+		 * names, which is SEEK_SET or SEEK_CUR cast to a pointer. NBytes is a
+		 * signed number, indicating seek direction (positive for forward,
+		 * negative for backward).
 		 *
 		 * Any error code returned will be remapped by VQA library into
 		 * VQAERR_SEEK.
@@ -191,10 +191,10 @@ intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, uint32_t action, void
 			error = 1;
 			break;
 
-		/* VQACMD_SEEK asks that you perform a seek relative to the current
-		 * position. NBytes is a signed number, indicating seek direction
-		 * (positive for forward, negative for backward). Buffer has no meaning
-		 * here.
+		/* VQACMD_SEEK asks that you perform a seek from the origin Buffer
+		 * names, which is SEEK_SET or SEEK_CUR cast to a pointer. NBytes is a
+		 * signed number, indicating seek direction (positive for forward,
+		 * negative for backward).
 		 *
 		 * Any error code returned will be remapped by VQA library into
 		 * VQAERR_SEEK.
@@ -203,12 +203,12 @@ intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, uint32_t action, void
 		case VQACMD_SEEKPEEK:
 			switch ((intptr_t)buffer) {
 
-				case 1:
+				case SEEK_CUR:
 					cache->Offset += nbytes;
 					error = 0;
 					break;
 
-				case 0:
+				case SEEK_SET:
 					p = cache->Buffer;
 					if (nbytes >= p) {
 						cache->Offset = nbytes - p;
