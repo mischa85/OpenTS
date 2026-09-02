@@ -12,7 +12,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "netdlg2.h"
 
@@ -26,6 +25,7 @@
 #include "dbgprint.h"
 #include "globals.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "houstype.h"
 #include "init.h"
 #include "ipxmgr.h"

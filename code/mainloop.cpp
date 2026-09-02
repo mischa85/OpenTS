@@ -12,7 +12,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "mainloop.h"
 
@@ -38,6 +37,7 @@
 #include "fog.h"
 #include "globals.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "ipxmgr.h"
 #include "language/language.h"
 #include "logic.h"

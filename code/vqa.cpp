@@ -12,7 +12,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "vqa.h"
 
@@ -23,6 +22,7 @@
 #include "dbgprint.h"
 #include "globals.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "mixfile.h"
 #include "movies.h"
 #include "session.h"

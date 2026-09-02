@@ -63,7 +63,6 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "conquer.h"
 
@@ -84,6 +83,7 @@
 #include "gamedirs.h"
 #include "gamedlg.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "houstype.h"
 #include "incdec.h"
 #include "init.h"

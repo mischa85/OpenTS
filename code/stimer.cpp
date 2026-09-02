@@ -30,10 +30,10 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "stimer.h"
 
+#include "hostclock.h"
 #include "win.h"
 
 #ifdef _MSC_VER

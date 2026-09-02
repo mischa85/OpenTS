@@ -8,7 +8,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "ownrdraw.h"
 
@@ -27,6 +26,7 @@
 #include "dsurface.h"
 #include "globals.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "hsv.h"
 #include "init.h"
 #include "keyboard.h"

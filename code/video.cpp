@@ -12,7 +12,6 @@
 // window it lands, and hands it to the renderer behind video.h.
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "video.h"
 
@@ -26,6 +25,7 @@
 #include "globals.h"
 #include "goptions.h"
 #include "gscreen.h"
+#include "hostclock.h"
 #include "init.h"
 #include "mainopt.h"
 #include "misc.h"

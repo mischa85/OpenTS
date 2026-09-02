@@ -43,7 +43,6 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "score.h"
 
@@ -61,6 +60,7 @@
 #include "dsaudio.h"
 #include "dsurface.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "houstype.h"
 #include "keyboard.h"
 #include "language/language.h"

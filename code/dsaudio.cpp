@@ -12,10 +12,10 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "dsaudio.h"
 
+#include "hostclock.h"
 #include "iso9660.h"
 
 #include "audiobackend.h"

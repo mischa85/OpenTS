@@ -55,7 +55,6 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "init.h"
 
@@ -114,6 +113,7 @@
 #include "gamedlg.h"
 #include "getcpu.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "houstype.h"
 #include "incdec.h"
 #include "infatype.h"

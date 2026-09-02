@@ -33,7 +33,6 @@
 // dialog or one of its controls -- and would otherwise be doubled.
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "win32user.h"
 
@@ -42,6 +41,7 @@
 #include "browser.h"
 #include "data.h"
 #include "dbgprint.h"
+#include "hostclock.h"
 #include "keyboard.h"
 #include "vidscale.h"
 #include "win32ctrl.h"

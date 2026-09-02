@@ -8,7 +8,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "msengine.h"
 
@@ -18,6 +17,7 @@
 #include "dsaudio.h"
 #include "globals.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "video.h"
 #include "msanim.h"
 #include "msgloop.h"

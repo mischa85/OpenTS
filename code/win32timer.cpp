@@ -18,7 +18,6 @@
 // callbacks it armed.
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "hostclock.h"
 #include "win32timer.h"
@@ -27,6 +26,7 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "browser.h"
+#include "hostclock.h"
 #else
 // The native host supplies the same yield trio browser.h declares for the page; the
 // defaults in hostyield.cpp wait with the operating system's own clock.

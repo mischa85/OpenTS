@@ -8,7 +8,6 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "dropship.h"
 
@@ -31,6 +30,7 @@
 #include "dsurface.h"
 #include "font.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "house.h"
 #include "infatype.h"
 #include "keyboard.h"

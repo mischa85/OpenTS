@@ -8,13 +8,13 @@
  ******************************************************************************/
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "windlg.h"
 
 #include "arraylist.h"
 #include "data.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "init.h"
 #include "msgloop.h"
 #include "ownrdraw.h"

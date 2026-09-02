@@ -42,7 +42,6 @@
 
 #define INCLUDE_COM
 #include "always.h"
-#include "hostclock.h"
 
 #include "taction.h"
 
@@ -62,6 +61,7 @@
 #include "empulse.h"
 #include "foot.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "house.h"
 #include "houstype.h"
 #include "incdec.h"

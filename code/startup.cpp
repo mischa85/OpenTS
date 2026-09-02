@@ -34,7 +34,6 @@
 
 #define INCLUDE_COM
 #include "always.h"
-#include "hostclock.h"
 
 #include "_alpha.h"
 #include "_command.h"
@@ -70,7 +69,6 @@
 #include "data.h"
 #include "dbgprint.h"
 #include "dllver.h"
-#include "platform.h"
 #include "drive.h"
 #include "droppod.h"
 #include "dsaudio.h"
@@ -82,6 +80,7 @@
 #include "fog.h"
 #include "gamedirs.h"
 #include "goptions.h"
+#include "hostclock.h"
 #include "house.h"
 #include "houstype.h"
 #include "hover.h"
@@ -108,6 +107,7 @@
 #include "ovrlight.h"
 #include "particle.h"
 #include "partsys.h"
+#include "platform.h"
 #include "psystype.h"
 #include "ptype.h"
 #include "rules.h"

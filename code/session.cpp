@@ -45,7 +45,6 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
-#include "hostclock.h"
 
 #include "session.h"
 
@@ -59,6 +58,7 @@
 #include "dbgprint.h"
 #include "gamedirs.h"		// for Search_Files.
 #include "globals.h"
+#include "hostclock.h"
 #include "ipxmgr.h"
 #include "language\language.h"
 #include "msgloop.h"
