@@ -41,6 +41,7 @@ MillisecondTimerClass::MillisecondTimerClass(void)
 	unsigned int low = Get_CPU_Rate(high);
 
 	if (low == 0 && high == 0) {
+		// Windows only; no other host has a resolution to bid for.
 #ifdef _WIN32
 		timeBeginPeriod(PERIOD_RESOLUTION);
 #endif
@@ -67,6 +68,7 @@ MillisecondTimerClass::~MillisecondTimerClass(void)
 	// The constructor leaves Frequency at 1.0 exactly when it took the fallback path,
 	// which is the case that raised the resolution.
 	if (Frequency == 1.0) {
+		// Windows only; no other host has a resolution to bid for.
 #ifdef _WIN32
 		timeEndPeriod(PERIOD_RESOLUTION);
 #endif

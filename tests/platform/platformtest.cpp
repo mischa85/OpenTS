@@ -52,12 +52,10 @@ static void Test_Executable_Path(void)
 }
 
 
-/*
-** The arguments the harness is launched with are fixed by its own CMakeLists, so what the
-** host handed over is known here and can be compared rather than merely counted. The one
-** holding spaces is the case the engine cares about: a game directory written with spaces
-** has to arrive as the single argument it was typed as.
-*/
+// The arguments the harness is launched with are fixed by its own CMakeLists, so what the
+// host handed over is known here and can be compared rather than merely counted. The one
+// holding spaces is the case the engine cares about: a game directory written with spaces
+// has to arrive as the single argument it was typed as.
 static void Test_Arguments(void)
 {
 	int count = 0;
@@ -81,12 +79,10 @@ static void Test_Arguments(void)
 }
 
 
-/*
-** The sequence the game data depends on. startup.cpp splits the executable path and makes
-** the directory half current before it opens anything, so the steps below are that call
-** site. What has to hold afterwards is that the program is in the directory the sequence
-** landed in: every archive is opened by bare name from there.
-*/
+// The sequence the game data depends on. startup.cpp splits the executable path and makes
+// the directory half current before it opens anything, so the steps below are that call
+// site. What has to hold afterwards is that the program is in the directory the sequence
+// landed in: every archive is opened by bare name from there.
 static void Test_Working_Directory_Follows_The_Program(void)
 {
 	char before[MAX_PATH];
