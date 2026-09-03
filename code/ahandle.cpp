@@ -230,10 +230,8 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 			}
 		}
 
-		/*
-		**	The device carries each stream at the format it was opened with, so the movie's
-		**	rate is not something the output has to be talked into.
-		*/
+		// The device carries each stream at the format it was opened with, so the movie's
+		// rate is not something the output has to be talked into.
 		config->LatencyAdjustment = 0;
 
 		handle->Channels = params->Channels;
@@ -322,7 +320,7 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	*/
 
 	/*
-	**	Create the secondary sound buffer object
+	**	Open the ring the movie's audio is decoded into
 	*/
 	Audio.Lock_Mutex();
 	audio->SecondaryBufferPtr = Audio_Backend_Open_Stream(audio->SecondaryBufferSize,
@@ -535,9 +533,8 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 
 
 /***********************************************************************************************
- * Move_HMI_Audio_Block_To_Ring -- moves an audio block which would have been   *
- *                                                played by HMI into a ring                   *
- *                                                secondary buffer                             *
+ * Move_HMI_Audio_Block_To_Ring -- moves an audio block which would have been played by HMI    *
+ *                                 into a ring                                                 *
  *                                                                                             *
  * INPUT:    Nothing                                                                           *
  *                                                                                             *

@@ -112,9 +112,7 @@ struct SampleTrackerType {
 	*/
 	void const *Original;
 
-	/*
-	**	This is the ring the sample is decoded into and played out of.
-	*/
+	// This is the ring the sample is decoded into and played out of.
 	AudioBackendStream * PlayBuffer;
 
 	/*

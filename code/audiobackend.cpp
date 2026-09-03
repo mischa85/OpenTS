@@ -19,10 +19,8 @@
 
 #include "dbgprint.h"
 
-/*
-** Only the device and the format conversion are wanted here. The decoders, the synthesis
-** and the higher level engine would compile a great deal of code this file never calls.
-*/
+// Only the device and the format conversion are wanted here. The decoders, the synthesis
+// and the higher level engine would compile a great deal of code this file never calls.
 #define MA_NO_DECODING
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
@@ -41,10 +39,8 @@
 
 namespace {
 
-/*
-** Milliseconds from a clock that only ever moves forward. Only the silent cursor reads it,
-** and it cares about differences rather than where the count starts.
-*/
+// Milliseconds from a clock that only ever moves forward. Only the silent cursor reads it,
+// and it cares about differences rather than where the count starts.
 uint32_t Now_Milliseconds(void)
 {
 	return((uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -52,10 +48,8 @@ uint32_t Now_Milliseconds(void)
 }
 
 enum {
-	/*
-	** Five sample slots and the movie stream. The slots are fixed rather than allocated so
-	** that the device thread can walk them without taking a lock against the game thread.
-	*/
+	// Five sample slots and the movie stream. The slots are fixed rather than allocated so
+	// that the device thread can walk them without taking a lock against the game thread.
 	MAX_STREAMS = 8,
 
 	// Frames converted in one pass, which bounds the scratch buffers on the device stack.
@@ -72,25 +66,21 @@ enum {
 	SLOT_RETIRING,
 };
 
-/*
-** How far beyond the play cursor the device is kept supplied, which is how far the write
-** cursor can run ahead.
-**
-** The bound on it is what the caller has actually written. Neither caller keeps less than
-** a quarter of its ring written ahead of the play cursor: the sound driver refills a
-** quarter whenever the cursor comes within a quarter of what it last wrote, and the movie
-** player refills half a ring whenever the cursor crosses into the other half. Taking more
-** than that would carry out the previous lap of the ring in place of audio not yet
-** decoded, so the duration is clamped to a quarter ring and the shorter of the two wins.
-*/
+// How far beyond the play cursor the device is kept supplied, which is how far the write
+// cursor can run ahead.
+//
+// The bound on it is what the caller has actually written. Neither caller keeps less than
+// a quarter of its ring written ahead of the play cursor: the sound driver refills a
+// quarter whenever the cursor comes within a quarter of what it last wrote, and the movie
+// player refills half a ring whenever the cursor crosses into the other half. Taking more
+// than that would carry out the previous lap of the ring in place of audio not yet
+// decoded, so the duration is clamped to a quarter ring and the shorter of the two wins.
 int const LOOKAHEAD_MS = 90;
 
-/*
-** Playback state has to keep advancing even when no device opened, or the driver would
-** never retire a sample and would run out of tracker slots. A silent cursor moves no
-** further than this in one pass, so one long frame steps over a fraction of a sample
-** rather than the whole of it.
-*/
+// Playback state has to keep advancing even when no device opened, or the driver would
+// never retire a sample and would run out of tracker slots. A silent cursor moves no
+// further than this in one pass, so one long frame steps over a fraction of a sample
+// rather than the whole of it.
 double const SILENT_MAX_STEP = 250.0;
 
 }
@@ -112,24 +102,18 @@ struct AudioBackendStream
 	std::atomic<bool> Playing;
 	std::atomic<float> Gain;
 
-	/*
-	** The play cursor is the ring offset playback started from plus the bytes the device
-	** has taken since. The device thread is the only writer of the byte count, so a reader
-	** on the game thread sees a cursor that only ever moves forward.
-	*/
+	// The play cursor is the ring offset playback started from plus the bytes the device
+	// has taken since. The device thread is the only writer of the byte count, so a reader
+	// on the game thread sees a cursor that only ever moves forward.
 	std::atomic<int> PlayBase;
 	std::atomic<long long> TakenBytes;
 
-	/*
-	** A seek is applied by the device thread rather than the caller's, so that the
-	** converter is only ever touched from one thread. Negative means none is pending.
-	*/
+	// A seek is applied by the device thread rather than the caller's, so that the
+	// converter is only ever touched from one thread. Negative means none is pending.
 	std::atomic<int> SeekRequest;
 
-	/*
-	** Bumped whenever the device thread leaves this slot. A closed slot is freed only after
-	** the count has moved, which is what proves the thread is no longer inside it.
-	*/
+	// Bumped whenever the device thread leaves this slot. A closed slot is freed only after
+	// the count has moved, which is what proves the thread is no longer inside it.
 	std::atomic<unsigned> Passes;
 
 	// The pass count at the moment the slot was closed, which retirement waits to pass.
@@ -164,11 +148,9 @@ ma_format Source_Format(int bits)
 }
 
 
-/*
-** The bytes the device is holding for a stream but has not yet sounded. The play cursor
-** trails the bytes taken by this much, which is what keeps the region between the play and
-** write cursors the region the caller must leave alone.
-*/
+// The bytes the device is holding for a stream but has not yet sounded. The play cursor
+// trails the bytes taken by this much, which is what keeps the region between the play and
+// write cursors the region the caller must leave alone.
 int Latency_Bytes(AudioBackendStream const * stream)
 {
 	if (!DeviceReady || Device.sampleRate == 0) {
@@ -181,11 +163,9 @@ int Latency_Bytes(AudioBackendStream const * stream)
 }
 
 
-/*
-** Reads one span of a stream's ring into a contiguous buffer, wrapping at the end. The
-** ring is never short: a caller that has not decoded far enough gets its previous lap
-** carried out, which is what a starved DirectSound buffer does.
-*/
+// Reads one span of a stream's ring into a contiguous buffer, wrapping at the end. The
+// ring is never short: a caller that has not decoded far enough gets its previous lap
+// carried out, which is what a starved DirectSound buffer does.
 void Read_Ring(AudioBackendStream const * stream, long long offset, unsigned char * dest, int bytes)
 {
 	int start = (int)(offset % stream->RingSize);
@@ -276,11 +256,9 @@ void Device_Callback(ma_device * device, void * output, void const * input, ma_u
 }
 
 
-/*
-** Advances a stream that has no device behind it, so that the driver still retires the
-** sample. The step is taken from the host clock and capped, so one long frame does not
-** carry the cursor over a whole sample.
-*/
+// Advances a stream that has no device behind it, so that the driver still retires the
+// sample. The step is taken from the host clock and capped, so one long frame does not
+// carry the cursor over a whole sample.
 void Advance_Silent(AudioBackendStream * stream)
 {
 	uint32_t const now = Now_Milliseconds();
@@ -439,10 +417,8 @@ AudioBackendStream * Audio_Backend_Open_Stream(int ringbytes, int rate, int bits
 
 	stream->Ring = new unsigned char[ringbytes];
 
-	/*
-	** Silence is the zero point of signed sixteen bit samples and the midpoint of the
-	** unsigned eight bit ones, so an untouched ring has to be filled rather than cleared.
-	*/
+	// Silence is the zero point of signed sixteen bit samples and the midpoint of the
+	// unsigned eight bit ones, so an untouched ring has to be filled rather than cleared.
 	std::memset(stream->Ring, (bits == 8) ? 0x80 : 0x00, (size_t)ringbytes);
 
 	stream->RingSize = ringbytes;
@@ -543,10 +519,8 @@ void Audio_Backend_Seek(AudioBackendStream * stream, int offset)
 
 	stream->SeekRequest.store(offset, std::memory_order_release);
 
-	/*
-	** With no device thread running there is nobody to pick the request up, so the seek is
-	** applied here instead.
-	*/
+	// With no device thread running there is nobody to pick the request up, so the seek is
+	// applied here instead.
 	if (!DeviceReady || !Running.load(std::memory_order_acquire)) {
 		if (stream->SeekRequest.exchange(-1, std::memory_order_acq_rel) >= 0) {
 			stream->PlayBase.store(offset, std::memory_order_relaxed);

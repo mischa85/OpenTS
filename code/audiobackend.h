@@ -21,19 +21,15 @@
 struct AudioBackendStream;
 
 
-/*
-** The output device. Init reports whether a device opened at all; a page that refuses one
-** leaves the engine running against silent streams rather than against nothing.
-*/
+// The output device. Init reports whether a device opened at all; a page that refuses one
+// leaves the engine running against silent streams rather than against nothing.
 bool Audio_Backend_Init(void);
 void Audio_Backend_Shutdown(void);
 
-/*
-** A page will not start audio until the reader has interacted with it, so a stream can be
-** started while output is still stopped. Audio_Backend_Is_Running reports whether the page
-** is actually producing sound; Audio_Backend_Resume asks it to start and is cheap enough
-** to call from the service routine on every pass.
-*/
+// A page will not start audio until the reader has interacted with it, so a stream can be
+// started while output is still stopped. Audio_Backend_Is_Running reports whether the page
+// is actually producing sound; Audio_Backend_Resume asks it to start and is cheap enough
+// to call from the service routine on every pass.
 bool Audio_Backend_Is_Running(void);
 void Audio_Backend_Resume(void);
 

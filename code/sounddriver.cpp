@@ -102,34 +102,18 @@ SoundDriver Audio;
 	} \
 
 
-/***********************************************************************************************
- * Convert_HMI_To_Direct_Sound_Volume -- Converts a linear volume value into an expotential    *
- *                                        value                                                *
- *                                                                                             *
- * This function converts a linear C&C volume in the range 0-255 (255 loudest) to a direct     *
- *  sound volume in the range 0 to -10000 (with 0 being the loadest)                           *
- *                                                                                             *
- * INPUT:    volume in range 0-255                                                             *
- *                                                                                             *
- * OUTPUT:   volume in range -10000 to 0                                                       *
- *                                                                                             *
- * WARNINGS: None                                                                              *
- *                                                                                             *
- * Note: The 27.685 value comes from 255 divided by the log of 10001                           *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *    9/18/96 11:36AM ST : Created                                                             *
- *=============================================================================================*/
+/// <summary>
+/// Converts a linear volume in the range 0 to 255 into the gain the audio backend takes,
+/// where 0 is silence and 1 is unattenuated.
+/// </summary>
 float Gain_From_HMI_Volume(int volume)
 {
 	if (volume <= 0) return(0.0f);
 	if (volume >= 255) return(1.0f);
 
-	/*
-	** The curve is the one the driver has always used: a linear volume taken to decibels
-	** across a hundred decibel range, which reduces to this exponent once the decibels are
-	** turned back into a multiplier. The floor is that range's bottom.
-	*/
+	// The curve is the one the driver has always used: a linear volume taken to decibels
+	// across a hundred decibel range, which reduces to this exponent once the decibels are
+	// turned back into a multiplier. The floor is that range's bottom.
 	float const gain = powf((float)volume / 255.0f, 5.0f / 3.0f);
 	return((gain < 1.0e-5f) ? 1.0e-5f : gain);
 }
@@ -283,10 +267,8 @@ bool SoundDriver::Init( HWND window , int bits_per_sample, bool stereo , int rat
 		SoundTimerHandle = timeSetEvent ( 1000/MAINTENANCE_RATE , 1 , Sound_Timer_Callback , 0 , TIME_PERIODIC | TIME_KILL_SYNCHRONOUS);
 		AudioDone = FALSE;
 
-		/*
-		**	One ring for each simultaneous sound effect. The device carries each of them at
-		**	its own rate and width, so there is no one output format to negotiate down to.
-		*/
+		// One ring for each simultaneous sound effect. The device carries each of them at
+		// its own rate and width, so there is no one output format to negotiate down to.
 		for (index = 0; index < MAX_SFX; index++) {
 			SampleTrackerType *st = &SampleTracker[index];
 			st->PlayBuffer		= Audio_Backend_Open_Stream(SECONDARY_BUFFER_SIZE, rate,
@@ -783,18 +765,14 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 		st->PlayBuffer=nullptr;
 	}
 
-		/*
-		**	Open a ring in the sample's own format. The device carries each stream at the
-		**	format it was opened with, so there is no output format to match here.
-		*/
+		// Open a ring in the sample's own format. The device carries each stream at the
+		// format it was opened with, so there is no output format to match here.
 		st->PlayBuffer = Audio_Backend_Open_Stream(SECONDARY_BUFFER_SIZE, RawHeader.Rate,
 								(RawHeader.Flags & AUD_FLAG_16BIT) ? 16 : 8,
 								(RawHeader.Flags & AUD_FLAG_STEREO) ? 2 : 1);
 
-		/*
-		**	If that failed then flag the buffer as having an impossible format so it wont
-		**	match any sample, which makes the next use of it try again.
-		*/
+		// If that failed then flag the buffer as having an impossible format so it wont
+		// match any sample, which makes the next use of it try again.
 		if (st->PlayBuffer == nullptr){
 			DebugString("SoundDriver: Bad sample format!\n");
 			st->PlaybackRate = 0;
@@ -1107,10 +1085,8 @@ void SoundDriver::maintenance_callback(void)
 
 				//st->DontTouch = TRUE;
 
-				/*
-				**	Where in the ring the device is playing, and how far ahead of that it
-				**	has already taken data.
-				*/
+				// Where in the ring the device is playing, and how far ahead of that it
+				// has already taken data.
 				play_cursor = (DWORD)Audio_Backend_Play_Cursor(st->PlayBuffer);
 				write_cursor = (DWORD)Audio_Backend_Write_Cursor(st->PlayBuffer);
 
@@ -1169,10 +1145,8 @@ void SoundDriver::maintenance_callback(void)
 								**	to give us a quiet period of grace in which to stop the buffer playing
 								*/
 								if ( (unsigned)st->DestPtr == SECONDARY_BUFFER_SIZE*3/4 ){
-									/*
-									**	The grace period wraps, so it is cleared at the start
-									**	of the ring rather than ahead of the refill.
-									*/
+									// The grace period wraps, so it is cleared at the start
+									// of the ring rather than ahead of the refill.
 									memset (Audio_Backend_Ring(st->PlayBuffer) , 0 , SECONDARY_BUFFER_SIZE/4);
 								} else {
 									memset ((char*)play_buffer_ptr+SECONDARY_BUFFER_SIZE/4 , 0 , SECONDARY_BUFFER_SIZE/4);
@@ -1560,10 +1534,8 @@ void SoundDriver::Sound_Callback(void)
 		*/
 		//Sound_Timer_Callback(0,0,0,0,0);
 
-		/*
-		**	The device pulls the rings on a thread of its own, so this pass is only what has
-		**	to happen on the game's: releasing the rings of closed streams.
-		*/
+		// The device pulls the rings on a thread of its own, so this pass is only what has
+		// to happen on the game's: releasing the rings of closed streams.
 		Audio_Backend_Service();
 
 		for (index = 0; index < MAX_SFX; index++) {

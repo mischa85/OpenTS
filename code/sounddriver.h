@@ -165,10 +165,8 @@ class SoundDriver
 		 */
 		bool IsStreamBufferClaimed;
 
-		/*
-		**	True once the output device has been opened, which is what makes a second Init
-		**	a no-op rather than a second device.
-		*/
+		// True once the output device has been opened, which is what makes a second Init
+		// a no-op rather than a second device.
 		bool DeviceOpen;
 
 		/*
