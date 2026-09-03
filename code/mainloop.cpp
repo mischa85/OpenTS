@@ -39,7 +39,7 @@
 #include "goptions.h"
 #include "hostclock.h"
 #include "ipxmgr.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "logic.h"
 #include "misc.h"
 #include "mpscore.h"

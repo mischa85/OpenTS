@@ -60,7 +60,7 @@
 #include "globals.h"
 #include "hostclock.h"
 #include "ipxmgr.h"
-#include "language\language.h"
+#include "language/language.h"
 #include "msgloop.h"
 #include "progress.h"
 #include "queue.h"
