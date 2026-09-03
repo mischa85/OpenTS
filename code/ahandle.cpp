@@ -47,7 +47,7 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes);
 void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD);
 _STATIC unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
-_STATIC BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap);
+_STATIC BOOL Move_HMI_Audio_Block_To_Ring(VQAHandleP *vqap);
 
 unsigned long __cdecl Timer_Callback_Audio_Handler(VQAHandle *vqa)
 {
@@ -102,7 +102,7 @@ unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *c
 
 	unsigned long dma_diff;
 	unsigned long totalbytes;
-	DWORD				play_cursor;		//Position that direct sound is reading from
+	DWORD				play_cursor;		//Position that the device is reading from
 	DWORD				write_cursor;		//Position in buffer that we can write to
 
 	EnterCriticalSection(&audio->CriticalSection);
@@ -114,7 +114,7 @@ unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *c
 	totalbytes = config->HMIBufSize * m;
 
 	if (audio->SecondaryBufferPtr &&
-		audio->SecondaryBufferPtr != NULL) {
+		audio->SecondaryBufferPtr != nullptr) {
 			play_cursor = (DWORD)Audio_Backend_Play_Cursor(audio->SecondaryBufferPtr);
 			write_cursor = (DWORD)Audio_Backend_Write_Cursor(audio->SecondaryBufferPtr);
 
@@ -304,12 +304,12 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	assert(audio->SecondaryBufferPtr == NULL);
 
 	/*
-	**	If we already have a direct sound secondary buffer then get rid of it
+	**	If we already have a ring then get rid of it
 	*/
 	if (audio->SecondaryBufferPtr != NULL){
 		Audio_Backend_Stop(audio->SecondaryBufferPtr);
 		Audio_Backend_Close_Stream(audio->SecondaryBufferPtr);
-		audio->SecondaryBufferPtr = NULL;
+		audio->SecondaryBufferPtr = nullptr;
 	}
 
 	/*
@@ -367,7 +367,7 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
 		handle->AudioBuf[readindex] = buffer;
 		handle->AudioBufSize[readindex] = nbytes;
 		handle->AudioBufInUse[readindex] = TRUE;
-		Move_HMI_Audio_Block_To_Direct_Sound_Buffer(vqap);
+		Move_HMI_Audio_Block_To_Ring(vqap);
 		int index = readindex + 1;
 		if (index >= Ahandle::MAX_BUFFERS) {
 			index = 0;
@@ -429,7 +429,7 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 		EnterCriticalSection(&handle->CriticalSection);
 		Audio_Backend_Stop(handle->SecondaryBufferPtr);
 		Audio_Backend_Close_Stream(handle->SecondaryBufferPtr);
-		handle->SecondaryBufferPtr = NULL;
+		handle->SecondaryBufferPtr = nullptr;
 		handle->AudioBufReadIndex = 0;
 		handle->AudioBufWriteIndex = 0;
 		for (int i = 0; i < Ahandle::MAX_BUFFERS; i++) {
@@ -467,7 +467,7 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 {
 	Ahandle  	*audio;
-	DWORD			play_cursor;		//Position that direct sound is reading from
+	DWORD			play_cursor;		//Position that the device is reading from
 	DWORD			write_cursor;		//Position in buffer that we can write to
 
 	VQAHandle *vqa = (VQAHandle *)dwUser;
@@ -495,7 +495,7 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 	}
 
 	/*
-	**	See if we are nearing the end of the meaningful data in the direct sound buffer
+	**	See if we are nearing the end of the meaningful data in the ring
 	*/
 	play_cursor = (DWORD)Audio_Backend_Play_Cursor(audio->SecondaryBufferPtr);
 	write_cursor = (DWORD)Audio_Backend_Write_Cursor(audio->SecondaryBufferPtr);
@@ -535,8 +535,8 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 
 
 /***********************************************************************************************
- * Move_HMI_Audio_Block_To_Direct_Sound_Buffer -- moves an audio block which would have been   *
- *                                                played by HMI into a direct sound            *
+ * Move_HMI_Audio_Block_To_Ring -- moves an audio block which would have been   *
+ *                                                played by HMI into a ring                   *
  *                                                secondary buffer                             *
  *                                                                                             *
  * INPUT:    Nothing                                                                           *
@@ -548,7 +548,7 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
  * HISTORY:                                                                                    *
  *    12/21/95 9:51AM ST : Created                                                             *
  *=============================================================================================*/
-BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
+BOOL Move_HMI_Audio_Block_To_Ring(VQAHandleP *vqap)
 {
 	Ahandle  	*audio;
 
@@ -568,7 +568,7 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 
 	/*************************************************************************
 	**
-	**	Copy the data from the HMI play position into the direct sound buffer
+	**	Copy the data from the HMI play position into the ring
 	**
 	*/
 	next_fill_pos = audio->EndLastAudioChunk;
@@ -577,7 +577,7 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	**	Lock the buffer to get a pointer to it
 	*/
 	unsigned char * ring = Audio_Backend_Ring(audio->SecondaryBufferPtr);
-	if (ring == NULL) return(FALSE);
+	if (ring == nullptr) return(FALSE);
 
 	DWORD const ring_size = (DWORD)Audio_Backend_Ring_Size(audio->SecondaryBufferPtr);
 	DWORD const want = (DWORD)config->HMIBufSize;
@@ -590,7 +590,7 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	int index = audio->AudioBufReadIndex;
 
 	/*
-	**	Copy the HMI audio buffer to the direct sound buffer
+	**	Copy the HMI audio buffer to the ring
 	*/
 	if (audio->AudioBufSize[index] > lock_length1) {
 
@@ -606,10 +606,6 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 		memcpy(play_buffer_ptr1, audio->AudioBuf[index], audio->AudioBufSize[index]);
 	}
 
-
-	/*
-	**	Unlock the direct sound buffer
-	*/
 
 	/*
 	**	Update our audio data pointers

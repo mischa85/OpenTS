@@ -197,7 +197,7 @@ SoundDriver::SoundDriver(void)
 /// <summary>
 /// Destructor for the sound driver.
 /// This routine shuts the audio system down if it is still running, then gives back the
-/// working buffers, the DirectSound objects and every mutex the driver created.
+/// working buffers and every mutex the driver created.
 /// </summary>
 SoundDriver::~SoundDriver(void)
 {
@@ -353,7 +353,7 @@ void SoundDriver::End(void)
 			if ( SampleTracker[index].PlayBuffer ){
 				Stop_Sample (index);
 				Audio_Backend_Close_Stream(SampleTracker[index].PlayBuffer);
-				SampleTracker[index].PlayBuffer = NULL;
+				SampleTracker[index].PlayBuffer = nullptr;
 			}
 			if (SampleTracker[index].FileBuffer != NULL && SampleTracker[index].FileBuffer != FileStreamBuffer) {
 				delete SampleTracker[index].FileBuffer;
@@ -762,7 +762,7 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 
 	/*
 	**	If the sample rate , bits per sample or stereo capabilities of the buffer do not
-	**	match the sample then reallocate the direct sound buffer with the required capabilities
+	**	match the sample then reopen the ring with the required capabilities
 	*/
 	if (!reuse_buffer) {
 
@@ -780,7 +780,7 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 		*/
 	if (st->PlayBuffer) {
 		Audio_Backend_Close_Stream(st->PlayBuffer);
-		st->PlayBuffer=NULL;
+		st->PlayBuffer=nullptr;
 	}
 
 		/*
@@ -795,7 +795,7 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 		**	If that failed then flag the buffer as having an impossible format so it wont
 		**	match any sample, which makes the next use of it try again.
 		*/
-		if (st->PlayBuffer == NULL){
+		if (st->PlayBuffer == nullptr){
 			DebugString("SoundDriver: Bad sample format!\n");
 			st->PlaybackRate = 0;
 			st->Stereo = 0;
@@ -856,12 +856,9 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 		st->OneShot = true;
 		st->Service = true;
 	} else {
-	//
-	// Lock the direct sound buffer so we can write to it
-	//
 	play_buffer_ptr = Audio_Backend_Ring(st->PlayBuffer);
 
-	if (play_buffer_ptr == NULL) {
+	if (play_buffer_ptr == nullptr) {
 		UNLOCK_SECONDARY_MUTEX(id);
 		return(-1);
 	}
@@ -872,7 +869,7 @@ int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume
 	}
 
 	//
-	// Decompress the sample into the direct sound buffer
+	// Decompress the sample into the ring
 	//
 	st->DestPtr=(void*)Sample_Copy ( 	st,
 								&st->Source,
@@ -1082,7 +1079,7 @@ void SoundDriver::maintenance_callback(void)
 
 	int					index;              //index used in for loop
 	SampleTrackerType	*st;                //ptr to SampleTracker structure
-	DWORD					play_cursor;    //Position that direct sound is reading from
+	DWORD					play_cursor;    //Position that the device is reading from
 	DWORD					write_cursor;   //Position in buffer that we can write to
 	int			 		bytes_copied;       //Number of bytes copied into the buffer
 	BOOL					write_more;     //Flag to set if we need to write more into the buffer
@@ -1100,7 +1097,7 @@ void SoundDriver::maintenance_callback(void)
 
 			/*
 			**	General service routine to handle moving small blocks from the
-			**	source into the direct sound buffers.  If the source is
+			**	source into the rings.  If the source is
 			**	compressed, then this will also uncompress it as the copy
 			**	is performed.
 			*/
@@ -1121,7 +1118,7 @@ void SoundDriver::maintenance_callback(void)
 				if (st->MoreSource){
 
 					/*
-					**	If the direct sound read pointer is less than a quarter
+					**	If the play cursor is less than a quarter
 					**	of a buffer away from the end of the data then copy some
 					**	more.
 				 	*/
@@ -1145,12 +1142,9 @@ void SoundDriver::maintenance_callback(void)
 
 					if (write_more){
 
-						/*
-						**	Lock a 1/2 of the direct sound buffer so we can write to it
-						*/
 						play_buffer_ptr = Audio_Backend_Ring(st->PlayBuffer) + st->DestPtr;
 
-						if (play_buffer_ptr != NULL){
+						if (play_buffer_ptr != nullptr){
 
 							bytes_copied = Sample_Copy(	st,
 														&st->Source,
@@ -1186,7 +1180,7 @@ void SoundDriver::maintenance_callback(void)
 							}
 
 							/*
-							**	Update our pointer into the direct sound buffer
+							**	Update our pointer into the ring
 							**
 							*/
 							st->DestPtr = Audio_Add_Long_To_Pointer (st->DestPtr,bytes_copied);
@@ -1195,10 +1189,6 @@ void SoundDriver::maintenance_callback(void)
 								st->DestPtr = Audio_Add_Long_To_Pointer (st->DestPtr,(int)-SECONDARY_BUFFER_SIZE);
 							}
 
-
-							/*
-							**	Unlock the direct sound buffer
-							*/
 						}
 
 					}				//write_more

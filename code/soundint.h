@@ -165,7 +165,7 @@ struct SampleTrackerType {
 
 	/*
 	**	This flag indicates that the entire sample fitted inside the
-	**	direct sound secondary buffer
+	**	ring
 	**
 	*/
 	bool OneShot;
