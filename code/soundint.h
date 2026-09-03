@@ -36,6 +36,8 @@
 
 #include "sound.h"
 
+#include "audiobackend.h"
+
 class FileClass;
 
 /*
@@ -111,9 +113,9 @@ struct SampleTrackerType {
 	void const *Original;
 
 	/*
-	**	These are pointers to the double buffers.
+	**	This is the ring the sample is decoded into and played out of.
 	*/
-	LPDIRECTSOUNDBUFFER PlayBuffer;
+	AudioBackendStream * PlayBuffer;
 
 	/*
 	**	Variable to keep track of the playback rate of this buffer

@@ -14,9 +14,9 @@
 #pragma once
 
 #include "audio.h"
+#include "audiobackend.h"
 #include "soundint.h"
 
-#include <dsound.h>
 
 #define INVALID_SAMPLE_HANDLE -1
 
@@ -48,8 +48,6 @@ class DSAudio
 		int Get_Free_Sample_Handle(int priority);
 		//int Get_Digi_Handle(void);
 		//long Sample_Length(void const *sample);
-		void Restore_Sound_Buffers (void);
-		bool Set_Primary_Buffer_Format(void);
 		bool Start_Primary_Sound_Buffer (bool forced);
 		void Stop_Primary_Sound_Buffer (void);
 
@@ -80,11 +78,7 @@ class DSAudio
 		bool Lock_Mutex(void);
 		void Unlock_Mutex(void);
 
-		LPDIRECTSOUNDBUFFER Get_Primary_Buffer(void) { return(PrimaryBufferPtr); }
-
 	private:
-		bool Attempt_Audio_Restore(IDirectSoundBuffer *sound_buffer);
-
 		bool Lock_Global_Mutex(void);
 		void Unlock_Global_Mutex(void);
 
@@ -172,14 +166,10 @@ class DSAudio
 		bool IsStreamBufferClaimed;
 
 		/*
-		**	Direct sound object
+		**	True once the output device has been opened, which is what makes a second Init
+		**	a no-op rather than a second device.
 		*/
-		LPDIRECTSOUND SoundObject;
-
-		/*
-		**	Pointer to the  buffer that the
-		*/
-		LPDIRECTSOUNDBUFFER PrimaryBufferPtr;
+		bool DeviceOpen;
 
 		/*
 		**	Windows Handle for sound timer
@@ -198,18 +188,6 @@ class DSAudio
 		 */
 		bool AudioDone;
 
-		/*
-		**	Copy of format of direct sound primary buffer
-		*/
-		WAVEFORMATEX *PrimaryBuffFormat;
-
-		/*
-		**	Copy of buffer description for re-creating primary buffer
-		*/
-		DSBUFFERDESC *PrimaryBufferDesc;
-
-		friend LPDIRECTSOUND Direct_Sound_Object(void);
-		friend LPDIRECTSOUNDBUFFER Direct_Sound_Primary_Buffer(void);
 		friend bool Audio_Available(void);
 };
 
@@ -238,19 +216,9 @@ inline int DSAudio::File_Stream_Sample(char const *filename, bool real_time_star
 	return(File_Stream_Sample_Vol(filename, 0xFF, real_time_start));
 }
 
-inline LPDIRECTSOUND Direct_Sound_Object(void)
-{
-	return(Audio.SoundObject);
-}
-
-inline LPDIRECTSOUNDBUFFER Direct_Sound_Primary_Buffer(void)
-{
-	return(Audio.PrimaryBufferPtr);
-}
-
 inline bool Audio_Available(void)
 {
-	return(Audio.SoundObject != NULL && !Audio.AudioDone);
+	return(Audio.DeviceOpen && !Audio.AudioDone);
 }
 
-int Convert_HMI_To_Direct_Sound_Volume(int volume);
+float Gain_From_HMI_Volume(int volume);

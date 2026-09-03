@@ -217,9 +217,9 @@ target_link_libraries(OpenTS PRIVATE
     $<TARGET_FILE:bgfx>
     $<TARGET_FILE:bx>
     $<TARGET_FILE:bimg>
+    miniaudio
     comctl32
     dbghelp
-    dsound
     iphlpapi
     psapi
     version

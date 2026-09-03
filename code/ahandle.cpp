@@ -29,8 +29,6 @@
 
 Ahandle _handles[Ahandle::MAX_HANDLES];
 
-bool _restore_primary = false;
-WAVEFORMATEX _restore_format;
 
 AHANDLE_CALLBACK_1 _AHandleCallbackFunc1;
 AHANDLE_CALLBACK_2 _AHandleCallbackFunc2;
@@ -116,7 +114,10 @@ unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *audio, VQAConfig *c
 	totalbytes = config->HMIBufSize * m;
 
 	if (audio->SecondaryBufferPtr &&
-		audio->SecondaryBufferPtr->GetCurrentPosition (&play_cursor, &write_cursor) == S_OK) {
+		audio->SecondaryBufferPtr != NULL) {
+			play_cursor = (DWORD)Audio_Backend_Play_Cursor(audio->SecondaryBufferPtr);
+			write_cursor = (DWORD)Audio_Backend_Write_Cursor(audio->SecondaryBufferPtr);
+
 		if (l) {
 			totalbytes += play_cursor;
 		} else {
@@ -190,7 +191,6 @@ long __cdecl Stream_Audio_Handler(VQAHandle *vqa, long action, void *buffer, lon
 
 long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, long b)
 {
-	DSCAPS dscaps;
 
 	DebugString("Opening VQ audio handler\n");
 	DebugString("Current thread ID is %08x\n", GetCurrentThreadId());
@@ -230,50 +230,11 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 			}
 		}
 
-		memset(&dscaps, 0, sizeof(dscaps));
-		dscaps.dwSize = sizeof(DSCAPS);
-
-		DebugString("Audio.Lock_Mutex\n");
-		Audio.Lock_Mutex();
-
-		Direct_Sound_Object()->GetCaps(&dscaps);
-
-		if (dscaps.dwFlags & DSCAPS_EMULDRIVER) {
-			DebugString("Ahandle detected emulated sound driver. LatencyAdjustment = %ld ticks\n", config->LatencyAdjustment);
-		} else {
-			config->LatencyAdjustment = 0;
-		}
-
-		DebugString("Audio.Get_Primary_Buffer()\n");
-
-		memset(&_restore_format, 0, sizeof(_restore_format));
-		WAVEFORMATEX format;
-		memset(&format, 0, sizeof(format));
-
-		DebugString("Getting current primary buffer format\n");
-		Direct_Sound_Primary_Buffer()->GetFormat(&_restore_format, sizeof(_restore_format), NULL);
-
-		_restore_primary = false;
-		if (params->Channels != _restore_format.nChannels || params->SampleRate != _restore_format.nSamplesPerSec || params->BitsPerSample != _restore_format.wBitsPerSample) {
-			DebugString("Changing primary buffer format\n");
-			Audio.Stop_Primary_Sound_Buffer();
-			DebugString("Primary buffer stopped\n");
-			_restore_primary = true;
-
-			format.wFormatTag		= WAVE_FORMAT_PCM;
-			format.nSamplesPerSec	= params->SampleRate;
-			format.nChannels		= params->Channels;
-			format.wBitsPerSample	= (short) params->BitsPerSample;
-			format.nBlockAlign		= (unsigned short)( (params->BitsPerSample/8) * params->Channels);
-			format.nAvgBytesPerSec	= params->SampleRate * format.nBlockAlign;
-
-			Direct_Sound_Primary_Buffer()->SetFormat(&format);
-			DebugString("Primary buffer format changed\n");
-			Audio.Start_Primary_Sound_Buffer(false);
-		}
-
-		DebugString("Audio.Unlock_Mutex\n");
-		Audio.Unlock_Mutex();
+		/*
+		**	The device carries each stream at the format it was opened with, so the movie's
+		**	rate is not something the output has to be talked into.
+		*/
+		config->LatencyAdjustment = 0;
 
 		handle->Channels = params->Channels;
 		handle->BitsPerSample = params->BitsPerSample;
@@ -319,24 +280,6 @@ long __cdecl Close_Audio_Handler(VQAHandleP *vqap)
 
 		handle->Used = false;
 
-		if (_restore_primary) {
-			DebugString("Changing primary buffer format back to original\n");
-			_restore_primary = false;
-
-			DebugString("Audio.Lock_Mutex()\n");
-			Audio.Lock_Mutex();
-
-			DebugString("Stopping primary buffer\n");
-			Audio.Stop_Primary_Sound_Buffer();
-
-			DebugString("Calling SetFormat\n");
-			Direct_Sound_Primary_Buffer()->SetFormat(&_restore_format);
-
-			Audio.Start_Primary_Sound_Buffer(false);
-
-			DebugString("Audio.Unlock_Mutex()\n");
-			Audio.Unlock_Mutex();
-		}
 		DebugString("Deleting the critical section object\n");
 		DeleteCriticalSection(&handle->CriticalSection);
 	}
@@ -364,8 +307,8 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	**	If we already have a direct sound secondary buffer then get rid of it
 	*/
 	if (audio->SecondaryBufferPtr != NULL){
-		audio->SecondaryBufferPtr->Stop();
-		audio->SecondaryBufferPtr->Release();
+		Audio_Backend_Stop(audio->SecondaryBufferPtr);
+		Audio_Backend_Close_Stream(audio->SecondaryBufferPtr);
 		audio->SecondaryBufferPtr = NULL;
 	}
 
@@ -377,24 +320,13 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	/*
 	**	Define the format for the secondary sound buffer
 	*/
-	memset (&audio->BufferDesc , 0 , sizeof(DSBUFFERDESC));
-	audio->BufferDesc.dwSize				= sizeof(DSBUFFERDESC);
-	audio->BufferDesc.dwFlags				= DSBCAPS_CTRLVOLUME|DSBCAPS_GETCURRENTPOSITION2;
-	audio->BufferDesc.dwBufferBytes		= audio->SecondaryBufferSize;
-	audio->BufferDesc.lpwfxFormat 		= (LPWAVEFORMATEX) &audio->DsBuffFormat;
-	memset (&audio->DsBuffFormat , 0 , sizeof(WAVEFORMATEX));
-	audio->DsBuffFormat.wFormatTag		= WAVE_FORMAT_PCM;
-	audio->DsBuffFormat.nSamplesPerSec	= audio->SampleRate;
-	audio->DsBuffFormat.nChannels			= audio->Channels;
-	audio->DsBuffFormat.wBitsPerSample	= audio->BitsPerSample;
-	audio->DsBuffFormat.nBlockAlign		= (short) ((audio->DsBuffFormat.wBitsPerSample/8) * audio->DsBuffFormat.nChannels);
-	audio->DsBuffFormat.nAvgBytesPerSec	= audio->DsBuffFormat.nSamplesPerSec * audio->DsBuffFormat.nBlockAlign;
 
 	/*
 	**	Create the secondary sound buffer object
 	*/
 	Audio.Lock_Mutex();
-	Direct_Sound_Object()->CreateSoundBuffer (&audio->BufferDesc , &audio->SecondaryBufferPtr , NULL);
+	audio->SecondaryBufferPtr = Audio_Backend_Open_Stream(audio->SecondaryBufferSize,
+									audio->SampleRate, audio->BitsPerSample, audio->Channels);
 	Audio.Unlock_Mutex();
 
 	if (audio->SecondaryBufferPtr == NULL) {
@@ -408,16 +340,16 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	audio->AudioBufWriteIndex = 0;
 	audio->EndLastAudioChunk = 0;
 	audio->ChunksMovedToAudioBuffer = 0;
-	audio->SecondaryBufferPtr->SetCurrentPosition (0);
+	Audio_Backend_Seek(audio->SecondaryBufferPtr, 0);
 
 	/*
 	**	Set the volume
 	*/
-	audio->SecondaryBufferPtr->SetVolume(Convert_HMI_To_Direct_Sound_Volume(audio->Volume & 255));
+	Audio_Backend_Set_Gain(audio->SecondaryBufferPtr, Gain_From_HMI_Volume(audio->Volume & 255));
 
-	HRESULT return_code = audio->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
+	Audio_Backend_Start(audio->SecondaryBufferPtr);
 	LeaveCriticalSection(&audio->CriticalSection);
-	return(return_code == DS_OK ? VQAERR_NONE : VQAERR_AUDIO);
+	return(VQAERR_NONE);
 }
 
 
@@ -455,7 +387,7 @@ long __cdecl Pause_Audio_Handler(VQAHandleP *vqap)
 	EnterCriticalSection(&handle->CriticalSection);
 
 	if (handle->Used == true && handle->SecondaryBufferPtr != NULL) {
-		handle->SecondaryBufferPtr->Stop();
+		Audio_Backend_Stop(handle->SecondaryBufferPtr);
 	}
 	handle->Flags |= AHANDLEF_IS_PAUSED;
 
@@ -476,15 +408,12 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 
 	EnterCriticalSection(&handle->CriticalSection);
 
-	rc = handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
-	if (rc == S_OK) {
-		handle->PauseAdjust = Simple_Timer_Callback_Audio_Handler(NULL) - handle->LastTimerTick;
-		DebugString("Ahandle: PauseAdjust %ld\n", handle->PauseAdjust);
-		handle->Flags &= ~AHANDLEF_IS_PAUSED;
-		rc = VQAERR_NONE;
-	} else {
-		rc = VQAERR_AUDIO;
-	}
+	Audio_Backend_Start(handle->SecondaryBufferPtr);
+
+	handle->PauseAdjust = Simple_Timer_Callback_Audio_Handler(NULL) - handle->LastTimerTick;
+	DebugString("Ahandle: PauseAdjust %ld\n", handle->PauseAdjust);
+	handle->Flags &= ~AHANDLEF_IS_PAUSED;
+	rc = VQAERR_NONE;
 	LeaveCriticalSection(&handle->CriticalSection);
 
 	return(rc);
@@ -498,8 +427,8 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 	if (handle->SecondaryBufferPtr != NULL) {
 
 		EnterCriticalSection(&handle->CriticalSection);
-		handle->SecondaryBufferPtr->Stop();
-		handle->SecondaryBufferPtr->Release();
+		Audio_Backend_Stop(handle->SecondaryBufferPtr);
+		Audio_Backend_Close_Stream(handle->SecondaryBufferPtr);
 		handle->SecondaryBufferPtr = NULL;
 		handle->AudioBufReadIndex = 0;
 		handle->AudioBufWriteIndex = 0;
@@ -540,9 +469,6 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 	Ahandle  	*audio;
 	DWORD			play_cursor;		//Position that direct sound is reading from
 	DWORD			write_cursor;		//Position in buffer that we can write to
-	HRESULT		return_code;
-	bool			buffer_stopped = false;
-	DWORD			status;
 
 	VQAHandle *vqa = (VQAHandle *)dwUser;
 	VQAHandleP *vqap = (VQAHandleP *)dwUser;
@@ -562,8 +488,7 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 		return;
 	}
 
-	return_code = audio->SecondaryBufferPtr->GetStatus(&status);
-	if (!(status & DSBSTATUS_PLAYING) && !(status & DSBSTATUS_LOOPING)) {
+	if (!Audio_Backend_Is_Playing(audio->SecondaryBufferPtr)) {
 		LeaveCriticalSection(&audio->CriticalSection);
 		InterlockedDecrement(&audio->SuspendAudioCallback);
 		return;
@@ -572,19 +497,10 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 	/*
 	**	See if we are nearing the end of the meaningful data in the direct sound buffer
 	*/
-	return_code = audio->SecondaryBufferPtr->GetCurrentPosition (&play_cursor , &write_cursor);
+	play_cursor = (DWORD)Audio_Backend_Play_Cursor(audio->SecondaryBufferPtr);
+	write_cursor = (DWORD)Audio_Backend_Write_Cursor(audio->SecondaryBufferPtr);
 
 	bool write_more = false;
-
-	if (return_code == DSERR_BUFFERLOST) {
-		audio->SecondaryBufferPtr->Restore();
-		audio->SecondaryBufferPtr->Stop();
-		buffer_stopped = true;
-		audio->SecondaryBufferPtr->SetCurrentPosition (0);
-		audio->LastChunkPosition = 0;
-		audio->EndLastAudioChunk = 0;
-		write_more = true;
-	}
 
 
 	if (play_cursor < audio->EndLastAudioChunk){
@@ -612,12 +528,6 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 			audio->AudioBufWriteIndex = index;
 		}
 
-		/*
-		**	Start the buffer playing again if we had to stop it
-		*/
-		if (buffer_stopped == true) {
-			audio->SecondaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
-		}
 	}
 	LeaveCriticalSection(&audio->CriticalSection);
 	InterlockedDecrement(&audio->SuspendAudioCallback);
@@ -647,7 +557,6 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	DWORD			lock_length1;   //Beginning of second locked area in buffer
 	DWORD			lock_length2;   //Length of second locked area in buffer
 	unsigned		next_fill_pos;
-	HRESULT		return_code;
 
 	audio = &_handles[vqap->AudioHandleIndex];
 	VQAConfig *config = &vqap->Config;
@@ -667,15 +576,16 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	/*
 	**	Lock the buffer to get a pointer to it
 	*/
-	return_code= audio->SecondaryBufferPtr->Lock ((DWORD)next_fill_pos,
-																	(DWORD)config->HMIBufSize,
-																	&play_buffer_ptr1,
-																	&lock_length1,
-																	&play_buffer_ptr2,
-																	&lock_length2,
-																	0 );
+	unsigned char * ring = Audio_Backend_Ring(audio->SecondaryBufferPtr);
+	if (ring == NULL) return(FALSE);
 
-	if (return_code!=DS_OK) return(FALSE);
+	DWORD const ring_size = (DWORD)Audio_Backend_Ring_Size(audio->SecondaryBufferPtr);
+	DWORD const want = (DWORD)config->HMIBufSize;
+
+	lock_length1 = (want < ring_size - next_fill_pos) ? want : ring_size - next_fill_pos;
+	lock_length2 = want - lock_length1;
+	play_buffer_ptr1 = ring + next_fill_pos;
+	play_buffer_ptr2 = ring;
 
 	int index = audio->AudioBufReadIndex;
 
@@ -700,10 +610,6 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	/*
 	**	Unlock the direct sound buffer
 	*/
-	audio->SecondaryBufferPtr->Unlock(play_buffer_ptr1,
-												lock_length1,
-												play_buffer_ptr2,
-												lock_length2);
 
 	/*
 	**	Update our audio data pointers
@@ -732,7 +638,7 @@ void Pause_All_Audio_Handler(void)
 
 			EnterCriticalSection(&handle->CriticalSection);
 
-			handle->SecondaryBufferPtr->Stop();
+			Audio_Backend_Stop(handle->SecondaryBufferPtr);
 			handle->Flags |= AHANDLEF_IS_PAUSED;
 
 			LeaveCriticalSection(&handle->CriticalSection);
@@ -750,7 +656,7 @@ void Resume_All_Audio_Handler(void)
 
 			EnterCriticalSection(&handle->CriticalSection);
 
-			handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
+			Audio_Backend_Start(handle->SecondaryBufferPtr);
 			handle->Flags &= ~AHANDLEF_IS_PAUSED;
 
 			LeaveCriticalSection(&handle->CriticalSection);

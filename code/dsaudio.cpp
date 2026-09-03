@@ -120,18 +120,18 @@ DSAudio Audio;
  * HISTORY:                                                                                    *
  *    9/18/96 11:36AM ST : Created                                                             *
  *=============================================================================================*/
-int Convert_HMI_To_Direct_Sound_Volume(int volume)
+float Gain_From_HMI_Volume(int volume)
 {
-	if (volume == 0) return(DSBVOLUME_MIN);
-	if (volume == 255) return(DSBVOLUME_MAX);
+	if (volume <= 0) return(0.0f);
+	if (volume >= 255) return(1.0f);
 
-	float vol = (float)volume;
-	float retval = float(log10f(vol / 255) * ((-DSBVOLUME_MIN) / 300.0)) * 100;
-
-	if ( retval < DSBVOLUME_MIN) {
-		retval = DSBVOLUME_MIN;
-	}
-	return((int)retval);
+	/*
+	** The curve is the one the driver has always used: a linear volume taken to decibels
+	** across a hundred decibel range, which reduces to this exponent once the decibels are
+	** turned back into a multiplier. The floor is that range's bottom.
+	*/
+	float const gain = powf((float)volume / 255.0f, 5.0f / 3.0f);
+	return((gain < 1.0e-5f) ? 1.0e-5f : gain);
 }
 
 
@@ -162,6 +162,8 @@ DSAudio::DSAudio(void)
 {
 	Audio_Focus_Loss_Function = NULL;
 
+	DeviceOpen = false;
+
 	StreamLowImpact = false;
 
 	MagicNumber = 0xDEAF;
@@ -173,17 +175,11 @@ DSAudio::DSAudio(void)
 
 	SoundVolume = 255;
 
-	SoundObject = NULL;
-	PrimaryBufferPtr = NULL;
 	SoundTimerHandle = NULL;
 
 	TimerResolution = 0;
 
-	PrimaryBufferDesc = new DSBUFFERDESC;
-	memset(PrimaryBufferDesc, 0, sizeof(*PrimaryBufferDesc));
 
-	PrimaryBuffFormat = new WAVEFORMATEX;
-	memset(PrimaryBuffFormat, 0, sizeof(*PrimaryBuffFormat));
 
 	TimerMutex = CreateMutex(0, 0, 0);
 	GlobalAudioMutex = CreateMutex(0, 0, 0);
@@ -216,25 +212,9 @@ DSAudio::~DSAudio(void)
 		FileStreamBuffer = NULL;
 	}
 
-	if (SoundObject != NULL) {
-		delete SoundObject;
-		SoundObject = NULL;
-	}
 
-	if (PrimaryBufferPtr != NULL) {
-		delete PrimaryBufferPtr;
-		PrimaryBufferPtr = NULL;
-	}
 
-	if (PrimaryBuffFormat != NULL) {
-		delete PrimaryBuffFormat;
-		PrimaryBuffFormat = NULL;
-	}
 
-	if (PrimaryBufferDesc != NULL) {
-		delete PrimaryBufferDesc;
-		PrimaryBufferDesc = NULL;
-	}
 
 	for (int index = 0; index < MAX_SFX; index++) {
 		ReleaseMutex(SecondaryBufferMutexes[index]);
@@ -267,182 +247,22 @@ DSAudio::~DSAudio(void)
  *   08-24-95 10:01am ST : Modified for Windows 95 Direct Sound                                *
  *=============================================================================================*/
 
-bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate )
+bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate /*, int reverse_channels*/)
 {
-	int	index;
-	int	sample=1;
-	short old_bits_per_sample;
-	short old_block_align;
-	int	old_bytes_per_sec;
+	int index;
 
-	DWORD old_channels;
-	HRESULT res;
-	DSBUFFERDESC BufferDesc;
-	WAVEFORMATEX DsBuffFormat;
-
-	if ( !SoundObject ){
+	if (!DeviceOpen) {
 
 		LOCK_GLOBAL_MUTEX();
 
-		/*
-		**	Create the direct sound object
-		*/
-		res = DirectSoundCreate (NULL,&SoundObject,NULL);
-		if ( res != DS_OK ) {
-			DebugString("Failed to create direct sound object. Error code %d\n", res);
+		if (!Audio_Backend_Init()) {
+			DebugString("Failed to open an audio device\n");
 			Print_Sound_Error(Fetch_String(TXT_DSOUND_CANT_CREATE), window);
 			UNLOCK_GLOBAL_MUTEX();
 			return(FALSE);
 		}
 
-		/*
-		**	Give ourselves exclusive access to it
-		*/
-		res = SoundObject->SetCooperativeLevel( window, DSSCL_PRIORITY );
-		if ( res != DS_OK ) {
-			DebugString("Failed to set cooperative level. Error code %d\n", res);
-			Print_Sound_Error(Fetch_String(TXT_DSOUND_NO_COOP), window);
-			SoundObject->Release();
-			SoundObject = NULL;
-			UNLOCK_GLOBAL_MUTEX();
-			return(FALSE);
-		}
-
-		/*
-		**	Set up the primary buffer structure
-		*/
-		memset (&BufferDesc , 0 , sizeof(DSBUFFERDESC));
-		BufferDesc.dwSize=sizeof(DSBUFFERDESC);
-		BufferDesc.dwFlags=DSBCAPS_PRIMARYBUFFER | DSBCAPS_CTRLVOLUME;
-
-		/*
-		**	Set up the primary buffer format
-		*/
-		memset (&DsBuffFormat , 0 , sizeof(WAVEFORMATEX));
-		DsBuffFormat.wFormatTag		= WAVE_FORMAT_PCM;
-		DsBuffFormat.nChannels		= (unsigned short) (1 + stereo);
-		DsBuffFormat.nSamplesPerSec	= rate;
-		DsBuffFormat.wBitsPerSample	= (short) bits_per_sample;
-		DsBuffFormat.nBlockAlign	= (unsigned short)( (DsBuffFormat.wBitsPerSample/8) * DsBuffFormat.nChannels);
-		DsBuffFormat.nAvgBytesPerSec= DsBuffFormat.nSamplesPerSec * DsBuffFormat.nBlockAlign;
-		DsBuffFormat.cbSize = 0;
-
-
-		/*
-		**	Make a copy of the primary buffer description so we can reset its format later
-		*/
-		memcpy (PrimaryBufferDesc , &BufferDesc , sizeof(DSBUFFERDESC));
-		memcpy (PrimaryBuffFormat , &DsBuffFormat , sizeof(WAVEFORMATEX));
-
-		/*
-		**	Create the primary buffer object
-		*/
-		res = SoundObject->CreateSoundBuffer (PrimaryBufferDesc ,
-														&PrimaryBufferPtr ,
-														NULL );
-		if ( res!=DS_OK ){
-			DebugString("Failed to create the primary sound buffer. Error code %d\n", res);
-			Print_Sound_Error(Fetch_String(TXT_DSOUND_NO_PRIMARY), window);
-			SoundObject->Release();
-			SoundObject = NULL;
-			UNLOCK_GLOBAL_MUTEX();
-			return(FALSE);
-		}
-
-		old_channels = DsBuffFormat.nChannels;
-		old_bits_per_sample = DsBuffFormat.wBitsPerSample;
-		old_block_align = DsBuffFormat.nBlockAlign;
-		old_bytes_per_sec = DsBuffFormat.nAvgBytesPerSec;
-
-		/*
-		**	Set the format of the primary sound buffer
-		**
-		*/
-		if (!Set_Primary_Buffer_Format()){
-
-			DebugString("Failed to set primary buffer format\n");
-
-			/*
-			**	If we failed to create a 16 bit primary buffer - try for an 8bit one
-			*/
-			if (DsBuffFormat.wBitsPerSample == 16 || stereo == true) {
-				/*
-				**	Save the old values
-				*/
-				//old_bits_per_sample	= DsBuffFormat.wBitsPerSample;
-				//old_block_align		= DsBuffFormat.nBlockAlign;
-				//old_bytes_per_sec		= DsBuffFormat.nAvgBytesPerSec;
-
-				DebugString("Trying an 8 bit primary buffer format\n");
-
-				/*
-				**	Set up the 8-bit ones
-				*/
-				DsBuffFormat.wBitsPerSample	= 8;
-				DsBuffFormat.nBlockAlign	= (unsigned short)( (DsBuffFormat.wBitsPerSample/8) * DsBuffFormat.nChannels);
-				DsBuffFormat.nAvgBytesPerSec= DsBuffFormat.nSamplesPerSec * DsBuffFormat.nBlockAlign;
-
-				/*
-				**	Make a copy of the primary buffer description so we can reset its format later
-				*/
-				memcpy (PrimaryBufferDesc , &BufferDesc , sizeof(DSBUFFERDESC));
-				memcpy (PrimaryBuffFormat , &DsBuffFormat , sizeof(WAVEFORMATEX));
-
-				if (!Set_Primary_Buffer_Format()){
-
-					DebugString("Failed to set primary buffer format\n");
-
-					if (stereo == true) {
-
-						DebugString("Trying a mono primary buffer format\n");
-
-						DsBuffFormat.nBlockAlign = (DsBuffFormat.wBitsPerSample / 8);
-						DsBuffFormat.nAvgBytesPerSec = DsBuffFormat.nSamplesPerSec * DsBuffFormat.nBlockAlign;
-						DsBuffFormat.nChannels = 1;
-
-						*PrimaryBufferDesc = BufferDesc;
-						*PrimaryBuffFormat = DsBuffFormat;
-					}
-
-					if (!Set_Primary_Buffer_Format()) {
-						DebugString("Failed to set any primary buffer format. Disabling audio.\n");
-						PrimaryBufferPtr->Release();
-						PrimaryBufferPtr = NULL;
-						SoundObject->Release();
-						SoundObject = NULL;
-						Print_Sound_Error(Fetch_String(TXT_DSOUND_INCOMPAT), window);
-						UNLOCK_GLOBAL_MUTEX();
-						return(false);
-					}
-				}
-			}
-		}
-
-		DsBuffFormat.nChannels = old_channels;
-		DsBuffFormat.wBitsPerSample = old_bits_per_sample;
-		DsBuffFormat.nBlockAlign = old_block_align;
-		DsBuffFormat.nAvgBytesPerSec = old_bytes_per_sec;
-
-		/*
-		**	Start the primary sound buffer playing
-		**
-		*/
-		res = PrimaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
-		if ( res != DS_OK ) {
-			DebugString("Failed to start primary sound buffer. Error code %d\n", res);
-			Print_Sound_Error(Fetch_String(TXT_DSOUND_ACCESS), window);
-			PrimaryBufferPtr->Release();
-			PrimaryBufferPtr = NULL;
-			SoundObject->Release();
-			SoundObject = NULL;
-			UNLOCK_GLOBAL_MUTEX();
-			return(FALSE);
-		}
-
-		/*
-		**	Initialise the global critical section object for sound thread syncronisation
-		*/
-		//InitializeCriticalSection(&GlobalAudioCriticalSection);
+		DeviceOpen = true;
 
 		TIMECAPS tc;
 		if (timeGetDevCaps(&tc, sizeof(tc)) != TIMERR_NOERROR) {
@@ -462,28 +282,15 @@ bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate )
 		*/
 		SoundTimerHandle = timeSetEvent ( 1000/MAINTENANCE_RATE , 1 , Sound_Timer_Callback , 0 , TIME_PERIODIC | TIME_KILL_SYNCHRONOUS);
 		AudioDone = FALSE;
-		//_beginthread(&Sound_Thread, NULL, 16*1024, NULL);
 
 		/*
-		**	Define the format for the secondary sound buffers
-		*/
-		BufferDesc.dwFlags=DSBCAPS_CTRLVOLUME;
-		BufferDesc.dwBufferBytes=SECONDARY_BUFFER_SIZE;
-		BufferDesc.lpwfxFormat = (LPWAVEFORMATEX) &DsBuffFormat;
-
-
-
-		/*
-		**	Allocate a decompression buffer equal to the size of a SONARC frame
-		**	block.
-		*/
-		/*
-		**	Allocate once secondary direct sound buffer for each simultaneous sound effect
-		**
+		**	One ring for each simultaneous sound effect. The device carries each of them at
+		**	its own rate and width, so there is no one output format to negotiate down to.
 		*/
 		for (index = 0; index < MAX_SFX; index++) {
 			SampleTrackerType *st = &SampleTracker[index];
-			SoundObject->CreateSoundBuffer (&BufferDesc , &st->PlayBuffer , NULL);
+			st->PlayBuffer		= Audio_Backend_Open_Stream(SECONDARY_BUFFER_SIZE, rate,
+										bits_per_sample, stereo ? 2 : 1);
 			st->PlaybackRate	= rate;
 			st->Stereo			= (stereo) ? AUD_FLAG_STEREO : 0;
 			st->BitSize 		= (bits_per_sample == 16) ? AUD_FLAG_16BIT : 0;
@@ -534,19 +341,18 @@ void DSAudio::End(void)
 		timeEndPeriod(TimerResolution);
 	}
 
-	if (SoundObject && PrimaryBufferPtr){
+	if (DeviceOpen){
 		if (WaitForMultipleObjects(MAX_SFX, SecondaryBufferMutexes, true, MUTEX_TIMEOUT) == WAIT_TIMEOUT) {
 			DebugString("Warning: Probable deadlock occurred on secondary sound buffer mutexes. %s, line %d\n", __FILE__, __LINE__);
 		}
 
 		/*
-		**	Stop all sounds and release the Direct Sound secondary sound buffers
+		**	Stop all sounds and close the rings they were playing out of
 		*/
 		for (index=0 ; index < MAX_SFX; index++){
 			if ( SampleTracker[index].PlayBuffer ){
 				Stop_Sample (index);
-				SampleTracker[index].PlayBuffer->Stop();
-				SampleTracker[index].PlayBuffer->Release();
+				Audio_Backend_Close_Stream(SampleTracker[index].PlayBuffer);
 				SampleTracker[index].PlayBuffer = NULL;
 			}
 			if (SampleTracker[index].FileBuffer != NULL && SampleTracker[index].FileBuffer != FileStreamBuffer) {
@@ -565,21 +371,9 @@ void DSAudio::End(void)
 		FileStreamBuffer = NULL;
 	}*/
 
-	/*
-	**	Stop and release the direct sound primary buffer
-	*/
-	if (PrimaryBufferPtr){
-		PrimaryBufferPtr->Stop();
-		PrimaryBufferPtr->Release();
-		PrimaryBufferPtr = NULL;
-	}
-
-	/*
-	**	Release the Direct Sound Object
-	*/
-	if (SoundObject){
-		SoundObject->Release();
-		SoundObject = NULL;
+	if (DeviceOpen){
+		Audio_Backend_Shutdown();
+		DeviceOpen = false;
 	}
 
 	if (FileStreamBuffer != NULL) {
@@ -618,7 +412,7 @@ void DSAudio::End(void)
  *=============================================================================================*/
 void DSAudio::Stop_Sample(int handle)
 {
-	if (SoundObject != NULL && !AudioDone && (unsigned)handle < MAX_SFX) {
+	if (DeviceOpen && !AudioDone && (unsigned)handle < MAX_SFX) {
 
 		//EnterCriticalSection (&GlobalAudioCriticalSection);
 		LOCK_SECONDARY_MUTEX(handle);
@@ -634,7 +428,7 @@ void DSAudio::Stop_Sample(int handle)
 			**	Stop the sample if it is playing.
 			*/
 			if (!st->Loading) {
-				st->PlayBuffer->Stop();
+				Audio_Backend_Stop(st->PlayBuffer);
 			}
 
 			/*
@@ -683,10 +477,7 @@ void DSAudio::Stop_Sample(int handle)
  *=============================================================================================*/
 bool DSAudio::Sample_Status(int handle)
 {
-	DWORD	status;
-	HRESULT hr;
-
-	if (SoundObject == NULL || AudioDone) return(FALSE);
+	if (!DeviceOpen || AudioDone) return(FALSE);
 
 	/*
 	**	If its an invalid handle or we do not have a sound driver then
@@ -711,16 +502,10 @@ bool DSAudio::Sample_Status(int handle)
 	**	If we made it this far, then the Sample is still playing if sos says
 	**	that it is.
 	*/
-	hr = SampleTracker[handle].PlayBuffer->GetStatus( &status );
+	bool const playing = Audio_Backend_Is_Playing(SampleTracker[handle].PlayBuffer);
 	UNLOCK_SECONDARY_MUTEX(handle);
 
-	if (hr == DS_OK){
-		return( (DSBSTATUS_PLAYING & status) || (DSBSTATUS_LOOPING & status) );
-	}else{
-		DebugString("Warning: GetStatus failed on secondary buffer %d. %s, line %d\n", handle, __FILE__, __LINE__);
-		return(TRUE);
-	}
-	return(FALSE);
+	return(playing);
 }
 
 
@@ -907,23 +692,14 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	AUDHeaderType                   RawHeader;
 	SampleTrackerType               *st=NULL;       // Working pointer to sample tracker structure.
 
-	LPVOID				play_buffer_ptr;		//pointer to locked direct sound buffer
-	LPVOID				dummy_buffer_ptr;		//dummy pointer to second area of locked direct sound buffer
-	DWORD					lock_length1;
-	DWORD					lock_length2;
-	DWORD					play_status;
-	HRESULT				return_code;
-	int					retries=0;
-
-
-	DSBUFFERDESC BufferDesc;
+	void *				play_buffer_ptr;		// the sample's ring, written straight into
 
 	if (id == -1) {
 		//LeaveCriticalSection (&GlobalAudioCriticalSection);
 		return(-1);
 	}
 
-	if (SoundObject == NULL || AudioDone) return(-1);
+	if (!DeviceOpen || AudioDone) return(-1);
 
 	if (!sample) {
 		//LeaveCriticalSection (&GlobalAudioCriticalSection);
@@ -1003,65 +779,23 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 		**	Stop the sound buffer playing
 		*/
 	if (st->PlayBuffer) {
-		do {
-			return_code = st->PlayBuffer->GetStatus ( &play_status );
-			if (return_code == DSERR_BUFFERLOST) {
-				if (!Attempt_Audio_Restore(st->PlayBuffer)) {
-					UNLOCK_SECONDARY_MUTEX(id);
-					return(-1);
-				}
-			}
-		} while (return_code == DSERR_BUFFERLOST);
-
-		if (play_status & (DSBSTATUS_PLAYING | DSBSTATUS_LOOPING) ) {
-			return_code = st->PlayBuffer->Stop();
-			if (return_code==DSERR_BUFFERLOST){
-				if (!Attempt_Audio_Restore(st->PlayBuffer)) {
-					UNLOCK_SECONDARY_MUTEX(id);
-					return(-1);
-				}
-			}
-		}
-
-		st->PlayBuffer->Release();
+		Audio_Backend_Close_Stream(st->PlayBuffer);
 		st->PlayBuffer=NULL;
 	}
 
-		WAVEFORMATEX format;
-		memset(&format, 0, sizeof(format));
-		format.wFormatTag = WAVE_FORMAT_PCM;
-		format.nSamplesPerSec = RawHeader.Rate;
-		format.nChannels = (RawHeader.Flags & AUD_FLAG_STEREO) ? 2 : 1;
-		format.wBitsPerSample = (RawHeader.Flags & AUD_FLAG_16BIT) ? 16 : 8;
-		format.nBlockAlign = (unsigned short)((format.wBitsPerSample / 8) * format.nChannels);
-		format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
-
-		memset(&BufferDesc, 0, sizeof(BufferDesc));
-		BufferDesc.dwSize = sizeof(BufferDesc);
-		BufferDesc.dwFlags = DSBCAPS_CTRLVOLUME;
-		BufferDesc.dwBufferBytes = SECONDARY_BUFFER_SIZE;
-		BufferDesc.lpwfxFormat = &format;
+		/*
+		**	Open a ring in the sample's own format. The device carries each stream at the
+		**	format it was opened with, so there is no output format to match here.
+		*/
+		st->PlayBuffer = Audio_Backend_Open_Stream(SECONDARY_BUFFER_SIZE, RawHeader.Rate,
+								(RawHeader.Flags & AUD_FLAG_16BIT) ? 16 : 8,
+								(RawHeader.Flags & AUD_FLAG_STEREO) ? 2 : 1);
 
 		/*
-		**	Create the new sound buffer
+		**	If that failed then flag the buffer as having an impossible format so it wont
+		**	match any sample, which makes the next use of it try again.
 		*/
-		do {
-			return_code= SoundObject->CreateSoundBuffer (&BufferDesc , &st->PlayBuffer , NULL);
-			if (return_code==DSERR_BUFFERLOST){
-				if (!Attempt_Audio_Restore(st->PlayBuffer)) {
-					UNLOCK_SECONDARY_MUTEX(id);
-					return(-1);
-				}
-			}
-		} while (return_code == DSERR_BUFFERLOST);
-
-		/*
-		**	Just return if the create failed unexpectedly
-		**
-		**	If we failed then flag the buffer as having an impossible format so it wont match
-		**	any sample. This will ensure that we try and create the buffer again next time its used.
-		*/
-		if (return_code!=DS_OK && return_code!=DSERR_BUFFERLOST){
+		if (st->PlayBuffer == NULL){
 			DebugString("DSAudio: Bad sample format!\n");
 			st->PlaybackRate = 0;
 			st->Stereo = 0;
@@ -1107,21 +841,11 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	//
 	// Stop the sound buffer playing before we lock it
 	//
-	do {
-		return_code = st->PlayBuffer->GetStatus ( &play_status );
-		if (return_code==DSERR_BUFFERLOST){
-			if (!Attempt_Audio_Restore(st->PlayBuffer)){
-				UNLOCK_SECONDARY_MUTEX(id);
-				return(-1);
-			}
-		}
-	} while (return_code==DSERR_BUFFERLOST);
-
-	if (play_status & (DSBSTATUS_PLAYING | DSBSTATUS_LOOPING) ){
+	if (Audio_Backend_Is_Playing(st->PlayBuffer)){
 		st->Active=0;
 		st->Service=0;
 		st->MoreSource=0;
-		st->PlayBuffer->Stop();
+		Audio_Backend_Stop(st->PlayBuffer);
 	}
 
 	Prefetch_Audio_Buffer((char *)st->Source, st->Remainder);
@@ -1135,24 +859,9 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	//
 	// Lock the direct sound buffer so we can write to it
 	//
-	do {
-		return_code = st->PlayBuffer->Lock (	0 ,
-										SECONDARY_BUFFER_SIZE,
-										&play_buffer_ptr,
-										&lock_length1,
-										&dummy_buffer_ptr,
-										&lock_length2,
-										0 );
-		if (return_code==DSERR_BUFFERLOST){
-			if (!Attempt_Audio_Restore(st->PlayBuffer)){
-				UNLOCK_SECONDARY_MUTEX(id);
-				return(-1);
-			}
-		}
-	} while (return_code==DSERR_BUFFERLOST);
+	play_buffer_ptr = Audio_Backend_Ring(st->PlayBuffer);
 
-	if (return_code != DS_OK) {
-		//LeaveCriticalSection (&GlobalAudioCriticalSection);
+	if (play_buffer_ptr == NULL) {
 		UNLOCK_SECONDARY_MUTEX(id);
 		return(-1);
 	}
@@ -1196,10 +905,6 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 		memset ( (char*)( (unsigned)play_buffer_ptr + (unsigned)st->DestPtr ), 0 , left);
 	}
 
-	st->PlayBuffer->Unlock(	play_buffer_ptr,
-							lock_length1,
-							dummy_buffer_ptr,
-							lock_length2);
 	}
 
 	/*
@@ -1207,7 +912,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	**	Set the volume of the sample.
 	**
 	*/
-	st->PlayBuffer->SetVolume ( Convert_HMI_To_Direct_Sound_Volume( ( SoundVolume*volume)/255) );
+	Audio_Backend_Set_Gain(st->PlayBuffer, Gain_From_HMI_Volume( ( SoundVolume*volume)/255) );
 	st->StartVolume = volume;
 	st->Volume = volume << 7;
 
@@ -1224,102 +929,22 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	/*
 	**	Set the buffers play pointer to the beginning of the buffer
 	*/
-	do {
-		return_code = st->PlayBuffer->SetCurrentPosition (0);
-		if (return_code==DSERR_BUFFERLOST){
-			if (!Attempt_Audio_Restore(st->PlayBuffer)){
-				UNLOCK_SECONDARY_MUTEX(id);
-				return(-1);
-			}
-		}
-	} while (return_code==DSERR_BUFFERLOST);
+	Audio_Backend_Seek(st->PlayBuffer, 0);
 
 
 	/*
 	**	Start the sample playing now.
 	*/
-	do
-	{
-		return_code = st->PlayBuffer->Play (0,0,DSBPLAY_LOOPING);
+	Audio_Backend_Start(st->PlayBuffer);
 
-		switch (return_code){
+	st->Active=TRUE;
+	st->Handle=(int)id;
 
-			case DS_OK :
-				st->Active=TRUE;
-				st->Handle=(int)id;
-				UNLOCK_SECONDARY_MUTEX(id);
-				return(st->Handle);
-
-			case DSERR_BUFFERLOST :
-				if (!Attempt_Audio_Restore(st->PlayBuffer)){
-					UNLOCK_SECONDARY_MUTEX(id);
-					return(-1);
-				}
-				break;
-
-			default:
-				st->Active=false;
-				//LeaveCriticalSection (&GlobalAudioCriticalSection);
-				UNLOCK_SECONDARY_MUTEX(id);
-				return(-1);
-		}
-
-	} while (return_code==DSERR_BUFFERLOST);
-
-	//LeaveCriticalSection (&GlobalAudioCriticalSection);
 	UNLOCK_SECONDARY_MUTEX(id);
 	return(st->Handle);
 }
 
 
-/***********************************************************************************************
- * Attempt_Audio_Restore -- tries to restore the direct sound buffers                          *
- *                                                                                             *
- *                                                                                             *
- *                                                                                             *
- * INPUT:    ptr to direct sound buffer                                                        *
- *                                                                                             *
- * OUTPUT:   TRUE if buffer was successfully restored                                          *
- *                                                                                             *
- * WARNINGS: None                                                                              *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *    3/20/96 9:47AM ST : Created                                                              *
- *=============================================================================================*/
-
-bool DSAudio::Attempt_Audio_Restore (LPDIRECTSOUNDBUFFER sound_buffer)
-{
-
-	int 	return_code;
-	DWORD	play_status;
-	int	restore_attempts=0;
-
-	//if (AudioDone){
-	//	return (FALSE);
-	//}
-
-	if (sound_buffer == NULL) {
-		return(false);
-	}
-
-	/*
-	**	Call the audio focus loss function if it has been set up
-	*/
-	if (Audio_Focus_Loss_Function){
-		Audio_Focus_Loss_Function();
-	}
-
-	/*
-	**	Try to restore the sound buffer
-	*/
-	do{
-		Restore_Sound_Buffers();
-		return_code = sound_buffer->GetStatus ( &play_status );
-
-	} while (restore_attempts++<2 && return_code == DSERR_BUFFERLOST);
-
-	return(return_code != DSERR_BUFFERLOST);
-}
 
 
 /// <summary>
@@ -1461,11 +1086,7 @@ void DSAudio::maintenance_callback(void)
 	DWORD					write_cursor;   //Position in buffer that we can write to
 	int			 		bytes_copied;       //Number of bytes copied into the buffer
 	BOOL					write_more;     //Flag to set if we need to write more into the buffer
-	LPVOID				play_buffer_ptr;    //Beginning of locked area of buffer
-	LPVOID				dummy_buffer_ptr;   //Length of locked area in buffer
-	DWORD					lock_length1;   //Beginning of second locked area in buffer
-	DWORD					lock_length2;   //Length of second locked area in buffer
-	HRESULT				return_code;
+	void *				play_buffer_ptr;    //Where in the ring the refill is written
 
 	//EnterCriticalSection(&GlobalAudioCriticalSection);
 
@@ -1490,19 +1111,11 @@ void DSAudio::maintenance_callback(void)
 				//st->DontTouch = TRUE;
 
 				/*
-				**	Get the current position of the direct sound play cursor within the buffer
+				**	Where in the ring the device is playing, and how far ahead of that it
+				**	has already taken data.
 				*/
-				return_code = st->PlayBuffer->GetCurrentPosition ( &play_cursor , &write_cursor );
-
-				/*
-				**	Check for unusual situations like a focus loss
-				*/
-				if (return_code != DS_OK){
-					//LeaveCriticalSection(&GlobalAudioCriticalSection);
-					//LeaveCriticalSection (&st->AudioCriticalSection);
-					UNLOCK_SECONDARY_MUTEX(index);
-					return; //Our app has lost focus or something else nasty has happened
-				}           //so dont update the sound buffers
+				play_cursor = (DWORD)Audio_Backend_Play_Cursor(st->PlayBuffer);
+				write_cursor = (DWORD)Audio_Backend_Write_Cursor(st->PlayBuffer);
 
 
 				if (st->MoreSource){
@@ -1535,13 +1148,9 @@ void DSAudio::maintenance_callback(void)
 						/*
 						**	Lock a 1/2 of the direct sound buffer so we can write to it
 						*/
-						if ( DS_OK== st->PlayBuffer->Lock (	(DWORD)st->DestPtr ,
-															(DWORD)SECONDARY_BUFFER_SIZE/2,
-															&play_buffer_ptr,
-															&lock_length1,
-															&dummy_buffer_ptr,
-															&lock_length2,
-															0 )){
+						play_buffer_ptr = Audio_Backend_Ring(st->PlayBuffer) + st->DestPtr;
+
+						if (play_buffer_ptr != NULL){
 
 							bytes_copied = Sample_Copy(	st,
 														&st->Source,
@@ -1566,9 +1175,11 @@ void DSAudio::maintenance_callback(void)
 								**	to give us a quiet period of grace in which to stop the buffer playing
 								*/
 								if ( (unsigned)st->DestPtr == SECONDARY_BUFFER_SIZE*3/4 ){
-									if ( dummy_buffer_ptr && lock_length2 ){
-										memset (dummy_buffer_ptr , 0 , lock_length2);
-									}
+									/*
+									**	The grace period wraps, so it is cleared at the start
+									**	of the ring rather than ahead of the refill.
+									*/
+									memset (Audio_Backend_Ring(st->PlayBuffer) , 0 , SECONDARY_BUFFER_SIZE/4);
 								} else {
 									memset ((char*)play_buffer_ptr+SECONDARY_BUFFER_SIZE/4 , 0 , SECONDARY_BUFFER_SIZE/4);
 								}
@@ -1588,10 +1199,6 @@ void DSAudio::maintenance_callback(void)
 							/*
 							**	Unlock the direct sound buffer
 							*/
-							st->PlayBuffer->Unlock(	play_buffer_ptr,
-													lock_length1,
-													dummy_buffer_ptr,
-													lock_length2);
 						}
 
 					}				//write_more
@@ -1638,7 +1245,7 @@ void DSAudio::maintenance_callback(void)
 				} else {
 					st->Volume -= st->Reducer;
 				}
-				st->PlayBuffer->SetVolume ( Convert_HMI_To_Direct_Sound_Volume( ( SoundVolume*(st->Volume >>7))/255) );
+				Audio_Backend_Set_Gain(st->PlayBuffer, Gain_From_HMI_Volume( ( SoundVolume*(st->Volume >>7))/255) );
 			}
 		}
 		UNLOCK_SECONDARY_MUTEX(index);
@@ -1669,7 +1276,7 @@ int DSAudio::Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short id
 	int							oldsize;                // Copy of original sound size.
 	AUDHeaderType                   *header;
 
-	if (buffer && size > 0 && SoundObject != NULL && !AudioDone) {
+	if (buffer && size > 0 && DeviceOpen && !AudioDone) {
 
 		/*
 	 	**	Start the first section of the sound playing.
@@ -1868,7 +1475,7 @@ int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_
 	CCFileClass *fh;
 	int     handle = -1;
 
-	if (SoundObject != NULL && !AudioDone && filename && CCFileClass(filename).Is_Available()) {
+	if (DeviceOpen && !AudioDone && filename && CCFileClass(filename).Is_Available()) {
 
 
 		/*
@@ -1956,12 +1563,18 @@ void DSAudio::Sound_Callback(void)
 	int					index;
 	SampleTrackerType	*st;
 
-	if (SoundObject != NULL && !AudioDone) {
+	if (DeviceOpen && !AudioDone) {
 
 		/*
 		**	Call the timer callback now as we may block it in this function
 		*/
 		//Sound_Timer_Callback(0,0,0,0,0);
+
+		/*
+		**	The device pulls the rings on a thread of its own, so this pass is only what has
+		**	to happen on the game's: releasing the rings of closed streams.
+		*/
+		Audio_Backend_Service();
 
 		for (index = 0; index < MAX_SFX; index++) {
 			st = &SampleTracker[index];
@@ -2182,71 +1795,8 @@ void DSAudio::Print_Sound_Error(char const *sound_error, HWND window)
 }
 
 
-/***********************************************************************************************
- * Set_Primary_Buffer_Format -- set the format of the primary sound buffer                     *
- *                                                                                             *
- *                                                                                             *
- *                                                                                             *
- * INPUT:    Nothing                                                                           *
- *                                                                                             *
- * OUTPUT:   TRUE if successfully set                                                          *
- *                                                                                             *
- * WARNINGS: None                                                                              *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *    12/22/95 4:06PM ST : Created                                                             *
- *=============================================================================================*/
-
-bool DSAudio::Set_Primary_Buffer_Format(void)
-{
-	if (SoundObject && PrimaryBufferPtr){
-		return(PrimaryBufferPtr->SetFormat ( PrimaryBuffFormat ) == DS_OK);
-	}
-	return(FALSE);
-}
 
 
-/***********************************************************************************************
- * Restore_Sound_Buffers -- restore the sound buffers                                          *
- *                                                                                             *
- *                                                                                             *
- *                                                                                             *
- * INPUT:    Nothing                                                                           *
- *                                                                                             *
- * OUTPUT:   Nothing                                                                           *
- *                                                                                             *
- * WARNINGS: None                                                                              *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *    11/3/95 3:53PM ST : Created                                                              *
- *=============================================================================================*/
-
-void DSAudio::Restore_Sound_Buffers ( void )
-{
-	DWORD const result = WaitForMultipleObjects(MUTEX_COUNT, AllAudioMutexes, true, MUTEX_TIMEOUT);
-	bool const owned = result != WAIT_TIMEOUT && result != WAIT_FAILED;
-	if (!owned) {
-		DebugString("Warning: Probable deadlock occurred on multiple audio mutexes. %s, line %d\n", __FILE__, __LINE__);
-	}
-
-	if (PrimaryBufferPtr != NULL){
-		PrimaryBufferPtr->Restore();
-	}
-
-	for ( int index = 0; index < MAX_SFX; index++) {
-		if (SampleTracker[index].PlayBuffer != NULL){
-			SampleTracker[index].PlayBuffer->Restore();
-		}
-	}
-
-	// The caller already holds its own slot, so releasing after a failed wait would hand
-	// that slot to the timer thread mid-update.
-	if (owned) {
-		for (int index = 0; index < MUTEX_COUNT; index++) {
-			ReleaseMutex(AllAudioMutexes[index]);
-		}
-	}
-}
 
 
 /// <summary>
@@ -2264,7 +1814,7 @@ void DSAudio::Set_Volume_All(int volume)
 		if (Sample_Status(index)) {
 			LOCK_SECONDARY_MUTEX(index);
 			SampleTrackerType &st = SampleTracker[index];
-			st.PlayBuffer->SetVolume(Convert_HMI_To_Direct_Sound_Volume(SoundVolume * (st.Volume >> 7) / 255));
+			Audio_Backend_Set_Gain(st.PlayBuffer, Gain_From_HMI_Volume(SoundVolume * (st.Volume >> 7) / 255));
 			UNLOCK_SECONDARY_MUTEX(index);
 		}
 	}
@@ -2288,7 +1838,7 @@ int DSAudio::Adjust_Volume_All(int percent)
 		if (Sample_Status(index)) {
 			LOCK_SECONDARY_MUTEX(index);
 			SampleTrackerType &st = SampleTracker[index];
-			st.PlayBuffer->SetVolume(Convert_HMI_To_Direct_Sound_Volume(SoundVolume * (st.Volume >> 7) / 255));
+			Audio_Backend_Set_Gain(st.PlayBuffer, Gain_From_HMI_Volume(SoundVolume * (st.Volume >> 7) / 255));
 			UNLOCK_SECONDARY_MUTEX(index);
 		}
 	}
@@ -2311,7 +1861,7 @@ void DSAudio::Set_Handle_Volume(int handle, int volume)
 		volume = std::min(volume, 255);
 		SampleTrackerType &st = SampleTracker[handle];
 
-		st.PlayBuffer->SetVolume(Convert_HMI_To_Direct_Sound_Volume((SoundVolume * volume) / 255));
+		Audio_Backend_Set_Gain(st.PlayBuffer, Gain_From_HMI_Volume((SoundVolume * volume) / 255));
 		st.Volume = volume << 7;
 
 		UNLOCK_SECONDARY_MUTEX(handle);
@@ -2346,7 +1896,7 @@ void DSAudio::Adjust_Sample_Handle_Volume(int handle, int percent)
 		LOCK_SECONDARY_MUTEX(handle);
 		SampleTrackerType &st = SampleTracker[handle];
 		int vol = percent * (st.Volume >> 7) / 100;
-		st.PlayBuffer->SetVolume(Convert_HMI_To_Direct_Sound_Volume(vol));
+		Audio_Backend_Set_Gain(st.PlayBuffer, Gain_From_HMI_Volume(vol));
 		st.Volume = vol << 7;
 		UNLOCK_SECONDARY_MUTEX(handle);
 	}
@@ -2365,7 +1915,7 @@ void DSAudio::Restore_Sample_Handle_Volume(int handle)
 		SampleTrackerType &st = SampleTracker[handle];
 		int vol = st.StartVolume;
 		st.Volume = vol << 7;
-		st.PlayBuffer->SetVolume(Convert_HMI_To_Direct_Sound_Volume((SoundVolume * vol) / 255));
+		Audio_Backend_Set_Gain(st.PlayBuffer, Gain_From_HMI_Volume((SoundVolume * vol) / 255));
 		UNLOCK_SECONDARY_MUTEX(handle);
 	}
 }
@@ -2445,28 +1995,13 @@ bool DSAudio::Start_Primary_Sound_Buffer (bool forced)
 {
 	DWORD status;
 
-	if (SoundObject != NULL && !AudioDone && PrimaryBufferPtr && GameInFocus){
+	if (DeviceOpen && !AudioDone && GameInFocus){
 
 		LOCK_GLOBAL_MUTEX();
+		Audio_Backend_Resume();
+		UNLOCK_GLOBAL_MUTEX();
 
-		if (forced){
-			PrimaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
-			UNLOCK_GLOBAL_MUTEX();
-			return(TRUE);
-		} else {
-
-			if (PrimaryBufferPtr->GetStatus (&status) == DS_OK){
-				if (! ((status & DSBSTATUS_PLAYING) || (status & DSBSTATUS_LOOPING))){
-					PrimaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
-					UNLOCK_GLOBAL_MUTEX();
-					return(TRUE);
-				}else{
-					UNLOCK_GLOBAL_MUTEX();
-					return(TRUE);
-				}
-			}
-			UNLOCK_GLOBAL_MUTEX();
-		}
+		return(TRUE);
 	}
 	return(FALSE);
 }
@@ -2490,13 +2025,6 @@ bool DSAudio::Start_Primary_Sound_Buffer (bool forced)
 void DSAudio::Stop_Primary_Sound_Buffer (void)
 {
 	LOCK_GLOBAL_MUTEX();
-
-	if (PrimaryBufferPtr){
-		PrimaryBufferPtr->Stop();
-		PrimaryBufferPtr->Stop();			// Oh I
-		PrimaryBufferPtr->Stop();			// Hate Direct Sound
-		PrimaryBufferPtr->Stop();			// So much.....
-	}
 
 	for ( int index = 0; index < MAX_SFX; index++) {
 		Stop_Sample(index);

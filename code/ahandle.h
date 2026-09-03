@@ -15,7 +15,7 @@
 
 #include "vqaplay.h"
 
-#include <dsound.h>
+#include "audiobackend.h"
 #include <windows.h>
 
 struct AhandleInitParams
@@ -57,9 +57,7 @@ struct Ahandle {
 	void * AudioBuf[MAX_BUFFERS];
 	unsigned long AudioBufSize[MAX_BUFFERS];
 	UINT TimerHandle;
-	DSBUFFERDESC BufferDesc;
-	WAVEFORMATEX DsBuffFormat;
-	LPDIRECTSOUNDBUFFER SecondaryBufferPtr;
+	AudioBackendStream * SecondaryBufferPtr;
 	unsigned long SecondaryBufferSize;
 	unsigned long ChunksMovedToAudioBuffer;
 	unsigned long LastChunkPosition;
