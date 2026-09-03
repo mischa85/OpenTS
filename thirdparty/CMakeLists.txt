@@ -36,3 +36,27 @@ if(OPENTS_EXPERIMENTAL_CLANG_CL AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     # but that intrinsic is unavailable for the Win32 target. Its SSE2 path is portable.
     target_compile_definitions(bimg PRIVATE ASTCENC_POPCNT=0 ASTCENC_SSE=20)
 endif()
+
+#
+# ---------------------------------------------------------
+# miniaudio (audio backend)
+# ---------------------------------------------------------
+#
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio/miniaudio.h")
+    message(FATAL_ERROR
+        "thirdparty/miniaudio is empty. Fetch the submodules with:\n"
+        "  git submodule update --init --recursive")
+endif()
+
+# Header only, so the target carries the include path and the per-platform libraries the
+# device backends need.
+add_library(miniaudio INTERFACE)
+target_include_directories(miniaudio INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio")
+
+if(APPLE)
+    target_link_libraries(miniaudio INTERFACE
+        "-framework CoreAudio" "-framework CoreFoundation" "-framework AudioToolbox")
+elseif(UNIX)
+    find_package(Threads REQUIRED)
+    target_link_libraries(miniaudio INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
