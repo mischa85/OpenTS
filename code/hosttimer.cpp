@@ -20,9 +20,10 @@
 
 // The multimedia timer calls back on a thread of its own, and its accuracy follows the
 // timer resolution in force, so the finest one is held for as long as a timer is armed.
-// timeSetEvent wants a callback shape of its own, so each armed timer carries the portable
-// one it stands for, and the resolution is released on the failure path as well as on the
-// ordinary one.
+// TIME_KILL_SYNCHRONOUS is what makes the disarm hosttimer.h promises: without it
+// timeKillEvent returns while a callback may still be running. timeSetEvent wants a
+// callback shape of its own, so each armed timer carries the portable one it stands for,
+// and the resolution is released on the failure path as well as the ordinary one.
 namespace {
 
 struct ArmedTimerType
@@ -61,7 +62,7 @@ uint32_t Host_Timer_Arm(uint32_t period, HostTimerCallbackType callback, void * 
 		armed.User = user;
 
 		timeBeginPeriod(1);
-		armed.Id = timeSetEvent((UINT)period, 1, Deliver, 0, TIME_PERIODIC);
+		armed.Id = timeSetEvent((UINT)period, 1, Deliver, 0, TIME_PERIODIC | TIME_KILL_SYNCHRONOUS);
 
 		if (armed.Id == 0) {
 			timeEndPeriod(1);

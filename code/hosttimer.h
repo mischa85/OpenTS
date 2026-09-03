@@ -27,6 +27,9 @@ using HostTimerCallbackType = void (*)(uint32_t timer, void * user);
  */
 uint32_t Host_Timer_Arm(uint32_t period, HostTimerCallbackType callback, void * user);
 
-// Disarms a timer. A callback already under way still runs to its end, and a callback may
-// disarm its own timer from inside itself.
+/*
+ * Disarms a timer, and does not return while a callback of its own is still running. That
+ * is what lets a caller tear down state the callback reads without racing it. The one
+ * exception is a callback disarming its own timer, which is allowed and returns at once.
+ */
 void Host_Timer_Disarm(uint32_t timer);
