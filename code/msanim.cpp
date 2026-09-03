@@ -19,7 +19,7 @@
 #include "data.h"
 #include "dbgprint.h"
 #include "draw.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "goptions.h"
 #include "mixfile.h"

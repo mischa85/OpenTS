@@ -37,7 +37,7 @@
 #include "sounddlg.h"
 
 #include "dbgprint.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "goptions.h"
 #include "incdec.h"

@@ -15,7 +15,7 @@
 
 #include "ahandle.h"
 
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "dbgprint.h"
 #include "gametime.h"
 #include "vqaplayp.h"

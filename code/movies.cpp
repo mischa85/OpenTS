@@ -13,7 +13,7 @@
 
 #include "_map.h"
 #include "_surface.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "dsurface.h"
 #include "surface.h"
 #include "theme.h"

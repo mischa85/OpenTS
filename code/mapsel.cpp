@@ -43,7 +43,7 @@
 #include "ccfile.h"
 #include "convert.h"
 #include "dbgprint.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "houstype.h"
 #include "keyboard.h"

@@ -10,7 +10,7 @@ related:
   - { type: format, id: mix }
 source_files:
   - code/audio.h
-  - code/dsaudio.cpp
+  - code/sounddriver.cpp
   - code/voc.cpp
   - code/theme.cpp
 ---

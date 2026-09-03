@@ -10,7 +10,7 @@
 // The sound driver's private output interface. Only audiobackend.cpp includes OpenAL, so
 // no OpenAL type appears here and no other translation unit needs the library's headers.
 // The sound driver is the only caller, and it reaches this through the DirectSound shaped
-// object declared in dsaudio.h, which audiobackend.cpp builds on top of these calls.
+// object declared in sounddriver.h, which audiobackend.cpp builds on top of these calls.
 //
 // A stream is a looping byte ring, which is the shape the engine's mixing already assumes:
 // it decodes samples into the ring itself and watches the play cursor to decide when to

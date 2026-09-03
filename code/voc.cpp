@@ -19,7 +19,7 @@
 #include "_rect.h"
 #include "_tactica.h"
 #include "ccini.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "goptions.h"
 #include "mixfile.h"

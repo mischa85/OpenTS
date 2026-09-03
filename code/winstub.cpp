@@ -54,7 +54,7 @@
 #include "convert.h"
 #include "dbgprint.h"
 #include "draw.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "dsurface.h"
 #include "except.h"
 #include "globals.h"

@@ -16,7 +16,7 @@
 #include "vox.h"
 
 #include "ccfile.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "stimer.h"
 #include "timer.h"

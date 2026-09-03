@@ -13,7 +13,7 @@
 
 #include "always.h"
 
-#include "dsaudio.h"
+#include "sounddriver.h"
 
 #include "ccfile.h"
 #include "data.h"
@@ -62,7 +62,7 @@
 #define LARGEST_SONARC_BLOCK            2048
 
 
-DSAudio Audio;
+SoundDriver Audio;
 
 #define LOCK_GLOBAL_MUTEX() \
 	if (!Lock_Global_Mutex()) { \
@@ -89,7 +89,7 @@ DSAudio Audio;
 
 
 #define _LOCK_SECONDARY_MUTEX(_handle) \
-	if (WaitForSingleObject(Audio.SecondaryBufferMutexes[_handle], DSAudio::MUTEX_TIMEOUT) == WAIT_TIMEOUT) { \
+	if (WaitForSingleObject(Audio.SecondaryBufferMutexes[_handle], SoundDriver::MUTEX_TIMEOUT) == WAIT_TIMEOUT) { \
 		DebugString("Warning: Probable deadlock occurred on secondary buffer mutex %d. %s, line %d\n", _handle, __FILE__, __LINE__); \
 	} \
 
@@ -97,7 +97,7 @@ DSAudio Audio;
 
 
 #define LOCK_ALL_MUTEX() \
-	if (WaitForMultipleObjects(MUTEX_COUNT, AllAudioMutexes, true, DSAudio::MUTEX_TIMEOUT) == WAIT_TIMEOUT) { \
+	if (WaitForMultipleObjects(MUTEX_COUNT, AllAudioMutexes, true, SoundDriver::MUTEX_TIMEOUT) == WAIT_TIMEOUT) { \
 		DebugString("Warning: Probable deadlock occurred on multiple audio mutexes. %s, line %d\n", __FILE__, __LINE__); \
 	} \
 
@@ -158,7 +158,7 @@ static void *Audio_Add_Long_To_Pointer(void const *ptr, int size)
 /// This routine allocates the file streaming buffer and creates the mutexes that guard
 /// the sample trackers. The sound hardware itself is not touched until Init is called.
 /// </summary>
-DSAudio::DSAudio(void)
+SoundDriver::SoundDriver(void)
 {
 	Audio_Focus_Loss_Function = NULL;
 
@@ -199,7 +199,7 @@ DSAudio::DSAudio(void)
 /// This routine shuts the audio system down if it is still running, then gives back the
 /// working buffers, the DirectSound objects and every mutex the driver created.
 /// </summary>
-DSAudio::~DSAudio(void)
+SoundDriver::~SoundDriver(void)
 {
 	if (!AudioDone) {
 		End();
@@ -247,7 +247,7 @@ DSAudio::~DSAudio(void)
  *   08-24-95 10:01am ST : Modified for Windows 95 Direct Sound                                *
  *=============================================================================================*/
 
-bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate /*, int reverse_channels*/)
+bool SoundDriver::Init( HWND window , int bits_per_sample, bool stereo , int rate /*, int reverse_channels*/)
 {
 	int index;
 
@@ -323,7 +323,7 @@ bool DSAudio::Init( HWND window , int bits_per_sample, bool stereo , int rate /*
  *   07/23/1991 JLB : Created.                                                                 *
  *   11/02/1995 ST  : Modified for Direct Sound                                                *
  *=============================================================================================*/
-void DSAudio::End(void)
+void SoundDriver::End(void)
 {
 
 	int	index;
@@ -410,7 +410,7 @@ void DSAudio::End(void)
  *   06/02/1992 JLB : Created.                                                                 *
  *   11/2/95 4:09PM ST : Modified for Direct Sound                                             *
  *=============================================================================================*/
-void DSAudio::Stop_Sample(int handle)
+void SoundDriver::Stop_Sample(int handle)
 {
 	if (DeviceOpen && !AudioDone && (unsigned)handle < MAX_SFX) {
 
@@ -475,7 +475,7 @@ void DSAudio::Stop_Sample(int handle)
  * HISTORY:                                                                                    *
  *   06/02/1992 JLB : Created.                                                                 *
  *=============================================================================================*/
-bool DSAudio::Sample_Status(int handle)
+bool SoundDriver::Sample_Status(int handle)
 {
 	if (!DeviceOpen || AudioDone) return(FALSE);
 
@@ -524,7 +524,7 @@ bool DSAudio::Sample_Status(int handle)
  *    11/2/95 4:11PM ST : Commented                                                            *
  *=============================================================================================*/
 
-bool DSAudio::Is_Sample_Playing(void const * sample)
+bool SoundDriver::Is_Sample_Playing(void const * sample)
 {
 	int index;
 
@@ -562,7 +562,7 @@ bool DSAudio::Is_Sample_Playing(void const * sample)
  *    11/2/95 4:13PM ST : Commented                                                            *
  *=============================================================================================*/
 
-void DSAudio::Stop_Sample_Playing(void const * sample)
+void SoundDriver::Stop_Sample_Playing(void const * sample)
 {
 	int index;
 
@@ -591,7 +591,7 @@ void DSAudio::Stop_Sample_Playing(void const * sample)
  *    11/2/95 4:14PM ST : Added function header                                                *
  *=============================================================================================*/
 
-int DSAudio::Get_Free_Sample_Handle(int priority)
+int SoundDriver::Get_Free_Sample_Handle(int priority)
 {
 	int	id;
 
@@ -662,7 +662,7 @@ int DSAudio::Get_Free_Sample_Handle(int priority)
 /// <param name="volume">The volume to play at, in the range 0 to 255.</param>
 /// <returns>Returns with the handle the sample is playing on, or -1 if it could not be
 /// played.</returns>
-int DSAudio::Play_Sample(void const *sample, int priority, int volume)
+int SoundDriver::Play_Sample(void const *sample, int priority, int volume)
 {
 	return(Play_Sample_Handle(sample, priority, volume, Get_Free_Sample_Handle(priority)));
 }
@@ -687,7 +687,7 @@ int DSAudio::Play_Sample(void const *sample, int priority, int volume)
  *   04/22/1994 JLB : Multiple sample playback rates.                                          *
  *   11/02/1995 ST  : Windows Direct Sound support                                             *
  *=============================================================================================*/
-int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, int id)
+int SoundDriver::Play_Sample_Handle(void const *sample, int priority, int volume, int id)
 {
 	AUDHeaderType                   RawHeader;
 	SampleTrackerType               *st=NULL;       // Working pointer to sample tracker structure.
@@ -769,7 +769,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 	if (st->PlayBuffer == NULL || ( RawHeader.Rate != st->PlaybackRate ) ||
 		((RawHeader.Flags &  AUD_FLAG_16BIT) != (st->BitSize & AUD_FLAG_16BIT)) ||
 		((RawHeader.Flags & AUD_FLAG_STEREO) != (st->Stereo & AUD_FLAG_STEREO))) {
-		DebugString("DSAudio [%d]: Changing sample format\n", id);
+		DebugString("SoundDriver [%d]: Changing sample format\n", id);
 
 		st->Active=0;
 		st->Service=0;
@@ -796,7 +796,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 		**	match any sample, which makes the next use of it try again.
 		*/
 		if (st->PlayBuffer == NULL){
-			DebugString("DSAudio: Bad sample format!\n");
+			DebugString("SoundDriver: Bad sample format!\n");
 			st->PlaybackRate = 0;
 			st->Stereo = 0;
 			st->BitSize = 0;
@@ -954,7 +954,7 @@ int DSAudio::Play_Sample_Handle(void const *sample, int priority, int volume, in
 /// </summary>
 /// <returns>bool; Was the global audio mutex acquired?</returns>
 /// <remarks>Every successful call must be paired with a call to Unlock_Global_Mutex.</remarks>
-bool DSAudio::Lock_Global_Mutex(void)
+bool SoundDriver::Lock_Global_Mutex(void)
 {
 	return(WaitForSingleObject(GlobalAudioMutex, MUTEX_TIMEOUT) != WAIT_TIMEOUT ? true : false);
 }
@@ -963,7 +963,7 @@ bool DSAudio::Lock_Global_Mutex(void)
 /// <summary>
 /// Releases the global audio mutex.
 /// </summary>
-void DSAudio::Unlock_Global_Mutex(void)
+void SoundDriver::Unlock_Global_Mutex(void)
 {
 	ReleaseMutex(GlobalAudioMutex);
 }
@@ -977,7 +977,7 @@ void DSAudio::Unlock_Global_Mutex(void)
 /// </summary>
 /// <returns>bool; Were all of the audio mutexes acquired?</returns>
 /// <remarks>Every successful call must be paired with a call to Unlock_Mutex.</remarks>
-bool DSAudio::Lock_Mutex(void)
+bool SoundDriver::Lock_Mutex(void)
 {
 	DebugString("Taking ownership of all audio mutexes\n");
 
@@ -1022,7 +1022,7 @@ bool DSAudio::Lock_Mutex(void)
 /// Use this routine to let the sound timer and the maintenance callback run again after a
 /// region of code protected by Lock_Mutex.
 /// </summary>
-void DSAudio::Unlock_Mutex(void)
+void SoundDriver::Unlock_Mutex(void)
 {
 	Unlock_Global_Mutex();
 
@@ -1051,7 +1051,7 @@ void DSAudio::Unlock_Mutex(void)
  *    11/2/95 4:01PM ST : Created                                                              *
  *=============================================================================================*/
 
-void CALLBACK DSAudio::Sound_Timer_Callback ( UINT, UINT, DWORD, DWORD, DWORD )
+void CALLBACK SoundDriver::Sound_Timer_Callback ( UINT, UINT, DWORD, DWORD, DWORD )
 {
 	HANDLE mutex = Audio.TimerMutex;
 	if (WaitForSingleObject(mutex, 0) == 0) {
@@ -1077,7 +1077,7 @@ void CALLBACK DSAudio::Sound_Timer_Callback ( UINT, UINT, DWORD, DWORD, DWORD )
  *     ....Unknown                                                                             *
  *    10/17/95 10:15PM ST : tidied up a tad for direct sound                                   *
  *=============================================================================================*/
-void DSAudio::maintenance_callback(void)
+void SoundDriver::maintenance_callback(void)
 {
 
 	int					index;              //index used in for loop
@@ -1267,7 +1267,7 @@ void DSAudio::maintenance_callback(void)
  * HISTORY:                                                                *
  *   07/17/1995 PWG : Created.                                             *
  *=========================================================================*/
-int DSAudio::Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short id, short int *odd, void **buffer, int *size), int volume, int handle)
+int SoundDriver::Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short id, short int *odd, void **buffer, int *size), int volume, int handle)
 {
 	int								playid=-1;      // Sample play ID.
 /*
@@ -1326,7 +1326,7 @@ int DSAudio::Stream_Sample_Vol(void *buffer, int size, bool (*callback)(short id
  *   06/05/1995 PWG : Created.                                             *
  *=========================================================================*/
 
-void DSAudio::File_Stream_Preload(int handle)
+void SoundDriver::File_Stream_Preload(int handle)
 {
 	LOCK_STREAMING_SECONDARY_MUTEX(handle);
 
@@ -1469,7 +1469,7 @@ void DSAudio::File_Stream_Preload(int handle)
  * HISTORY:                                                                                    *
  *=============================================================================================*/
 
-int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start)
+int SoundDriver::File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start)
 {
 	SampleTrackerType       *st;
 	CCFileClass *fh;
@@ -1494,7 +1494,7 @@ int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_
 		*/
 		fh = new CCFileClass(filename);
 		if (!fh->Is_Available() || !fh->Open()) {
-			DebugString("DSAudio[%d]: ***ERROR*** Unable to open file %s\n", handle, filename);
+			DebugString("SoundDriver[%d]: ***ERROR*** Unable to open file %s\n", handle, filename);
 			delete fh;
 			return(-1);
 		}
@@ -1510,7 +1510,7 @@ int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_
 
 		if (buffer == NULL) {
 			delete fh;
-			DebugString("DSAudio[%d]: ***ERROR*** Unable to obtain streaming buffer\n", handle);
+			DebugString("SoundDriver[%d]: ***ERROR*** Unable to obtain streaming buffer\n", handle);
 			return(-1);
 		}
 
@@ -1558,7 +1558,7 @@ int DSAudio::File_Stream_Sample_Vol(char const *filename, int volume, bool real_
  * HISTORY:                                                                                    *
  *   01/06/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
-void DSAudio::Sound_Callback(void)
+void SoundDriver::Sound_Callback(void)
 {
 	int					index;
 	SampleTrackerType	*st;
@@ -1649,7 +1649,7 @@ void DSAudio::Sound_Callback(void)
  * HISTORY:                                                                *
  *   07/17/1995 PWG : Created.                                             *
  *=========================================================================*/
-bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
+bool SoundDriver::File_Callback(short id, short *odd, void **buffer, int *size)
 {
 	SampleTrackerType       *st;            // Pointer to sample playback control struct.
 	void                    *ptr;           // Pointer to working portion of file buffer.
@@ -1787,7 +1787,7 @@ bool DSAudio::File_Callback(short id, short *odd, void **buffer, int *size)
  *    2/7/96 10:17AM ST : Created                                                              *
  *=============================================================================================*/
 
-void DSAudio::Print_Sound_Error(char const *sound_error, HWND window)
+void SoundDriver::Print_Sound_Error(char const *sound_error, HWND window)
 {
 	char buf[512];
 	sprintf(buf, "%s\n\n%s", sound_error, Fetch_String(TXT_DSOUND_PROCEED));
@@ -1806,7 +1806,7 @@ void DSAudio::Print_Sound_Error(char const *sound_error, HWND window)
 /// drags the sound volume slider.
 /// </summary>
 /// <param name="volume">The master volume to use, in the range 0 to 255.</param>
-void DSAudio::Set_Volume_All(int volume)
+void SoundDriver::Set_Volume_All(int volume)
 {
 	SoundVolume = std::min(volume, 255);
 
@@ -1829,7 +1829,7 @@ void DSAudio::Set_Volume_All(int volume)
 /// </summary>
 /// <param name="percent">The percentage of the current master volume to scale to.</param>
 /// <returns>Returns with the master volume that was in effect before the adjustment.</returns>
-int DSAudio::Adjust_Volume_All(int percent)
+int SoundDriver::Adjust_Volume_All(int percent)
 {
 	int volume = SoundVolume;
 	SoundVolume = std::min((percent * volume) / 100, 255);
@@ -1852,7 +1852,7 @@ int DSAudio::Adjust_Volume_All(int percent)
 /// change to the master sound volume.
 /// </summary>
 /// <param name="volume">The volume to play at, in the range 0 to 255.</param>
-void DSAudio::Set_Handle_Volume(int handle, int volume)
+void SoundDriver::Set_Handle_Volume(int handle, int volume)
 {
 	if (Sample_Status(handle)) {
 
@@ -1875,7 +1875,7 @@ void DSAudio::Set_Handle_Volume(int handle, int volume)
 /// handle it was started on. A sample that is not playing is quietly ignored.
 /// </summary>
 /// <param name="volume">The volume to play at, in the range 0 to 255.</param>
-void DSAudio::Set_Sample_Volume(void const *sample, int volume)
+void SoundDriver::Set_Sample_Volume(void const *sample, int volume)
 {
 	int handle = Get_Playing_Sample_Handle(sample);
 	if (handle != -1) {
@@ -1890,7 +1890,7 @@ void DSAudio::Set_Sample_Volume(void const *sample, int volume)
 /// outright, so successive adjustments compound. Restore_Sample_Handle_Volume undoes them.
 /// </summary>
 /// <param name="percent">The percentage of the current volume to scale to.</param>
-void DSAudio::Adjust_Sample_Handle_Volume(int handle, int percent)
+void SoundDriver::Adjust_Sample_Handle_Volume(int handle, int percent)
 {
 	if (Sample_Status(handle)) {
 		LOCK_SECONDARY_MUTEX(handle);
@@ -1908,7 +1908,7 @@ void DSAudio::Adjust_Sample_Handle_Volume(int handle, int percent)
 /// Use this routine to undo the effect of an earlier volume adjustment. The volume the
 /// sample was started with is put back into effect.
 /// </summary>
-void DSAudio::Restore_Sample_Handle_Volume(int handle)
+void SoundDriver::Restore_Sample_Handle_Volume(int handle)
 {
 	if (Sample_Status(handle)) {
 		LOCK_SECONDARY_MUTEX(handle);
@@ -1937,7 +1937,7 @@ void DSAudio::Restore_Sample_Handle_Volume(int handle)
  *    11/2/95 4:21PM ST : Added function header                                                *
  *=============================================================================================*/
 
-void DSAudio::Fade_Sample(int handle, int ticks)
+void SoundDriver::Fade_Sample(int handle, int ticks)
 {
 	_LOCK_SECONDARY_MUTEX(handle);
 
@@ -1961,7 +1961,7 @@ void DSAudio::Fade_Sample(int handle, int ticks)
 /// </summary>
 /// <param name="sample">Pointer to the sample data to search for.</param>
 /// <returns>Returns with the handle the sample is playing on, or -1 if it is not playing.</returns>
-int DSAudio::Get_Playing_Sample_Handle(void const *sample)
+int SoundDriver::Get_Playing_Sample_Handle(void const *sample)
 {
 	if (sample == NULL) {
 		return(-1);
@@ -1991,7 +1991,7 @@ int DSAudio::Get_Playing_Sample_Handle(void const *sample)
  * HISTORY:                                                                                    *
  *    2/1/96 12:28PM ST : Created                                                              *
  *=============================================================================================*/
-bool DSAudio::Start_Primary_Sound_Buffer (bool forced)
+bool SoundDriver::Start_Primary_Sound_Buffer (bool forced)
 {
 	DWORD status;
 
@@ -2022,7 +2022,7 @@ bool DSAudio::Start_Primary_Sound_Buffer (bool forced)
  *    2/1/96 12:28PM ST : Created                                                              *
  *=============================================================================================*/
 
-void DSAudio::Stop_Primary_Sound_Buffer (void)
+void SoundDriver::Stop_Primary_Sound_Buffer (void)
 {
 	LOCK_GLOBAL_MUTEX();
 
@@ -2046,7 +2046,7 @@ void DSAudio::Stop_Primary_Sound_Buffer (void)
  * HISTORY:                                                                *
  *   06/23/1995 PWG : Created.                                             *
  *=========================================================================*/
-int DSAudio::Simple_Copy(void ** source, int * ssize, void ** alternate, int * altsize, void **dest, int size)
+int SoundDriver::Simple_Copy(void ** source, int * ssize, void ** alternate, int * altsize, void **dest, int size)
 {
 
 
@@ -2118,7 +2118,7 @@ int DSAudio::Simple_Copy(void ** source, int * ssize, void ** alternate, int * a
  *   09/03/1994 JLB : Created.                                                                 *
  *   09/04/1994 JLB : Revamped entirely.                                                       *
  *=============================================================================================*/
-int DSAudio::Sample_Copy(SampleTrackerType *st, void ** source, int * ssize, void ** alternate, int * altsize, void * dest, int size, SCompressType scomp)
+int SoundDriver::Sample_Copy(SampleTrackerType *st, void ** source, int * ssize, void ** alternate, int * altsize, void * dest, int size, SCompressType scomp)
 {
 
 	int	s;

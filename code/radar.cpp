@@ -83,7 +83,7 @@
 #include "dbgprint.h"
 #include "dialog.h"
 #include "draw.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "dsurface.h"
 #include "goptions.h"
 #include "house.h"

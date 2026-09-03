@@ -101,7 +101,7 @@
 #include "data.h"
 #include "dbgprint.h"
 #include "dialog.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "dsurface.h"
 #include "egos.h"
 #include "empulse.h"

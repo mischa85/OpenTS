@@ -53,7 +53,7 @@
 #include "ccini.h"
 #include "ccrand.h"
 #include "dbgprint.h"
-#include "dsaudio.h"
+#include "sounddriver.h"
 #include "globals.h"
 #include "houstype.h"
 #include "incdec.h"

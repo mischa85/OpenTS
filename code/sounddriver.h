@@ -20,11 +20,11 @@
 
 #define INVALID_SAMPLE_HANDLE -1
 
-class DSAudio
+class SoundDriver
 {
 	public:
-		DSAudio(void);
-		~DSAudio(void);
+		SoundDriver(void);
+		~SoundDriver(void);
 
 		int File_Stream_Sample(char const *filename, bool real_time_start = false);
 		int File_Stream_Sample_Vol(char const *filename, int volume, bool real_time_start = false);
@@ -191,7 +191,7 @@ class DSAudio
 		friend bool Audio_Available(void);
 };
 
-extern DSAudio Audio;
+extern SoundDriver Audio;
 
 /***********************************************************************************************
  * File_Stream_Sample -- Streams a sample directly from a file.                                *
@@ -211,7 +211,7 @@ extern DSAudio Audio;
  * HISTORY:                                                                                    *
  *   01/06/1994 JLB : Created.                                                                 *
  *=============================================================================================*/
-inline int DSAudio::File_Stream_Sample(char const *filename, bool real_time_start)
+inline int SoundDriver::File_Stream_Sample(char const *filename, bool real_time_start)
 {
 	return(File_Stream_Sample_Vol(filename, 0xFF, real_time_start));
 }
