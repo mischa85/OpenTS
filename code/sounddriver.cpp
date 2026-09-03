@@ -102,10 +102,6 @@ SoundDriver Audio;
 	} \
 
 
-/// <summary>
-/// Converts a linear volume in the range 0 to 255 into the gain the audio backend takes,
-/// where 0 is silence and 1 is unattenuated.
-/// </summary>
 float Gain_From_HMI_Volume(int volume)
 {
 	if (volume <= 0) return(0.0f);
