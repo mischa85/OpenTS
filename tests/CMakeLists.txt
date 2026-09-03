@@ -1,6 +1,7 @@
 add_subdirectory(cpudetect)
 add_subdirectory(gamedirs)
 add_subdirectory(logstress)
+add_subdirectory(lzocomp)
 add_subdirectory(netpacket)
 add_subdirectory(sosparity)
 add_subdirectory(spawner)
