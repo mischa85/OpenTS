@@ -153,6 +153,9 @@ statement in this document rather than a gate in CMake. The supported build is
 the 32-bit Visual Studio one; configuring anything else warns where it matters
 and otherwise proceeds.
 
+Continuous integration runs exactly that on Linux, so a change that breaks the
+native harnesses is caught rather than discovered later.
+
 That script builds every harness, holds the ones that fail against
 `tests/unported.txt`, and runs the rest. Nothing is skipped, so it fails both
 when a harness that used to build stops and when one on the list starts
