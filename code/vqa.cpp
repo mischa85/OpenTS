@@ -482,9 +482,9 @@ int VQAClass::Play_VQA(int last_frame_to_play, bool nobreakout)
 	VQA_SetStop(Handle, last_frame_to_play);
 
 	if (PrimaryColorMode != -1) {
-		long blockw;
-		long blockh;
-		long cmode;
+		int32_t blockw;
+		int32_t blockh;
+		int32_t cmode;
 		VQA_GetBlockInfo(Handle, blockw, blockh, cmode);
 		if (cmode == 1) {
 			Hicolor_Init_Table(PrimaryColorMode);
@@ -617,9 +617,9 @@ bool VQAClass::Advance_Frame(bool & finished)
 	if (!IsAdvanceReady) {
 		VQA_SetStop(Handle, TotalFrames);
 		if (PrimaryColorMode != -1) {
-			long blockw;
-			long blockh;
-			long cmode;
+			int32_t blockw;
+			int32_t blockh;
+			int32_t cmode;
 			VQA_GetBlockInfo(Handle, blockw, blockh, cmode);
 			if (cmode == 1 || cmode == 4) {
 				Hicolor_Init_Table(PrimaryColorMode);

@@ -108,9 +108,10 @@ extern char ReqTag[];
  * size - Size of chunk.
  */
 typedef struct _ChunkHeader {
-	unsigned long id;
-	unsigned long size;
+	uint32_t id;
+	uint32_t size;
 } ChunkHeader;
+static_assert(sizeof(ChunkHeader) == 8, "the IFF chunk header is read from the stream");
 
 
 /* ZAPHeader: ZAP audio compression header. NOTE: If the uncompressed size
@@ -188,11 +189,11 @@ typedef struct _VQAFrameNode {
 	unsigned char        *Palette;
 	struct _VQAFrameNode *Next;
 	struct _VQAFrameNode *Prev;
-	unsigned long        Flags;
-	unsigned long        PrevFlags;
-	long                 FrameNum;
-	long                 PtrOffset;
-	long                 PalOffset;
+	uint32_t             Flags;
+	uint32_t             PrevFlags;
+	uint32_t             FrameNum;
+	uint32_t             PtrOffset;
+	uint32_t             PalOffset;
 	long                 PaletteSize;
 } VQAFrameNode;
 
@@ -245,16 +246,16 @@ typedef struct _VQALoader {
 	VQACBNode    *FullCB;
 	VQACBNode    *PrevCB;
 	VQAFrameNode *CurFrame;
-	long         NumPartialCB;
-	long         PartialCBSize;
-	int          CBSize;
-	long         CurFrameNum;
+	uint32_t     NumPartialCB;
+	uint32_t     PartialCBSize;
+	uint32_t     CBSize;
+	uint32_t     CurFrameNum;
 //	long         LastCBFrame;
-	long         LastFrameNum;
-	long         WaitsOnDrawer;
-	long         WaitsOnAudio;
-	long         FrameSize;
-	long         MaxFrameSize;
+	uint32_t     LastFrameNum;
+	uint32_t     WaitsOnDrawer;
+	uint32_t     WaitsOnAudio;
+	uint32_t     FrameSize;
+	uint32_t     MaxFrameSize;
 	ChunkHeader  CurChunkHdr;
 } VQALoader;
 
@@ -307,8 +308,8 @@ typedef struct _VQADrawer {
 //	long          MaskHeight;
 //	long          LastTime;
 //	long          LastFrame;
-	long          LastFrameNum;
-	long          DesiredFrame;
+	int32_t       LastFrameNum;
+	uint32_t      DesiredFrame;
 //	long          NumSkipped;
 //	long          WaitsOnFlipper;
 	long          WaitsOnLoader;
@@ -332,7 +333,7 @@ typedef struct _VQADrawer {
  */
 typedef struct _VQAFlipper {
 	VQAFrameNode *CurFrame;
-	long         LastFrameNum;
+	uint32_t     LastFrameNum;
 } VQAFlipper;
 
 
@@ -616,8 +617,8 @@ struct VQALoopCache {
 	int32_t			FileOffset;
 	int				Bytes;
 	int				Offset;
-	int				Min;
-	int				Max;
+	int32_t			Min;
+	int32_t			Max;
 	int				ID;
 };
 
@@ -646,7 +647,7 @@ typedef struct _VQAHandleP {
 	void *			ImageBuf;
 	unsigned short	ColorMode;
 	unsigned short	FrameRate;
-	long			NumFrames;
+	uint32_t		NumFrames;
 	int				LoadedFrames;
 	int				DrawnFrames;
 	int				SkippedFrames;
@@ -688,11 +689,11 @@ typedef struct _VQAHandleP {
 	 */
 	short			field_11A;
 
-	int				StopFrame;
+	uint32_t		StopFrame;
 	int				LoopID;
 	int				LoopIterations;
-	int				LoopStartFrame0;
-	int				LoopEndFrameMode2;
+	int32_t			LoopStartFrame0;
+	uint32_t		LoopEndFrameMode2;
 	int				LoopEndFrameJump;
 	int				LoopIterationsJump;
 	int				LoopEndFrameNormal;
@@ -722,10 +723,10 @@ typedef struct _VQAHandleP {
 	VQAMSCInfo		MSCInfo;
 	VQACodebookInfo CodebookInfo;
 	VQAPaletteInfo	PaletteInfo;
-	long			*Foff;
-	long			Max_CB_Size;
-	long			Max_Ptr_Size;
-	long			Max_Pal_Size;
+	uint32_t		*Foff;
+	uint32_t		Max_CB_Size;
+	uint32_t		Max_Ptr_Size;
+	uint32_t		Max_Pal_Size;
 	int				CBBufferSize;
 	int				PtrBufferSize;
 	VQAD_FUNC		Draw_Frame;

@@ -169,7 +169,7 @@ typedef void  (__cdecl *UNVQ_FUNC)(uint8_t *codebook, uint8_t *pointers, uint8_t
 typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
 // draw callback must be this type
-typedef int32_t (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, int32_t framenum);
+typedef int32_t (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, uint32_t framenum);
 
 // timer callback must be this type
 typedef unsigned long (__cdecl *VQA_TC_FUNC)(VQAHandle *vqa);
@@ -408,10 +408,10 @@ VQAErrorType VQA_Open(char const *, _VQAConfig *, VQAHandle **vqa);
 void VQA_Free(VQAHandle *vqa);
 void VQA_Close(VQAHandle *vqa);
 long VQA_Play(VQAHandle *vqa, long, int flags);
-int32_t VQA_SeekFrame(VQAHandle *vqa, int32_t framenum, int32_t fromwhere);
+int32_t VQA_SeekFrame(VQAHandle *vqa, uint32_t framenum, int32_t fromwhere);
 long VQA_SetStop(VQAHandle *vqa, long stop);
 VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
-VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, uint32_t start, uint32_t end, int iterations, int mode);
 
 VQAErrorType VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2);
 

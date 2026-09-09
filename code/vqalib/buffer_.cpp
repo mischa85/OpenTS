@@ -439,7 +439,7 @@ STATIC VQAErrorType AllocBuffers(VQAHandleP *vqap)
 	/*-------------------------------------------------------------------------
 	 * ALLOCATE THE FRAME INFORMATION TABLE IF REQUESTED.
 	 *-----------------------------------------------------------------------*/
-	vqap->Foff = (long *)config->MemoryHandler((VQAHandle *)vqap, VQAMEM_ALLOC, NULL, header->Frames * sizeof(*vqap->Foff));
+	vqap->Foff = (uint32_t *)config->MemoryHandler((VQAHandle *)vqap, VQAMEM_ALLOC, NULL, header->Frames * sizeof(*vqap->Foff));
 
 	if (vqap->Foff == NULL) {
 		FreeBuffers(vqap);

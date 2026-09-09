@@ -113,7 +113,7 @@ _STATIC VQAErrorType Load_MFCH(VQAHandleP *vqap, uint32_t iffsize);
 _STATIC VQAErrorType Load_MFCD(VQAHandleP *vqap, uint32_t iffsize);
 _STATIC VQAErrorType Load_MFCT(VQAHandleP *vqap, uint32_t iffsize);
 
-_STATIC uint32_t VQA_GetCodebookSize(VQAHandleP *vqap, int32_t framenum);
+_STATIC uint32_t VQA_GetCodebookSize(VQAHandleP *vqap, uint32_t framenum);
 _STATIC VQAErrorType VQA_MFCIPrepare(VQAHandleP *vqap, uint32_t index);
 _STATIC long VQA_MFCICalcCount(VQAHandleP *vqap, unsigned long chunkid, long count, unsigned long value);
 _STATIC VQABool VQA_MFCISpansLoop(VQAHandleP *vqap, unsigned long chunkid, unsigned long value);
@@ -125,17 +125,17 @@ _STATIC long VQA_MFCIIndexFromChunkID(VQAHandleP *vqap, unsigned long chunkid);
 _STATIC VQAErrorType VQA_MFCIReadData(VQAHandleP *vqap, uint32_t iffsize, int32_t index);
 _STATIC long VQA_MSCIIndexFromChunkID(VQAHandleP *vqap, unsigned long chunkid);
 
-_STATIC int32_t VQA_GetPaletteFrameRange(VQAHandleP *vqap, int32_t framenum, int32_t * first_frame, int32_t * last_frame);
-_STATIC VQAErrorType VQA_SeekLoop(VQAHandleP *vqap, int32_t framenum, uint32_t flags);
-_STATIC int32_t VQA_GetCodebookFrameRange(VQAHandleP *vqap, int32_t framenum, int32_t * first_frame, int32_t * last_frame);
-VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, int32_t framenum);
-VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, int32_t framenum, int force);
-_STATIC VQAErrorType VQA_LoadLoop(VQAHandleP *vqap, int32_t framenum);
+_STATIC int32_t VQA_GetPaletteFrameRange(VQAHandleP *vqap, uint32_t framenum, int32_t * first_frame, int32_t * last_frame);
+_STATIC VQAErrorType VQA_SeekLoop(VQAHandleP *vqap, uint32_t framenum, uint32_t flags);
+_STATIC int32_t VQA_GetCodebookFrameRange(VQAHandleP *vqap, uint32_t framenum, int32_t * first_frame, int32_t * last_frame);
+VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, uint32_t framenum);
+VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, uint32_t framenum, int force);
+_STATIC VQAErrorType VQA_LoadLoop(VQAHandleP *vqap, uint32_t framenum);
 
 intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 _STATIC VQAErrorType VQA_LoadFrame_Internal(VQAHandleP *vqap, uint32_t flags);
 
-VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, int32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
+VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, uint32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
 
 
 /****************************************************************************
@@ -181,9 +181,9 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
 	VQALoader *loader;
 	VQALoopCache *cache;
 
-	int frame;
+	uint32_t frame;
 	int loop_bytes;
-	int scan_frame;
+	uint32_t scan_frame;
 	int tocache;
 	VQA_H_FUNC handler;
 	VQAErrorType rc;
@@ -197,7 +197,7 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
 
 	config = &vqap->Config;
 	loader = &vqap->Loader;
-	long *foff = vqap->Foff;
+	uint32_t *foff = vqap->Foff;
 	frame = loader->CurFrameNum;
 
 
@@ -210,8 +210,9 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
 		}
 
 		cache = &vqap->LoopCache;
-		if (frame == vqap->LoopStartFrame0 && vqap->LoopID != cache->ID) {
-			if (frame != cache->Min) {
+		if (vqap->LoopStartFrame0 >= 0 && frame == (uint32_t)vqap->LoopStartFrame0
+				&& vqap->LoopID != cache->ID) {
+			if (cache->Min < 0 || frame != (uint32_t)cache->Min) {
 				cache->FileOffset = foffset;
 				cache->Bytes = 0;
 				cache->Offset = 0;
@@ -224,7 +225,7 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
 			scan_frame = vqap->LoopStartFrame0;
 			for (;scan_frame <= vqap->LoopEndFrameMode2; scan_frame++) {
 
-				if (scan_frame < vqap->NumFrames - 1) {
+				if (scan_frame + 1 < vqap->NumFrames) {
 					loop_bytes += VQAFRAME_OFFSET(foff[scan_frame+1]) - VQAFRAME_OFFSET(foff[scan_frame]);
 				} else {
 					if (config->StreamHandler((VQAHandle *)vqap, VQACMD_SIZE, &fsize, 0)) {
@@ -245,10 +246,11 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
 				cache->Max = vqap->LoopEndFrameMode2;
 			}
 		}
-		if ( frame >= cache->Min && frame <= cache->Max )
+		if ( cache->Min >= 0 && cache->Max >= 0
+				&& frame >= (uint32_t)cache->Min && frame <= (uint32_t)cache->Max )
 		{
 			if (foffset == cache->FileOffset + cache->Bytes) {
-				if (frame < vqap->NumFrames - 1) {
+				if (frame + 1 < vqap->NumFrames) {
 					tocache = VQAFRAME_OFFSET(foff[frame + 1]) - foffset;
 				} else {
 					if (!config->StreamHandler((VQAHandle *)vqap, VQACMD_SIZE, &fsize, 0) ) {
@@ -353,7 +355,8 @@ VQAErrorType VQA_LoadFrame_Internal(VQAHandleP *vqap, uint32_t flags)
 				}
 
 				/* Rewind to the loop start, reseeding loader state. */
-				if (loader->CurFrameNum != vqap->LoopStartFrame0) {
+				if (vqap->LoopStartFrame0 < 0
+						|| loader->CurFrameNum != (uint32_t)vqap->LoopStartFrame0) {
 					loader->CurFrameNum = vqap->LoopStartFrame0;
 					rc = VQA_LoadLoop(vqap, vqap->LoopStartFrame0);
 				} else {
@@ -1034,7 +1037,7 @@ VQAErrorType VQA_MSCIReadData(VQAHandleP *vqap, uint32_t iffsize, int32_t index)
 /// rebuilt, since playback can arrive at a loop start from anywhere in the movie.
 /// </summary>
 /// <returns>Returns with true if the frame begins a loop.</returns>
-VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, int32_t framenum)
+VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, uint32_t framenum)
 {
 	int i;
 	int count;
@@ -1059,18 +1062,18 @@ VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, int32_t framenum)
 }
 
 
-VQAErrorType VQA_SeekLoop(VQAHandleP *vqap, int32_t framenum, uint32_t flags)
+VQAErrorType VQA_SeekLoop(VQAHandleP *vqap, uint32_t framenum, uint32_t flags)
 {
 	VQAErrorType rc = VQAERR_NONE;
 	VQAConfig *config;
 	VQALoopCache *cache;
 	bool needs_seek = false;
-	long *foff;
+	uint32_t *foff;
 
 	cache = &vqap->LoopCache;
 	foff = vqap->Foff;
 
-	if ((vqap->AltBufferFlags & VQAABUFF_ALTLOOP) && framenum == cache->Min && cache->Bytes != 0) {
+	if ((vqap->AltBufferFlags & VQAABUFF_ALTLOOP) && cache->Min >= 0 && framenum == (uint32_t)cache->Min && cache->Bytes != 0) {
 		if (cache->FileOffset + cache->Bytes <= (long)VQAFRAME_OFFSET(foff[vqap->LoopEndFrameMode2])) {
 			needs_seek = true;
 		}
@@ -1103,7 +1106,7 @@ VQAErrorType VQA_SeekLoop(VQAHandleP *vqap, int32_t framenum, uint32_t flags)
 /// <param name="first_frame">Receives the first frame of the span. May be NULL.</param>
 /// <param name="last_frame">Receives the last frame of the span. May be NULL.</param>
 /// <returns>Returns with the index of the palette entry covering the frame.</returns>
-int32_t VQA_GetPaletteFrameRange(VQAHandleP *vqap, int32_t framenum, int32_t * first_frame, int32_t * last_frame)
+int32_t VQA_GetPaletteFrameRange(VQAHandleP *vqap, uint32_t framenum, int32_t * first_frame, int32_t * last_frame)
 {
 	VQAPaletteInfo::DATA *data = vqap->PaletteInfo.Data;
 	int count = vqap->PaletteInfo.Header.Count;
@@ -1155,7 +1158,7 @@ int32_t VQA_GetPaletteFrameRange(VQAHandleP *vqap, int32_t framenum, int32_t * f
 /// </summary>
 /// <param name="framenum">The frame whose palette is required.</param>
 /// <param name="force">Non-zero to force a full reload rather than reloading only when the palette has changed.</param>
-VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, int32_t framenum, int force)
+VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, uint32_t framenum, int force)
 {
 	VQALoader *loader;
 	VQAFrameNode *curframe;
@@ -1248,7 +1251,7 @@ VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, int32_t framenum, int force)
 /// <param name="reset_state">Should the loader and audio state be reset before seeking?</param>
 /// <param name="skipcodebook">Set true if the full codebook is already valid, so that the caller may skip codebook assembly.</param>
 /// <returns>Returns with VQAERR_NONE if successful, or a VQAERR_??? error code.</returns>
-VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, int32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook)
+VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, uint32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook)
 {
 	//VQAHandleP   *vqap;
 	VQALoader    *loader;
@@ -1537,7 +1540,7 @@ VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, int32_t framenum, int32_t groupsize
 /// </summary>
 /// <param name="framenum">The loop start frame to rewind to.</param>
 /// <returns>Returns with VQAERR_NONE if successful, or a VQAERR_??? error code.</returns>
-_STATIC VQAErrorType VQA_LoadLoop(VQAHandleP *vqap, int32_t framenum)
+_STATIC VQAErrorType VQA_LoadLoop(VQAHandleP *vqap, uint32_t framenum)
 {
 	VQALoader *loader;
 	VQAHeader *header;
@@ -2336,7 +2339,7 @@ VQAErrorType VQA_MSCIPrepare(VQAHandleP *vqap, uint32_t index)
 /// </summary>
 /// <param name="framenum">The frame to search forward from.</param>
 /// <returns>Returns with the size in bytes of the next codebook, or zero if there is none.</returns>
-uint32_t VQA_GetCodebookSize(VQAHandleP *vqap, int32_t framenum)
+uint32_t VQA_GetCodebookSize(VQAHandleP *vqap, uint32_t framenum)
 {
 	VQACodebookInfo *info = &vqap->CodebookInfo;
 	VQACodebookInfo::DATA *data = info->Data;
@@ -2368,7 +2371,7 @@ uint32_t VQA_GetCodebookSize(VQAHandleP *vqap, int32_t framenum)
 /// <param name="first_frame">Receives the first frame of the span. May be NULL.</param>
 /// <param name="last_frame">Receives the last frame of the span. May be NULL.</param>
 /// <returns>Returns with the index of the codebook entry covering the frame.</returns>
-int32_t VQA_GetCodebookFrameRange(VQAHandleP *vqap, int32_t framenum, int32_t * first_frame, int32_t * last_frame)
+int32_t VQA_GetCodebookFrameRange(VQAHandleP *vqap, uint32_t framenum, int32_t * first_frame, int32_t * last_frame)
 {
 	VQACodebookInfo::DATA *data = vqap->CodebookInfo.Data;
 	int count = vqap->CodebookInfo.Header.Count;

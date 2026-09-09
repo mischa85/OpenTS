@@ -74,14 +74,14 @@ void VQA_StopAudio(VQAHandleP *vqap);
 VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags);
 long User_Update(VQAHandle *vqa);
 VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
-VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, uint32_t start, uint32_t end, int iterations, int mode);
 void VQA_Reset(VQAHandle *vqap);
 VQAErrorType VQA_Configure_Drawer(VQAHandleP *vqap);
 long VQA_NumFramesWithPalettes(VQAHandleP *vqap);
 
-VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, int32_t framenum, int force);
-VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, int32_t framenum);
-VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, int32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
+VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, uint32_t framenum, int force);
+VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, uint32_t framenum);
+VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, uint32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
 
 
 /*---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ VQAErrorType Load_MSCI(VQAHandleP *vqap);
 intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
-long VQA_LargestLoop(VQAHandleP *vqap, long);
+uint32_t VQA_LargestLoop(VQAHandleP *vqap, uint32_t);
 
 extern void __cdecl UnVQ_Nop(uint8_t *codebook, uint8_t *pointers,
 		uint8_t *buffer, size_t blocksperrow,
@@ -1074,7 +1074,7 @@ long VQA_Play(VQAHandle *vqa, long mode, int flags)
 * SYNOPSIS
 *     Frame = VQA_SeekFrame(VQA, Frame, FromWhere)
 *
-*     int32_t VQA_SeekFrame(VQAHandle *, int32_t, int32_t);
+*     int32_t VQA_SeekFrame(VQAHandle *, uint32_t, int32_t);
 *
 * FUNCTION
 *     This function sets the movie stream to the new frame specified by
@@ -1090,7 +1090,7 @@ long VQA_Play(VQAHandle *vqa, long mode, int flags)
 *     Frame - New frame position or -1 if error.
 *
 ****************************************************************************/
-int32_t VQA_SeekFrame(VQAHandle *vqa, int32_t framenum, int32_t fromwhere)
+int32_t VQA_SeekFrame(VQAHandle *vqa, uint32_t framenum, int32_t fromwhere)
 {
 	VQAHandleP   *vqap;
 	VQALoader    *loader;
@@ -1374,7 +1374,7 @@ VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode)
 /// <param name="iterations">Number of times to repeat the loop. A negative value loops forever.</param>
 /// <param name="mode">One of the VQALOOP_ modes.</param>
 /// <returns>Returns with VQAERR_NONE, or VQAERR_SETLOOP if the loop could not be set.</returns>
-VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode)
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, uint32_t start, uint32_t end, int iterations, int mode)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 
@@ -1467,7 +1467,7 @@ void VQA_Reset(VQAHandle *vqa)
 	header = &vqap->Header;
 
 
-	int stop;
+	uint32_t stop;
 	int frames = header->Frames;
 
 	vqap->LoadedFrames = 0;
@@ -1718,7 +1718,7 @@ long User_Update(VQAHandle *vqa)
 long VQA_NumFramesWithPalettes(VQAHandleP *vqap)
 {
 	long num = 0;
-	for (int i = 0; i < vqap->NumFrames; i++) {
+	for (uint32_t i = 0; i < vqap->NumFrames; i++) {
 		if (vqap->Foff[i] & VQAFINF_PAL) {
 			num++;
 		}
@@ -1749,7 +1749,7 @@ VQAErrorType VQA_GetXYPos(VQAHandleP *vqap, int & x, int32_t & y)
 /// </summary>
 /// <param name="streamsize">Total size of the stream in bytes, or 0 if it is not known.</param>
 /// <returns>Returns with the size in bytes of the largest loop.</returns>
-long VQA_LargestLoop(VQAHandleP *vqap, long streamsize)
+uint32_t VQA_LargestLoop(VQAHandleP *vqap, uint32_t streamsize)
 {
 	VQALoopInfo::HEADER *infohdr = &vqap->LoopInfo.Header;
 	long largest = 0;
@@ -1757,14 +1757,14 @@ long VQA_LargestLoop(VQAHandleP *vqap, long streamsize)
 	int count = infohdr->Count;
 	for (int i = 0; i < count; i++) {
 		VQALoopInfo::DATA *data = &vqap->LoopInfo.Data[i];
-		int start = data->StartFrame;
-		int stop = data->EndFrame;
+		uint32_t start = data->StartFrame;
+		uint32_t stop = data->EndFrame;
 
 		long start_offset;
 		long end_offset;
 
 		long loopsize = 0;
-		if (stop != vqap->NumFrames - 1) {
+		if (stop + 1 != vqap->NumFrames) {
 			end_offset = VQAFRAME_OFFSET(vqap->Foff[stop + 1]);
 			start_offset = VQAFRAME_OFFSET(vqap->Foff[start]);
 			loopsize = end_offset - start_offset;
