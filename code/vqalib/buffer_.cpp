@@ -17,7 +17,7 @@
 #include	<string.h>
 #include	"vqamem.h"
 
-extern VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos);
+extern VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, uint32_t width, uint32_t height, int32_t xpos, int32_t ypos);
 
 
 _STATIC void VQA_BufferPerpareLoop(VQAHandleP *vqap, long * needs_start_cb, long * needs_end_cb);

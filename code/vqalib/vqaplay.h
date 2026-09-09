@@ -169,7 +169,7 @@ typedef void  (__cdecl *UNVQ_FUNC)(uint8_t *codebook, uint8_t *pointers, uint8_t
 typedef intptr_t (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
 // draw callback must be this type
-typedef long (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, long framenum);
+typedef int32_t (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, int32_t framenum);
 
 // timer callback must be this type
 typedef unsigned long (__cdecl *VQA_TC_FUNC)(VQAHandle *vqa);
@@ -408,18 +408,18 @@ VQAErrorType VQA_Open(char const *, _VQAConfig *, VQAHandle **vqa);
 void VQA_Free(VQAHandle *vqa);
 void VQA_Close(VQAHandle *vqa);
 long VQA_Play(VQAHandle *vqa, long, int flags);
-long VQA_SeekFrame(VQAHandle *vqa, long framenum, long fromwhere);
+int32_t VQA_SeekFrame(VQAHandle *vqa, int32_t framenum, int32_t fromwhere);
 long VQA_SetStop(VQAHandle *vqa, long stop);
 VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
 VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
 
 VQAErrorType VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2);
 
-VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos);
+VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, uint32_t width, uint32_t height, int32_t xpos, int32_t ypos);
 VQAErrorType VQA_ResetLastFrameNum(VQAHandle *vqa);
 
 /* Information/statistics access routines. */
-VQAErrorType VQA_GetBlockInfo(VQAHandle *vqa, long & blockw, long & blockh, long & clrmode);
+VQAErrorType VQA_GetBlockInfo(VQAHandle *vqa, int32_t & blockw, int32_t & blockh, int32_t & clrmode);
 
 #endif /* VQAPLAY_H */
 
