@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "coord.h"
 
 class AbstractClass;
@@ -24,4 +26,4 @@ Coord Action_Line_Coord(AbstractClass const * target);
 // Draws one order line between two map coordinates, clipped to the tactical view, with a
 // square of point_size pixels on each end. Dashes are dash_length pixels long and march by
 // the wall clock at dash_rate milliseconds a step, or by game frame when dash_rate is zero.
-void Draw_Action_Line_Segment(Surface & surface, Coord const & start, Coord const & end, UILineStyleType const & style, int point_size, int dash_length, int dash_rate);
+void Draw_Action_Line_Segment(Surface & surface, Coord const & start, Coord const & end, UILineStyleType const & style, int point_size, int dash_length, uint32_t dash_rate);

@@ -66,6 +66,7 @@
 #include "special.hh"
 
 #include <algorithm>
+#include <cstdint>
 
 //
 // Special module globals for recording and playback
@@ -348,7 +349,7 @@ bool Main_Loop(void)
 	//
 	// Measure how long it took to process the AI
 	//
-	Session.ProcessTicks += std::min<int>(1000, (Host_Milliseconds() - Session.ProcessTimer)); // (TickCount - Session.ProcessTimer)
+	Session.ProcessTicks += std::min<uint32_t>(1000, Host_Milliseconds() - Session.ProcessTimer); // (TickCount - Session.ProcessTimer)
 	Session.ProcessFrames++;
 
 	/*

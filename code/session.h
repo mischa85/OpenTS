@@ -44,6 +44,7 @@
 #include "version.h"
 #include "win.h"
 
+#include <cstdint>
 #include <cstring>
 
 #include "chat.hh"
@@ -603,9 +604,9 @@ class SessionClass
 
 		int			DesiredFrameRate;
 
-		int			ProcessTimer;
-		int			ProcessTicks;
-		int			ProcessFrames;
+		uint32_t	ProcessTimer;
+		uint32_t	ProcessTicks;
+		uint32_t	ProcessFrames;
 
 		/*
 		 * This is the largest MaxAhead the game has run at, since the value only ever grows.
