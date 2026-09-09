@@ -34,6 +34,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <new>
 
@@ -47,11 +48,11 @@ class SHAEngine
 {
 	public:
 		SHAEngine(void) : IsCached(false), Length(0), PartialCount(0) {
-			Acc.Long[0] = (unsigned int)SA;
-			Acc.Long[1] = (unsigned int)SB;
-			Acc.Long[2] = (unsigned int)SC;
-			Acc.Long[3] = (unsigned int)SD;
-			Acc.Long[4] = (unsigned int)SE;
+			Acc.Long[0] = SA;
+			Acc.Long[1] = SB;
+			Acc.Long[2] = SC;
+			Acc.Long[3] = SD;
+			Acc.Long[4] = SE;
 		};
 
 		void Init(void) {
@@ -59,16 +60,16 @@ class SHAEngine
 		};
 
 		// Fetch result as if source data were to stop now.
-		int Result(void * result) const;
+		int32_t Result(void * result) const;
 
-		void Hash(void const * data, int length);
+		void Hash(void const * data, int32_t length);
 
-		static int Digest_Size(void) {return(sizeof(SHADigest));}
+		static int32_t Digest_Size(void) {return((int32_t)sizeof(SHADigest));}
 
 	private:
 
 		typedef union {
-			unsigned long Long[5];
+			uint32_t Long[5];
 			unsigned char Char[20];
 		} SHADigest;
 
@@ -80,28 +81,26 @@ class SHAEngine
 		bool IsCached;
 		SHADigest FinalResult;
 
-		enum {
-			// These are the initial seeds to the block accumulators.
-			SA=0x67452301L,
-			SB=0xefcdab89L,
-			SC=0x98badcfeL,
-			SD=0x10325476L,
-			SE=0xc3d2e1f0L,
+		// The initial seeds for the block accumulators.
+		static constexpr uint32_t SA = 0x67452301;
+		static constexpr uint32_t SB = 0xefcdab89;
+		static constexpr uint32_t SC = 0x98badcfe;
+		static constexpr uint32_t SD = 0x10325476;
+		static constexpr uint32_t SE = 0xc3d2e1f0;
 
-			// These are the constants used in the block transformation.
-			K1=0x5a827999L,		// t=0..19		2^(1/2)/4
-			K2=0x6ed9eba1L,		// t=20..39		3^(1/2)/4
-			K3=0x8f1bbcdcL,		// t=40..59		5^(1/2)/4
-			K4=0xca62c1d6L,		// t=60..79		10^(1/2)/4
+		// The round constants the standard fixes, and the widths it fixes them at: a
+		// sixty-four byte block is sixteen words in, expanded into an eighty word schedule.
+		static constexpr uint32_t K1 = 0x5a827999;	// t=0..19		2^(1/2)/4
+		static constexpr uint32_t K2 = 0x6ed9eba1;	// t=20..39		3^(1/2)/4
+		static constexpr uint32_t K3 = 0x8f1bbcdc;	// t=40..59		5^(1/2)/4
+		static constexpr uint32_t K4 = 0xca62c1d6;	// t=60..79		10^(1/2)/4
 
-			// Source data is grouped into blocks of this size.
-			SRC_BLOCK_SIZE=16*sizeof(int),
+		static constexpr uint32_t SRC_BLOCK_SIZE = 64;
+		static constexpr uint32_t SRC_BLOCK_WORDS = 16;
+		static constexpr uint32_t PROC_BLOCK_WORDS = 80;
 
-			// Internal processing data is grouped into blocks this size.
-			PROC_BLOCK_SIZE=80*sizeof(int)
-		};
 
-		int Get_Constant(int index) const {
+		uint32_t Get_Constant(uint32_t index) const {
 			if (index < 20) return(K1);
 			if (index < 40) return(K2);
 			if (index < 60) return(K3);
@@ -109,26 +108,26 @@ class SHAEngine
 		};
 
 		// Used for 0..19
-		int Function1(int X, int Y, int Z) const {
+		uint32_t Function1(uint32_t X, uint32_t Y, uint32_t Z) const {
 			return(Z ^ ( X & ( Y ^ Z ) ) );
 		};
 
 		// Used for 20..39
-		int Function2(int X, int Y, int Z) const {
+		uint32_t Function2(uint32_t X, uint32_t Y, uint32_t Z) const {
 			return( X ^ Y ^ Z );
 		};
 
 		// Used for 40..59
-		int Function3(int X, int Y, int Z) const {
+		uint32_t Function3(uint32_t X, uint32_t Y, uint32_t Z) const {
 			return( (X & Y) | (Z & (X | Y) ) );
 		};
 
 		// Used for 60..79
-		int Function4(int X, int Y, int Z) const {
+		uint32_t Function4(uint32_t X, uint32_t Y, uint32_t Z) const {
 			return( X ^ Y ^ Z );
 		};
 
-		int Do_Function(int index, int X, int Y, int Z) const {
+		uint32_t Do_Function(uint32_t index, uint32_t X, uint32_t Y, uint32_t Z) const {
 			if (index < 20) return(Function1(X, Y, Z));
 			if (index < 40) return(Function2(X, Y, Z));
 			if (index < 60) return(Function3(X, Y, Z));
@@ -139,7 +138,7 @@ class SHAEngine
 		void Process_Block(void const * source, SHADigest & acc) const;
 
 		// Processes a partially filled source accumulator buffer.
-		void Process_Partial(void const * & data, int & length);
+		void Process_Partial(void const * & data, uint32_t & length);
 
 		/*
 		**	This is the running accumulator values. These values
@@ -154,14 +153,15 @@ class SHAEngine
 		**	resulting hash value as if it were appended to the end
 		**	of the source data.
 		*/
-		int Length;
+		// Bytes hashed so far, and bytes waiting in the staging buffer.
+		uint32_t Length;
 
 		/*
 		**	This holds any partial source block. Partial source blocks are
 		**	a consequence of submitting less than block sized data chunks
 		**	to the SHA Engine.
 		*/
-		int PartialCount;
+		uint32_t PartialCount;
 		char Partial[SRC_BLOCK_SIZE];
 };
 
