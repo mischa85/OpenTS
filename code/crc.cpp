@@ -168,11 +168,11 @@ void CRCEngine::operator() (const char * buffer)
  * HISTORY:                                                                                    *
  *   03/02/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-int CRCEngine::operator() (void const * buffer, int length)
+int CRCEngine::operator() (void const * buffer, size_t length)
 {
-	if (buffer != NULL && length > 0)  {
+	if (buffer != NULL && length != 0)  {
 		char const * dataptr = (char const *)buffer;
-		int bytes_left = length;
+		size_t bytes_left = length;
 
 		/*
 		**	If there are any leader bytes (needed to fill the staging buffer)
@@ -180,7 +180,7 @@ int CRCEngine::operator() (void const * buffer, int length)
 		**	buffer. The bulk of the data block will be processed by the high
 		**	speed longword processing loop.
 		*/
-		while (bytes_left > 0 && Buffer_Needs_Data() && Index < sizeof(int)) {
+		while (bytes_left > 0 && Buffer_Needs_Data() && Index < COMPOSITE_SIZE) {
 			operator()(*dataptr);
 			dataptr++;
 			bytes_left--;
@@ -190,12 +190,12 @@ int CRCEngine::operator() (void const * buffer, int length)
 		**	Perform the fast 'bulk' processing by reading long word sized
 		**	data blocks.
 		*/
-		int const * longptr = (int const *)dataptr;
-		int longcount = bytes_left / sizeof(int);		// Whole 'long' elements remaining.
+		uint32_t const * longptr = (uint32_t const *)dataptr;
+		size_t longcount = bytes_left / COMPOSITE_SIZE;		// Whole 32-bit blocks remaining.
 		while (longcount--) {
 			//CRC = _lrotl(CRC, 1) + *longptr++;
-			CRC = CRC::Memory((unsigned char *)longptr, sizeof(int), CRC);
-			bytes_left -= sizeof(int);
+			CRC = CRC::Memory((unsigned char *)longptr, COMPOSITE_SIZE, CRC);
+			bytes_left -= COMPOSITE_SIZE;
 			longptr++;
 		}
 

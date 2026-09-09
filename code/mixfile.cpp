@@ -542,10 +542,9 @@ bool MixFileClass::Offset(char const * filename, void ** realptr, MixFileClass *
 	for (char & letter : upper) {
 		letter = (char)toupper((unsigned char)letter);
 	}
-	int crc = CRCEngine()(upper.c_str(), (int)upper.size());
 
 	SubBlock key;
-	key.CRC = crc;
+	key.CRC = CRCEngine()(upper.c_str(), upper.size());
 
 	/*
 	**	Sweep through all registered mixfiles, trying to find the file in question.

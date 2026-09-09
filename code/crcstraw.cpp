@@ -63,7 +63,9 @@ int CRCStraw::Get(void * source, int slen)
 	}
 
 	int counter = BASECLASS::Get(source, slen);
-	CRC(source, counter);
+	if (counter > 0) {
+		CRC(source, (size_t)counter);
+	}
 	return(counter);
 }
 

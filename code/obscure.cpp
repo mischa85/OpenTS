@@ -127,7 +127,7 @@ int Obfuscate(char const * string)
 	**	Transform the buffer into a number. This transformation is character
 	**	order dependant.
 	*/
-	int code = CRCEngine()(buffer, length);
+	int code = CRCEngine()(buffer, (size_t)length);
 
 	/*
 	**	Record a copy of this initial transformation to be used in a later
@@ -140,7 +140,7 @@ int Obfuscate(char const * string)
 	**	This doubles the workload of trying to reverse engineer the CRC calculation.
 	*/
 	strrev(buffer);
-	code ^= CRCEngine()(buffer, length);
+	code ^= CRCEngine()(buffer, (size_t)length);
 
 	/*
 	**	Perform a self referential transformation. This makes a reverse engineering
@@ -225,7 +225,7 @@ int Obfuscate(char const * string)
 	**	Convert this final vector into a cypher key code to be
 	**	returned by this routine.
 	*/
-	code = CRCEngine()(buffer, length);
+	code = CRCEngine()(buffer, (size_t)length);
 
 	/*
 	**	Return the final code value.

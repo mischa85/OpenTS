@@ -31,6 +31,9 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+
 #include <cstdlib>
 
 
@@ -93,12 +96,18 @@ class CRCEngine {
 		void operator() (const char * buffer);
 
 		// Submits an arbitrary buffer to the CRC accumulator.
-		int operator() (void const * buffer, int length);
+		int operator() (void const * buffer, size_t length);
 
 		// Implicit conversion operator so this object appears like a 'long integer'.
 		operator int(void) const {return(Value());};
 
 	protected:
+
+		/*
+		**	The accumulator folds in fixed 32-bit blocks, so this width decides the
+		**	checksum value and is not a property of the host's int.
+		*/
+		static constexpr size_t COMPOSITE_SIZE = sizeof(uint32_t);
 
 		bool Buffer_Needs_Data(void) const {
 			return(Index != 0);
@@ -107,8 +116,8 @@ class CRCEngine {
 		int Value(void) const {
 			if (Buffer_Needs_Data()) {
 				((CRCEngine *)this)->Add_Padding();
-				int composite = StagingBuffer.Composite;
-				return(CRC::Memory((unsigned char *)&composite, sizeof(StagingBuffer.Composite), CRC));
+				uint32_t composite = StagingBuffer.Composite;
+				return(CRC::Memory((unsigned char *)&composite, COMPOSITE_SIZE, CRC));
 			}
 			return(CRC);
 		};
@@ -118,16 +127,16 @@ class CRCEngine {
 				StagingBuffer.Composite = 0;
 			}
 			StagingBuffer.Buffer[Index++] = datum;
-			if (Index == sizeof(int)) {
-				int composite = StagingBuffer.Composite;
-				CRC = CRC::Memory((unsigned char *)&composite, sizeof(StagingBuffer.Composite), CRC);
+			if (Index == COMPOSITE_SIZE) {
+				uint32_t composite = StagingBuffer.Composite;
+				CRC = CRC::Memory((unsigned char *)&composite, COMPOSITE_SIZE, CRC);
 				Index = 0;
 			}
 		}
 
 		void Add_Padding(void) {
-			StagingBuffer.Buffer[Index] = Index;
-			for (unsigned int i = Index + 1; i < sizeof(int); i++) {
+			StagingBuffer.Buffer[Index] = (char)Index;
+			for (size_t i = Index + 1; i < COMPOSITE_SIZE; i++) {
 				StagingBuffer.Buffer[i] = StagingBuffer.Buffer[0];
 			}
 		}
@@ -142,7 +151,8 @@ class CRCEngine {
 		**	This is the sub index into the staging buffer used to keep track of
 		**	partial data blocks as they are submitted to the CRC engine.
 		*/
-		int Index;
+		// How many bytes of the staging buffer are filled, so never more than one word.
+		size_t Index;
 
 		/*
 		**	This is the buffer that holds the incoming partial data. When the buffer
@@ -150,7 +160,7 @@ class CRCEngine {
 		**	in preparation for additional data.
 		*/
 		union {
-			int Composite;
-			char Buffer[sizeof(int)];
+			uint32_t Composite;
+			char Buffer[COMPOSITE_SIZE];
 		} StagingBuffer;
 };

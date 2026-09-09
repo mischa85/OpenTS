@@ -58,7 +58,11 @@
  *=============================================================================================*/
 int CRCPipe::Put(void const * source, int slen)
 {
-	CRC(source, slen);
+	// The pipe interface counts bytes in a signed type. Nothing is accumulated from a count
+	// that is not positive, and the pipe still passes it along.
+	if (slen > 0) {
+		CRC(source, (size_t)slen);
+	}
 	return(BASECLASS::Put(source, slen));
 }
 
