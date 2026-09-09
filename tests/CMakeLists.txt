@@ -13,6 +13,9 @@ add_custom_target(harnesses)
 # FLOAT adds the float semantics the engine builds with, so a harness measuring numeric
 # results matches it. UTF8 is for a harness whose own source holds non-ASCII text. STAMP is
 # for a harness that reaches the generated version headers.
+#
+# Every harness is configured for every toolchain. The ones that do not build with a native
+# compiler yet are listed in tests/unported.txt, which tests/check-native.sh holds to.
 function(opents_add_test target)
     cmake_parse_arguments(TEST "FLOAT;UTF8;STAMP" "NAME"
         "SOURCES;ENGINE;INCLUDES;DEFINITIONS;LIBRARIES" ${ARGN})
