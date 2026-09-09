@@ -186,6 +186,7 @@ int32_t SHAEngine::Result(void * result) const
 	*/
 	if (IsCached) {
 		memcpy(result, &FinalResult, sizeof(FinalResult));
+		return(sizeof(FinalResult));
 	}
 
 	uint32_t length = Length + PartialCount;
@@ -224,11 +225,11 @@ int32_t SHAEngine::Result(void * result) const
 	*(uint32_t *)(&partial[SRC_BLOCK_SIZE-4]) = Reverse_LONG(length * 8u);
 	Process_Block(&partial[0], acc);
 
-	memcpy((char *)&FinalResult, &acc, sizeof(acc));
+	memcpy(&FinalResult, &acc, sizeof(acc));
 	for (uint32_t index = 0; index < sizeof(FinalResult) / sizeof(uint32_t); index++) {
-		(uint32_t &)FinalResult.Long[index] = Reverse_LONG(FinalResult.Long[index]);
+		FinalResult.Long[index] = Reverse_LONG(FinalResult.Long[index]);
 	}
-	(bool&)IsCached = true;
+	IsCached = true;
 	memcpy(result, &FinalResult, sizeof(FinalResult));
 	return((int32_t)sizeof(FinalResult));
 }

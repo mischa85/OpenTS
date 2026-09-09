@@ -78,8 +78,8 @@ class SHAEngine
 		**	here to avoid the overhead of recalculating it over
 		**	multiple sequential requests.
 		*/
-		bool IsCached;
-		SHADigest FinalResult;
+		mutable bool IsCached;
+		mutable SHADigest FinalResult;
 
 		// The initial seeds for the block accumulators.
 		static constexpr uint32_t SA = 0x67452301;
