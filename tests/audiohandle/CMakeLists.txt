@@ -4,6 +4,5 @@
 opents_add_test(AudioHandle
     NAME audiohandle
     SOURCES audiohandle.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     FLOAT
 )

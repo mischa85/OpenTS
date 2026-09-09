@@ -28,7 +28,7 @@ opents_add_test(DeploymentConfig
         xpipe.cpp
         xstraw.cpp
     INCLUDES ${OPENTS_GENERATED_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     UTF8
     STAMP
 )

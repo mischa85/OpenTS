@@ -1,0 +1,28 @@
+# The harnesses that do not build with a native compiler yet, as the CMake target and the
+# CTest name. Each line names something a Windows API or an MSVC-only header still reaches
+# through the sources it compiles, so the native build attempts it and is expected to fail.
+#
+# tests/check-native.sh compares this list against what actually fails, so a line stays here
+# only as long as it is true: porting a subsystem means deleting the line, and a harness that
+# breaks without being listed makes the check fail.
+Autosave autosave
+CStreamContract cstream
+CpuDetect cpudetect
+DeploymentConfig deploymentconfig
+GameDirs gamedirs
+IniContract inicontract
+LcwBlock lcwblock
+LogStress logstress
+LzoBlock lzoblock
+NetContract netpacket
+ScenFile scenfile
+ShapeFacing shapefacing
+SocketUdp socketudp
+SoundIni soundini
+SpawnContract spawncontract
+SpawnHouse spawnhouse
+TutorialText tutorialtext
+UTF8Contract utf8contract
+UnvqDelta unvqdelta
+VoxelDraw voxeldraw
+ZBufRing zbufring

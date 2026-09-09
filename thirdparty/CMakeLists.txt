@@ -23,7 +23,9 @@ add_subdirectory(bgfx.cmake)
 # These libraries support the disabled texture tools and are not linked into OpenTS.
 set_target_properties(bimg_decode bimg_encode PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
-if(OPENTS_EXPERIMENTAL_CLANG_CL AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     # bx treats Clang with the MSVC CRT like a non-x86 compiler and erases
     # __stdcall. Restore it before Windows declarations are parsed.
     foreach(target bx bimg bgfx)

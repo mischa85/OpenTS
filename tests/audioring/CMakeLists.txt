@@ -3,6 +3,5 @@
 opents_add_test(AudioRing
     NAME audioring
     SOURCES audioring.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     FLOAT
 )

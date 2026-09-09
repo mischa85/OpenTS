@@ -6,6 +6,5 @@ opents_add_test(AudioLevel
     SOURCES audiolevel.cpp
     ENGINE
         audio/audiolevel.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     FLOAT
 )

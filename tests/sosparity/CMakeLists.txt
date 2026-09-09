@@ -7,6 +7,5 @@ opents_add_test(SosParity
     ENGINE
         soscodec.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     FLOAT
 )

@@ -7,6 +7,6 @@ opents_add_test(CpuDetect
     ENGINE
         getcpu.cpp
         mpu.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     FLOAT
 )

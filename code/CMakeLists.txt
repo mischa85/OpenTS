@@ -1,14 +1,6 @@
 # Limit the generated solution to supported configurations.
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
 
-# OpenTS supports 32-bit (x86) builds. A 64-bit build is an unsupported experiment.
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT OPENTS_EXPERIMENTAL_X64)
-    message(FATAL_ERROR
-        "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32. "
-        "For the unsupported 64-bit experiment, configure with "
-        "-A x64 -DOPENTS_EXPERIMENTAL_X64=ON.")
-endif()
-
 #
 # ---------------------------------------------------------
 # Directories that build as their own project
@@ -95,42 +87,70 @@ set_target_properties(OpenTS PROPERTIES
 #
 message(STATUS "${PROJECT_NAME}: Applying compiler flags...")
 
-set(OPENTS_COMPILE_OPTIONS
+if(MSVC)
 
-    # ================= DEBUG =================
-    $<$<CONFIG:Debug>:
+    set(OPENTS_COMPILE_OPTIONS
 
-        # ---------- C++ ----------
-        # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
-        # /fp:precise -- no reassociation of the engine's accumulations.
-        # /utf-8 -- sources and literals are UTF-8 whatever the build machine's code page.
-        $<$<COMPILE_LANGUAGE:CXX>:
-            /Zi /Od /RTC1 /GR $<$<CXX_COMPILER_ID:MSVC>:/MP> /EHsc /Oy- /MTd /Zc:__cplusplus /arch:SSE2 /fp:precise /utf-8
+        # ================= DEBUG =================
+        $<$<CONFIG:Debug>:
+
+            # ---------- C++ ----------
+            # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
+            # /fp:precise -- no reassociation of the engine's accumulations.
+            # /utf-8 -- sources and literals are UTF-8 whatever the build machine's code page.
+            $<$<COMPILE_LANGUAGE:CXX>:
+                /Zi /Od /RTC1 /GR $<$<CXX_COMPILER_ID:MSVC>:/MP> /EHsc /Oy- /MTd /Zc:__cplusplus /arch:SSE2 /fp:precise /utf-8
+            >
+
+            # ---------- C ----------
+            $<$<COMPILE_LANGUAGE:C>:
+                /Zi /Od /RTC1 $<$<C_COMPILER_ID:MSVC>:/MP> /Oy- /arch:SSE2 /fp:precise /utf-8
+            >
         >
 
-        # ---------- C ----------
-        $<$<COMPILE_LANGUAGE:C>:
-            /Zi /Od /RTC1 $<$<C_COMPILER_ID:MSVC>:/MP> /Oy- /arch:SSE2 /fp:precise /utf-8
-        >
-    >
+        # ================= RELEASE =================
+        $<$<CONFIG:Release>:
 
-    # ================= RELEASE =================
-    $<$<CONFIG:Release>:
+            # ---------- C++ ----------
+            # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
+            # /fp:precise -- no reassociation of the engine's accumulations.
+            # /utf-8 -- sources and literals are UTF-8 whatever the build machine's code page.
+            $<$<COMPILE_LANGUAGE:CXX>:
+                /Zi /O2 /GF /GR $<$<CXX_COMPILER_ID:MSVC>:/MP> /EHsc /MT /Zc:__cplusplus /arch:SSE2 /fp:precise /utf-8
+            >
 
-        # ---------- C++ ----------
-        # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
-        # /fp:precise -- no reassociation of the engine's accumulations.
-        # /utf-8 -- sources and literals are UTF-8 whatever the build machine's code page.
-        $<$<COMPILE_LANGUAGE:CXX>:
-            /Zi /O2 /GF /GR $<$<CXX_COMPILER_ID:MSVC>:/MP> /EHsc /MT /Zc:__cplusplus /arch:SSE2 /fp:precise /utf-8
+            # ---------- C ----------
+            $<$<COMPILE_LANGUAGE:C>:
+                /Zi /O2 /GF $<$<C_COMPILER_ID:MSVC>:/MP> /arch:SSE2 /fp:precise /utf-8
+            >
         >
+    )
 
-        # ---------- C ----------
-        $<$<COMPILE_LANGUAGE:C>:
-            /Zi /O2 /GF $<$<C_COMPILER_ID:MSVC>:/MP> /arch:SSE2 /fp:precise /utf-8
-        >
-    >
-)
+else()
+
+    # The native equivalents of the options above. /RTC1 and the static runtime library have
+    # none, and a native compiler needs no help with UTF-8 sources or with __cplusplus.
+    set(OPENTS_COMPILE_OPTIONS
+        -g
+        $<$<CONFIG:Debug>:-O0>
+        $<$<CONFIG:Debug>:-fno-omit-frame-pointer>
+        $<$<CONFIG:Release>:-O2>
+
+        # /fp:precise forbids contracting the engine's accumulations into fused operations,
+        # which a native compiler does within a statement by default.
+        -ffp-contract=off
+
+        # MSVC does no type-based alias analysis, so the inherited sources were never
+        # written for one; a native compiler assumes it from -O2 upwards.
+        -fno-strict-aliasing
+    )
+
+    # The SSE unit stands in for /arch:SSE2, which is only meaningful where x87 is.
+    if(OPENTS_TARGET_X86_32)
+        list(APPEND OPENTS_COMPILE_OPTIONS -msse2 -mfpmath=sse)
+    endif()
+
+endif()
 
 target_compile_options(OpenTS PRIVATE ${OPENTS_COMPILE_OPTIONS})
 
@@ -160,13 +180,15 @@ set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" PROPER
         "${BGFX_ROOT}/include;${CMAKE_SOURCE_DIR}/thirdparty/bgfx.cmake/bx/include;${BGFX_ROOT}/examples/common/imgui"
     COMPILE_DEFINITIONS
         "BX_CONFIG_DEBUG=$<IF:$<CONFIG:Debug>,1,$<BOOL:${BX_CONFIG_DEBUG}>>"
-    COMPILE_OPTIONS "/Zc:preprocessor"
+    COMPILE_OPTIONS "$<$<BOOL:${MSVC}>:/Zc:preprocessor>"
 )
 
 # bx rewrites __stdcall while its headers are being parsed by clang-cl.  Force the
 # compatibility header into the renderer translation unit as well as bx/bgfx so the
 # MSVC standard-library headers that follow still see the Win32 calling convention.
-if(OPENTS_EXPERIMENTAL_CLANG_CL AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" APPEND PROPERTY
         COMPILE_OPTIONS "/FI${CMAKE_SOURCE_DIR}/thirdparty/bx-clang-compat.h"
     )
@@ -174,8 +196,8 @@ endif()
 
 message(STATUS "${PROJECT_NAME}: Adding compilier definitions...")
 target_compile_definitions(OpenTS PRIVATE
-    WIN32
-    _WINDOWS
+    $<$<BOOL:${WIN32}>:WIN32>
+    $<$<BOOL:${WIN32}>:_WINDOWS>
     NOMINMAX
 
     # Compiles Blowfish into the binary instead of reaching it through the COM object in

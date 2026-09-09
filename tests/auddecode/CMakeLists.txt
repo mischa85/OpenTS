@@ -8,7 +8,6 @@ opents_add_test(AudDecode
         audio/audiodecode.cpp
         soscodec.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     LIBRARIES miniaudio
     FLOAT
 )

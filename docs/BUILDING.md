@@ -122,10 +122,10 @@ The configuration has no continuous integration and no entry in the verification
 boundary below, so treat a result from it as evidence about the port rather than
 about the game.
 
-Configure it with the x64 platform and the opt-in:
+Configure it with the x64 platform:
 
 ```powershell
-cmake -S . -B build/x64 -G "Visual Studio 17 2022" -A x64 -DOPENTS_EXPERIMENTAL_X64=ON
+cmake -S . -B build/x64 -G "Visual Studio 17 2022" -A x64
 cmake --build build/x64 --config Debug
 ```
 
@@ -135,6 +135,42 @@ build's saves are not interchangeable with a supported build's. The packed
 version stamp that saves and network packets carry is the same for both, so
 nothing rejects a save or a peer on that basis. Configuring the build warns
 about it.
+
+## Test harnesses on a native toolchain
+
+The test harnesses build with a native compiler, which is how portability work is
+checked without a Windows machine. The engine target does not link: most of its
+translation units compile, and the rest stop on the Windows headers they name.
+
+```bash
+cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+tests/check-native.sh build/native
+```
+
+There is no option to set. The build configures whatever toolchain it is
+handed and each target asks for what it needs, so what is supported is a
+statement in this document rather than a gate in CMake. The supported build is
+the 32-bit Visual Studio one; configuring anything else warns where it matters
+and otherwise proceeds.
+
+Continuous integration runs exactly that on Linux, so a change that breaks the
+native harnesses is caught rather than discovered later.
+
+That script builds every harness, holds the ones that fail against
+`tests/unported.txt`, and runs the rest. Nothing is skipped, so it fails both
+when a harness that used to build stops and when one on the list starts
+working; the second is progress and the answer is to delete its line.
+
+Sixteen of the thirty-seven build and pass on macOS and on Linux at the time of
+writing. The other twenty-one reach `windows.h`, `io.h`, `comdef.h` or the MSVC
+spellings of the C library, most of them through an include and not by their own
+subject, as do about a third of the engine's own sources.
+
+The options the engine builds with are MSVC's, and the native build passes the
+equivalents rather than the same spellings: `-O0` and `-O2` for `/Od` and `/O2`,
+`-ffp-contract=off` for `/fp:precise`, and `-msse2 -mfpmath=sse` for `/arch:SSE2`
+where the target is 32-bit x86. `/RTC1` and the static runtime library have no
+equivalent and are not replaced.
 
 ## Build from Visual Studio Code
 

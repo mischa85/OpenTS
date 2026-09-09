@@ -7,5 +7,5 @@ opents_add_test(Autosave
     SOURCES autosavecontract.cpp
     ENGINE
         autosave.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
 )
