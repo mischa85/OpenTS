@@ -122,10 +122,10 @@ The configuration has no continuous integration and no entry in the verification
 boundary below, so treat a result from it as evidence about the port rather than
 about the game.
 
-Configure it with the x64 platform and the opt-in:
+Configure it with the x64 platform:
 
 ```powershell
-cmake -S . -B build/x64 -G "Visual Studio 17 2022" -A x64 -DOPENTS_EXPERIMENTAL_X64=ON
+cmake -S . -B build/x64 -G "Visual Studio 17 2022" -A x64
 cmake --build build/x64 --config Debug
 ```
 

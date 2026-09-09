@@ -1,14 +1,6 @@
 # Limit the generated solution to supported configurations.
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
 
-# OpenTS supports 32-bit (x86) builds. A 64-bit build is an unsupported experiment.
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT OPENTS_EXPERIMENTAL_X64)
-    message(FATAL_ERROR
-        "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32. "
-        "For the unsupported 64-bit experiment, configure with "
-        "-A x64 -DOPENTS_EXPERIMENTAL_X64=ON.")
-endif()
-
 #
 # ---------------------------------------------------------
 # Directories that build as their own project
@@ -166,7 +158,9 @@ set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" PROPER
 # bx rewrites __stdcall while its headers are being parsed by clang-cl.  Force the
 # compatibility header into the renderer translation unit as well as bx/bgfx so the
 # MSVC standard-library headers that follow still see the Win32 calling convention.
-if(OPENTS_EXPERIMENTAL_CLANG_CL AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/bgfxbackend.cpp" APPEND PROPERTY
         COMPILE_OPTIONS "/FI${CMAKE_SOURCE_DIR}/thirdparty/bx-clang-compat.h"
     )
