@@ -16,7 +16,6 @@ LogStress logstress
 LzoBlock lzoblock
 NetContract netpacket
 ScenFile scenfile
-ShapeFacing shapefacing
 SocketUdp socketudp
 SoundIni soundini
 SpawnContract spawncontract
