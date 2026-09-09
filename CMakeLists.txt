@@ -26,6 +26,19 @@ if(NOT MSVC)
     add_compile_options(-fms-extensions)
 endif()
 
+# 32-bit x86 is the only target with an x87 unit to fall back on, which is what the
+# supported build spends /arch:SSE2 avoiding. Which processor name such a target reports
+# varies by host and toolchain -- i686 natively, x86_64 when a 64-bit host is asked for a
+# 32-bit build -- so the compiler is asked what it is compiling for instead of the name
+# being matched.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#if !defined(__i386__) && !defined(_M_IX86)
+#error not 32-bit x86
+#endif
+int main(void) { return 0; }
+" OPENTS_TARGET_X86_32)
+
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     # A save records pointer identities at a fixed width, but the members and raw
     # structures around them still travel at the build's own widths, and the packed
