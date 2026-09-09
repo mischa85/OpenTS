@@ -1760,7 +1760,7 @@ static void Generate_Real_Timing_Event(ConnManClass *net, int my_sent)
 static void Generate_Process_Time_Event(ConnManClass *net)
 {
 	EventClass ev;
-	int avgticks;
+	uint32_t avgticks;
 	unsigned int resp_time;			// connection response time, in ticks
 
 	//
@@ -1798,7 +1798,7 @@ static void Generate_Process_Time_Event(ConnManClass *net)
 	if (IsMono) {
 		MonoClass::Enable();
 		Mono_Set_Cursor(0,23);
-		Mono_Printf("Processing Ticks:%03d Frames:%03d\n", Session.ProcessTicks,Session.ProcessFrames);
+		Mono_Printf("Processing Ticks:%03u Frames:%03u\n", Session.ProcessTicks,Session.ProcessFrames);
 		MonoClass::Disable();
 	}
 

@@ -18,6 +18,7 @@
 #include "cell.h"
 #include "dsurface.h"
 #include "globals.h"
+#include "hostclock.h"
 #include "mouse.h"
 #include "point.h"
 #include "rect.h"
@@ -58,7 +59,7 @@ Coord Action_Line_Coord(AbstractClass const * target)
 }
 
 
-void Draw_Action_Line_Segment(Surface & surface, Coord const & start, Coord const & end, UILineStyleType const & style, int point_size, int dash_length, int dash_rate)
+void Draw_Action_Line_Segment(Surface & surface, Coord const & start, Coord const & end, UILineStyleType const & style, int point_size, int dash_length, uint32_t dash_rate)
 {
 	Point2D start_point;
 	Point2D end_point;
@@ -74,7 +75,8 @@ void Draw_Action_Line_Segment(Surface & surface, Coord const & start, Coord cons
 	for (int index = 0; index < PATTERN_LENGTH; index++) {
 		pattern[index] = ((index / dash_length) & 1) == 0;
 	}
-	int offset = (dash_rate > 0) ? ((-(int)timeGetTime() / dash_rate) & (PATTERN_LENGTH - 1)) : (7 * Frame % PATTERN_LENGTH);
+	// The dashes scroll backwards, so the offset counts down through the pattern.
+	int offset = (dash_rate != 0) ? ((0u - Host_Milliseconds() / dash_rate) & (PATTERN_LENGTH - 1)) : (7 * Frame % PATTERN_LENGTH);
 
 	// A thick line is two rows; its shadow sits below both.
 	int rows = style.IsThick ? 2 : 1;
