@@ -56,6 +56,9 @@
 #include "shastraw.h"
 #include "xstraw.h"
 
+#include <cctype>
+#include <string>
+
 
 //template<class T> int Compare(T const *obj1, T const *obj2) {
 //	if (*obj1 < *obj2) return(-1);
@@ -533,8 +536,13 @@ bool MixFileClass::Offset(char const * filename, void ** realptr, MixFileClass *
 	**	Create the key block that will be used to binary search for the file.
 	*/
 
-	/// Can't call strupr on a const string.
-	int crc = (CRCEngine()(strupr((char *)filename), strlen(filename))); //Calculate_CRC(strupr((char *)filename), strlen(filename));
+	// The index holds upper case names, and the caller's string may be a literal in
+	// read-only memory, so a copy is raised rather than the argument itself.
+	std::string upper(filename);
+	for (char & letter : upper) {
+		letter = (char)toupper((unsigned char)letter);
+	}
+	int crc = CRCEngine()(upper.c_str(), (int)upper.size());
 
 	SubBlock key;
 	key.CRC = crc;
