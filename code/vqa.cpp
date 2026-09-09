@@ -298,25 +298,19 @@ long VQAClass::CacheHandler(long action, void * buffer, long nbytes)
 			}
 			break;
 
-		case VQACMD_SEEK:
-			switch ((int)(intptr_t)buffer) {
-				case 1:
-					Cache.file_buffer_pos += nbytes;
-					rc = 0;
-					break;
-				case 0:
-					Cache.file_buffer_pos = nbytes;
-					rc = 0;
-					break;
-				case 2:
-					Cache.file_buffer_pos = Cache.file_size - nbytes - 1;
-					rc = 0;
-					break;
+		case VQACMD_SEEK_CUR:
+			Cache.file_buffer_pos += nbytes;
+			rc = 0;
+			break;
 
-				default:
-					rc = 1;
-					break;
-			}
+		case VQACMD_SEEK_SET:
+			Cache.file_buffer_pos = nbytes;
+			rc = 0;
+			break;
+
+		case VQACMD_SEEK_END:
+			Cache.file_buffer_pos = Cache.file_size - nbytes - 1;
+			rc = 0;
 			break;
 
 
@@ -846,26 +840,32 @@ long VQAClass::CCFileHandler(long action, void * buffer, long nbytes)
 			break;
 
 		/*
-		**	VQACMD_SEEK asks that you perform a seek relative to the current
-		**	position. NBytes is a signed number, indicating seek direction
-		** (positive for forward, negative for backward). Buffer has no meaning
-		**	here.
+		**	The seek commands each name their own origin, and NBytes is the offset
+		**	from it, signed for VQACMD_SEEK_CUR. Buffer has no meaning here.
 		**
 		**	Any error code returned will be remapped by VQA library into
 		**	VQAERR_SEEK.
 		*/
-		case VQACMD_SEEK:
-			error = (FileHandle.Seek(nbytes, (int)(intptr_t)buffer) == 0);
+		case VQACMD_SEEK_SET:
+			error = (FileHandle.Seek(nbytes, SEEK_SET) == 0);
+			break;
+
+		case VQACMD_SEEK_CUR:
+			error = (FileHandle.Seek(nbytes, SEEK_CUR) == 0);
+			break;
+
+		case VQACMD_SEEK_END:
+			error = (FileHandle.Seek(nbytes, SEEK_END) == 0);
 			break;
 
 		case VQACMD_SEEKPEEK:
 			if (nbytes > 0) {
-				error = FileHandle.Seek(nbytes - sizeof(tmp), (int)(intptr_t)buffer) == 0;
+				error = FileHandle.Seek(nbytes - sizeof(tmp), SEEK_SET) == 0;
 				if (error == 0) {
 					error = FileHandle.Read(&tmp, sizeof(tmp)) != sizeof(tmp);
 				}
 			} else {
-				error = FileHandle.Seek(nbytes, (int)(intptr_t)buffer) == 0;
+				error = FileHandle.Seek(nbytes, SEEK_SET) == 0;
 				if (error == 0) {
 					error = FileHandle.Read(&tmp, sizeof(tmp)) != sizeof(tmp);
 					if (error == 0) {
@@ -973,26 +973,32 @@ long VQAClass::MixFileHandler(long action, void * buffer, long nbytes)
 			break;
 
 		/*
-		**	VQACMD_SEEK asks that you perform a seek relative to the current
-		**	position. NBytes is a signed number, indicating seek direction
-		** (positive for forward, negative for backward). Buffer has no meaning
-		**	here.
+		**	The seek commands each name their own origin, and NBytes is the offset
+		**	from it, signed for VQACMD_SEEK_CUR. Buffer has no meaning here.
 		**
 		**	Any error code returned will be remapped by VQA library into
 		**	VQAERR_SEEK.
 		*/
-		case VQACMD_SEEK:
-			error = (FileHandle.Seek(nbytes, (int)(intptr_t)buffer) == 0);
+		case VQACMD_SEEK_SET:
+			error = (FileHandle.Seek(nbytes, SEEK_SET) == 0);
+			break;
+
+		case VQACMD_SEEK_CUR:
+			error = (FileHandle.Seek(nbytes, SEEK_CUR) == 0);
+			break;
+
+		case VQACMD_SEEK_END:
+			error = (FileHandle.Seek(nbytes, SEEK_END) == 0);
 			break;
 
 		case VQACMD_SEEKPEEK:
 			if (nbytes > 0) {
-				error = FileHandle.Seek(nbytes - sizeof(tmp), (int)(intptr_t)buffer) == 0;
+				error = FileHandle.Seek(nbytes - sizeof(tmp), SEEK_SET) == 0;
 				if (error == 0) {
 					error = FileHandle.Read(&tmp, sizeof(tmp)) != sizeof(tmp);
 				}
 			} else {
-				error = FileHandle.Seek(nbytes, (int)(intptr_t)buffer) == 0;
+				error = FileHandle.Seek(nbytes, SEEK_SET) == 0;
 				if (error == 0) {
 					error = FileHandle.Read(&tmp, sizeof(tmp)) != sizeof(tmp);
 					if (error == 0) {

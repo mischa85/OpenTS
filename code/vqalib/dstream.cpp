@@ -89,31 +89,37 @@ intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buff
 			error = 1;
 			break;
 
-		/* VQACMD_SEEK asks that you perform a seek relative to the current
-		 * position. NBytes is a signed number, indicating seek direction
-		 * (positive for forward, negative for backward). Buffer has no meaning
-		 * here.
+		/* The seek commands each name their own origin, and NBytes is the offset
+		 * from it, signed for VQACMD_SEEK_CUR. Buffer has no meaning here.
 		 *
 		 * Any error code returned will be remapped by VQA library into
 		 * VQAERR_SEEK.
 		 */
-		case VQACMD_SEEK:
-			error = (lseek(fh, nbytes, (int)(intptr_t)buffer) == -1);
+		case VQACMD_SEEK_SET:
+			error = (lseek(fh, nbytes, SEEK_SET) == -1);
+			break;
+
+		case VQACMD_SEEK_CUR:
+			error = (lseek(fh, nbytes, SEEK_CUR) == -1);
+			break;
+
+		case VQACMD_SEEK_END:
+			error = (lseek(fh, nbytes, SEEK_END) == -1);
 			break;
 
 		case VQACMD_SEEKPEEK:
 			if (nbytes > 0) {
-				error = lseek(fh, nbytes - 1, (int)(intptr_t)buffer) == -1;
+				error = lseek(fh, nbytes - 1, SEEK_SET) == -1;
 				if (error == 0) {
 					error = read(fh, &temp, 1) != 1;
 				}
 			} else {
-				error = lseek(fh, nbytes, (int)(intptr_t)buffer) == -1;
+				error = lseek(fh, nbytes, SEEK_SET) == -1;
 				if (error == 0) {
 					error = read(fh, &temp, 1) != 1;
 				}
 				if (error == 0) {
-					error = lseek(fh, -1, 1) == -1;
+					error = lseek(fh, -1, SEEK_CUR) == -1;
 				}
 			}
 			break;
@@ -186,34 +192,31 @@ intptr_t __cdecl Memory_VQA_Stream_Handler(VQAHandle *vqa, long action, void *bu
 			error = 1;
 			break;
 
-		/* VQACMD_SEEK asks that you perform a seek relative to the current
-		 * position. NBytes is a signed number, indicating seek direction
-		 * (positive for forward, negative for backward). Buffer has no meaning
-		 * here.
+		/* The seek commands each name their own origin, and NBytes is the offset
+		 * from it, signed for VQACMD_SEEK_CUR. VQACMD_SEEKPEEK seeks as
+		 * VQACMD_SEEK_SET does. Buffer has no meaning here. The loop cache holds
+		 * one span of the file, so it cannot seek from the end.
 		 *
 		 * Any error code returned will be remapped by VQA library into
 		 * VQAERR_SEEK.
 		 */
-		case VQACMD_SEEK:
+		case VQACMD_SEEK_CUR:
+			cache->Offset += nbytes;
+			error = 0;
+			break;
+
+		case VQACMD_SEEK_SET:
 		case VQACMD_SEEKPEEK:
-			switch ((intptr_t)buffer) {
-
-				case 1:
-					cache->Offset += nbytes;
-					error = 0;
-					break;
-
-				case 0:
-					p = cache->FileOffset;
-					if (nbytes >= p) {
-						cache->Offset = nbytes - p;
-						break;
-					}
-
-				default:
-					error = 1;
-					break;
+			p = cache->FileOffset;
+			if (nbytes >= p) {
+				cache->Offset = nbytes - p;
+				break;
 			}
+			error = 1;
+			break;
+
+		case VQACMD_SEEK_END:
+			error = 1;
 			break;
 
 		case VQACMD_SIZE:

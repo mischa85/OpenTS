@@ -363,9 +363,11 @@ enum VQACommandType : int32_t {
 	VQACMD_CLOSE    = 4,	/* Close file */
 	VQACMD_READ     = 5,	/* Read bytes */
 	VQACMD_WRITE    = 6,	/* Write bytes */
-	VQACMD_SEEK     = 7,	/* Seek */
-	VQACMD_SEEKPEEK = 8,
-	VQACMD_SIZE     = 9
+	VQACMD_SEEK_SET = 7,	/* Seek to an offset from the start of the stream */
+	VQACMD_SEEKPEEK = 8,	/* Fail unless the stream reaches NBytes */
+	VQACMD_SIZE     = 9,
+	VQACMD_SEEK_CUR = 10,	/* Seek to a signed offset from the current position */
+	VQACMD_SEEK_END = 11	/* Seek relative to the end of the stream */
 };
 
 #define VQAMEM_0		0

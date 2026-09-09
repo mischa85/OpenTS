@@ -372,7 +372,7 @@ long VQA_Open(char const *filename, VQAConfig *_config, VQAHandle **handle)
 					}
 
 				} else {
-					if (vqap->IOHandler(vqa, VQACMD_SEEK, (void *)SEEK_CUR,
+					if (vqap->IOHandler(vqa, VQACMD_SEEK_CUR, NULL,
 							PADSIZE(chunk.size))) {
 						VQA_Close(vqa);
 						return(VQAERR_SEEK);
@@ -420,7 +420,7 @@ long VQA_Open(char const *filename, VQAConfig *_config, VQAHandle **handle)
 					}
 
 				} else {
-					if (vqap->IOHandler(vqa, VQACMD_SEEK, (void *)SEEK_CUR,
+					if (vqap->IOHandler(vqa, VQACMD_SEEK_CUR, NULL,
 							PADSIZE(chunk.size))) {
 						VQA_Close(vqa);
 						return(VQAERR_SEEK);
@@ -496,7 +496,7 @@ long VQA_Open(char const *filename, VQAConfig *_config, VQAHandle **handle)
 				break;
 
 			default:
-				if (config->StreamHandler(vqa, VQACMD_SEEK, (void *)SEEK_CUR,
+				if (config->StreamHandler(vqa, VQACMD_SEEK_CUR, NULL,
 						PADSIZE(chunk.size))) {
 					VQA_Close(vqa);
 					return(VQAERR_SEEK);
