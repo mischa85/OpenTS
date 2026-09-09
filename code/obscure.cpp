@@ -79,7 +79,7 @@ int Obfuscate(char const * string)
 	*/
 	strncpy(buffer, string, sizeof(buffer));
 	buffer[sizeof(buffer)-1] = '\0';
-	int length = strlen(buffer);
+	size_t length = strlen(buffer);
 
 	/*
 	**	Only upper case letters are significant.
@@ -90,7 +90,7 @@ int Obfuscate(char const * string)
 	**	Ensure that only visible ASCII characters compose the key phrase. This
 	**	discourages the direct forced illegal character input method of attack.
 	*/
-	for (int index = 0; index < length; index++) {
+	for (size_t index = 0; index < length; index++) {
 		if (!isgraph((unsigned char)buffer[index])) {
 			buffer[index] = (char)('A' + (index%26));
 		}
@@ -104,18 +104,18 @@ int Obfuscate(char const * string)
 	**	This is necessary to support the cypher process that occurs later.
 	*/
 	if (length < 16 || (length & 0x03)) {
-		int maxlen = 16;
+		size_t maxlen = 16;
 		if (((length+3) & 0x00FC) > maxlen) {
 			maxlen = ((length+3) & 0x00FC);
 		}
 
 		// Rounding a phrase that fills the buffer up to the next multiple of four would
 		// put its terminator one position past the end.
-		if (maxlen > (int)sizeof(buffer)-1) {
-			maxlen = (int)sizeof(buffer)-1;
+		if (maxlen > sizeof(buffer)-1) {
+			maxlen = sizeof(buffer)-1;
 		}
 
-		int index;
+		size_t index;
 		for (index = length; index < maxlen; index++) {
 			buffer[index] = (char)('A' + ((('?' ^ buffer[index-length]) + index) % 26));
 		}
@@ -155,7 +155,7 @@ int Obfuscate(char const * string)
 	**	cypher process occurs later.
 	*/
 	strrev(buffer);		// Restore original string order.
-	for (int index2 = 0; index2 < length; index2++) {
+	for (size_t index2 = 0; index2 < length; index2++) {
 		code ^= (unsigned char)buffer[index2];
 		unsigned char temp = (unsigned char)code;
 		buffer[index2] ^= temp;
@@ -168,7 +168,7 @@ int Obfuscate(char const * string)
 	**	cryptographic attack engines. Since this also weakens the key against
 	**	unconventional attacks, the loss is limited to less than 10%.
 	*/
-	for (int index3 = 0; index3 < length; index3++) {
+	for (size_t index3 = 0; index3 < length; index3++) {
 		static unsigned char _lossbits[] = {0x00,0x08,0x00,0x20,0x00,0x04,0x10,0x00};
 		static unsigned char _addbits[] = {0x10,0x00,0x00,0x80,0x40,0x00,0x00,0x04};
 
@@ -185,7 +185,7 @@ int Obfuscate(char const * string)
 	**	algorithm. The sheer workload of reversing this transformation should be enough
 	**	to discourage even the most determined hackers.
 	*/
-	for (int index4 = 0; index4 < length; index4 += 4) {
+	for (size_t index4 = 0; index4 < length; index4 += 4) {
 		short key1 = buffer[index4];
 		short key2 = buffer[index4+1];
 		short key3 = buffer[index4+2];

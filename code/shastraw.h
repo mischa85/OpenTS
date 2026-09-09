@@ -51,7 +51,7 @@ class SHAStraw : public Straw
 		void Enable(void) {IsDisabled = false;}
 
 		// Fetch the SHA hash value (stored in result buffer -- 20 bytes long).
-		int Result(void * result) const;
+		size_t Result(void * result) const;
 
 	protected:
 		bool IsDisabled;
