@@ -355,16 +355,18 @@ typedef struct _VQAHandle {
 // derives from AMIGA IFF handling https://wiki.amigaos.net/wiki/IFFParse_Library
 
 /* Possible IO command values */
-#define VQACMD_NOTHING  0
-#define VQACMD_INIT     1 /* Prepare the IO for a session */
-#define VQACMD_CLEANUP  2 /* Terminate IO session */
-#define VQACMD_OPEN     3 /* Open file */
-#define VQACMD_CLOSE    4 /* Close file */
-#define VQACMD_READ     5 /* Read bytes */
-#define VQACMD_WRITE    6 /* Write bytes */
-#define VQACMD_SEEK     7 /* Seek */
-#define VQACMD_SEEKPEEK 8
-#define VQACMD_SIZE     9
+enum VQACommandType : int32_t {
+	VQACMD_NOTHING  = 0,
+	VQACMD_INIT     = 1,	/* Prepare the IO for a session */
+	VQACMD_CLEANUP  = 2,	/* Terminate IO session */
+	VQACMD_OPEN     = 3,	/* Open file */
+	VQACMD_CLOSE    = 4,	/* Close file */
+	VQACMD_READ     = 5,	/* Read bytes */
+	VQACMD_WRITE    = 6,	/* Write bytes */
+	VQACMD_SEEK     = 7,	/* Seek */
+	VQACMD_SEEKPEEK = 8,
+	VQACMD_SIZE     = 9
+};
 
 #define VQAMEM_0		0
 #define VQAMEM_1		1
