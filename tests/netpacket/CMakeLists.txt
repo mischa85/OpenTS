@@ -13,6 +13,6 @@ opents_add_test(NetContract
         netreader.cpp
         netsemantic.cpp
     INCLUDES ${OPENTS_GENERATED_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     STAMP
 )

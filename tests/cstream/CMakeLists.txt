@@ -4,7 +4,7 @@ opents_add_test(CStreamContract
     ENGINE
         cstream.cpp
         isun_i.c
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     LIBRARIES lzo
     FLOAT
 )

@@ -12,7 +12,7 @@ opents_add_test(SocketUdp
         wsproto.cpp
         wspudp.cpp
     INCLUDES ${OPENTS_GENERATED_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     LIBRARIES ws2_32
     STAMP
 )

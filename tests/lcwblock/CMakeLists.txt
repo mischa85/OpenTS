@@ -14,6 +14,6 @@ opents_add_test(LcwBlock
         straw.cpp
         xpipe.cpp
         xstraw.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     FLOAT
 )

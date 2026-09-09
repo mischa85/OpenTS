@@ -7,5 +7,5 @@ opents_add_test(SyncRec
     SOURCES syncrectest.cpp
     ENGINE
         syncrec.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
 )

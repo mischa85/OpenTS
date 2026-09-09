@@ -7,5 +7,5 @@ opents_add_test(SpawnHouse
     SOURCES spawnhousetest.cpp
     ENGINE
         spawnhouse.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
 )

@@ -13,7 +13,7 @@ opents_add_test(LzoBlock
         straw.cpp
         xpipe.cpp
         xstraw.cpp
-    DEFINITIONS WIN32 _WINDOWS _MBCS NOMINMAX
+    DEFINITIONS NOMINMAX
     LIBRARIES lzo
     FLOAT
 )

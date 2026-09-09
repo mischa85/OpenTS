@@ -15,7 +15,6 @@ opents_add_test(AudioEvent
         audio/audiodevice_null.cpp
         soscodec.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}
-    DEFINITIONS WIN32 _WINDOWS _MBCS
     LIBRARIES miniaudio
     FLOAT
 )
