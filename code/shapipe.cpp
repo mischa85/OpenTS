@@ -56,7 +56,11 @@
  *=============================================================================================*/
 int SHAPipe::Put(void const * source, int slen)
 {
-	SHA.Hash(source, slen);
+	// The pipe interface counts bytes in a signed type. Nothing is hashed from a count
+	// that is not positive, and the pipe still passes it along.
+	if (slen > 0) {
+		SHA.Hash(source, (size_t)slen);
+	}
 	return(BASECLASS::Put(source, slen));
 }
 
@@ -77,7 +81,7 @@ int SHAPipe::Put(void const * source, int slen)
  * HISTORY:                                                                                    *
  *   07/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-int SHAPipe::Result(void * result) const
+size_t SHAPipe::Result(void * result) const
 {
 	return(SHA.Result(result));
 }

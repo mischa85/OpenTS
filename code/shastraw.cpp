@@ -63,8 +63,8 @@ int SHAStraw::Get(void * source, int slen)
 	}
 
 	int counter = BASECLASS::Get(source, slen);
-	if (!IsDisabled) {
-		SHA.Hash(source, counter);
+	if (!IsDisabled && counter > 0) {
+		SHA.Hash(source, (size_t)counter);
 	}
 	return(counter);
 }
@@ -87,7 +87,7 @@ int SHAStraw::Get(void * source, int slen)
  * HISTORY:                                                                                    *
  *   07/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-int SHAStraw::Result(void * result) const
+size_t SHAStraw::Result(void * result) const
 {
 	return(SHA.Result(result));
 }

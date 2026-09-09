@@ -63,7 +63,7 @@
  * HISTORY:                                                                                    *
  *   07/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-void SHAEngine::Process_Partial(void const * & data, uint32_t & length)
+void SHAEngine::Process_Partial(void const * & data, size_t & length)
 {
 	if (length == 0 || data == NULL) return;
 
@@ -79,7 +79,7 @@ void SHAEngine::Process_Partial(void const * & data, uint32_t & length)
 	**	the staging buffer.
 	*/
 	// PartialCount is cleared the moment it fills, so the difference cannot wrap.
-	uint32_t add_count = std::min(length, SRC_BLOCK_SIZE - PartialCount);
+	size_t add_count = std::min(length, SRC_BLOCK_SIZE - PartialCount);
 	memcpy(&Partial[PartialCount], data, add_count);
 	data = ((char const *&)data) + add_count;
 	PartialCount += add_count;
@@ -115,39 +115,32 @@ void SHAEngine::Process_Partial(void const * & data, uint32_t & length)
  * HISTORY:                                                                                    *
  *   07/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-void SHAEngine::Hash(void const * data, int32_t length)
+void SHAEngine::Hash(void const * data, size_t length)
 {
 	IsCached = false;
-
-	/*
-	**	The pipe interface counts bytes in a signed type. Nothing sensible arrives here
-	**	negative, and every count below is unsigned.
-	*/
-	if (length <= 0) return;
-	uint32_t remaining = (uint32_t)length;
 
 	/*
 	**	Check for and handle any smaller-than-512bit blocks. This can
 	**	result in all of the source data submitted to this routine to be
 	**	consumed at this point.
 	*/
-	Process_Partial(data, remaining);
+	Process_Partial(data, length);
 
 	/*
 	**	If there is no more source data to process, then bail. Speed reasons.
 	*/
-	if (remaining == 0) return;
+	if (length == 0) return;
 
 	/*
 	**	First process all the whole blocks available in the source data.
 	*/
-	uint32_t blocks = (remaining / SRC_BLOCK_SIZE);
+	size_t blocks = (length / SRC_BLOCK_SIZE);
 	uint32_t const * source = (uint32_t const *)data;
-	for (uint32_t bcount = 0; bcount < blocks; bcount++) {
+	for (size_t bcount = 0; bcount < blocks; bcount++) {
 		Process_Block(source, Acc);
 		Length += SRC_BLOCK_SIZE;
 		source += SRC_BLOCK_WORDS;
-		remaining -= SRC_BLOCK_SIZE;
+		length -= SRC_BLOCK_SIZE;
 	}
 
 	/*
@@ -155,7 +148,7 @@ void SHAEngine::Hash(void const * data, int32_t length)
 	**	accumulator buffer for future processing.
 	*/
 	data = source;
-	Process_Partial(data, remaining);
+	Process_Partial(data, length);
 }
 
 
@@ -177,7 +170,7 @@ void SHAEngine::Hash(void const * data, int32_t length)
  * HISTORY:                                                                                    *
  *   07/03/1996 JLB : Created.                                                                 *
  *=============================================================================================*/
-int32_t SHAEngine::Result(void * result) const
+size_t SHAEngine::Result(void * result) const
 {
 	/*
 	**	If the final hash result has already been calculated for the
@@ -189,8 +182,8 @@ int32_t SHAEngine::Result(void * result) const
 		return(sizeof(FinalResult));
 	}
 
-	uint32_t length = Length + PartialCount;
-	uint32_t partialcount = PartialCount;
+	size_t length = Length + PartialCount;
+	size_t partialcount = PartialCount;
 	unsigned char partial[SRC_BLOCK_SIZE];
 	memcpy(partial, Partial, sizeof(Partial));
 
@@ -222,16 +215,18 @@ int32_t SHAEngine::Result(void * result) const
 	**	last 8 bytes of the pseudo-source data.
 	*/
 	memset(&partial[partialcount], '\0', SRC_BLOCK_SIZE - partialcount);
-	*(uint32_t *)(&partial[SRC_BLOCK_SIZE-4]) = Reverse_LONG(length * 8u);
+	// The field is thirty-two bits wide, so a stream past half a gigabyte states a
+	// truncated bit count, as it always has.
+	*(uint32_t *)(&partial[SRC_BLOCK_SIZE-4]) = Reverse_LONG((uint32_t)(length * 8));
 	Process_Block(&partial[0], acc);
 
 	memcpy(&FinalResult, &acc, sizeof(acc));
-	for (uint32_t index = 0; index < sizeof(FinalResult) / sizeof(uint32_t); index++) {
+	for (size_t index = 0; index < sizeof(FinalResult) / sizeof(uint32_t); index++) {
 		FinalResult.Long[index] = Reverse_LONG(FinalResult.Long[index]);
 	}
 	IsCached = true;
 	memcpy(result, &FinalResult, sizeof(FinalResult));
-	return((int32_t)sizeof(FinalResult));
+	return(sizeof(FinalResult));
 }
 
 
@@ -286,7 +281,7 @@ void SHAEngine::Process_Block(void const * source, SHADigest & acc) const
 	**	data that will be transformed by the secure hash algorithm.
 	*/
 	uint32_t const * data = (uint32_t const *)source;
-	uint32_t index;
+	size_t index;
 	for (index = 0; index < SRC_BLOCK_WORDS; index++) {
 		block[index] = Reverse_LONG(data[index]);
 	}

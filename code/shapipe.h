@@ -47,7 +47,7 @@ class SHAPipe : public Pipe
 		virtual int Put(void const * source, int slen) override;
 
 		// Fetch the SHA hash value (stored in result buffer -- 20 bytes long).
-		int Result(void * result) const;
+		size_t Result(void * result) const;
 
 	protected:
 		SHAEngine SHA;

@@ -34,6 +34,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <new>
@@ -60,11 +61,11 @@ class SHAEngine
 		};
 
 		// Fetch result as if source data were to stop now.
-		int32_t Result(void * result) const;
+		size_t Result(void * result) const;
 
-		void Hash(void const * data, int32_t length);
+		void Hash(void const * data, size_t length);
 
-		static int32_t Digest_Size(void) {return((int32_t)sizeof(SHADigest));}
+		static size_t Digest_Size(void) {return(sizeof(SHADigest));}
 
 	private:
 
@@ -95,12 +96,12 @@ class SHAEngine
 		static constexpr uint32_t K3 = 0x8f1bbcdc;	// t=40..59		5^(1/2)/4
 		static constexpr uint32_t K4 = 0xca62c1d6;	// t=60..79		10^(1/2)/4
 
-		static constexpr uint32_t SRC_BLOCK_SIZE = 64;
-		static constexpr uint32_t SRC_BLOCK_WORDS = 16;
-		static constexpr uint32_t PROC_BLOCK_WORDS = 80;
+		static constexpr size_t SRC_BLOCK_SIZE = 64;
+		static constexpr size_t SRC_BLOCK_WORDS = 16;
+		static constexpr size_t PROC_BLOCK_WORDS = 80;
 
 
-		uint32_t Get_Constant(uint32_t index) const {
+		uint32_t Get_Constant(size_t index) const {
 			if (index < 20) return(K1);
 			if (index < 40) return(K2);
 			if (index < 60) return(K3);
@@ -127,7 +128,7 @@ class SHAEngine
 			return( X ^ Y ^ Z );
 		};
 
-		uint32_t Do_Function(uint32_t index, uint32_t X, uint32_t Y, uint32_t Z) const {
+		uint32_t Do_Function(size_t index, uint32_t X, uint32_t Y, uint32_t Z) const {
 			if (index < 20) return(Function1(X, Y, Z));
 			if (index < 40) return(Function2(X, Y, Z));
 			if (index < 60) return(Function3(X, Y, Z));
@@ -138,7 +139,7 @@ class SHAEngine
 		void Process_Block(void const * source, SHADigest & acc) const;
 
 		// Processes a partially filled source accumulator buffer.
-		void Process_Partial(void const * & data, uint32_t & length);
+		void Process_Partial(void const * & data, size_t & length);
 
 		/*
 		**	This is the running accumulator values. These values
@@ -154,14 +155,14 @@ class SHAEngine
 		**	of the source data.
 		*/
 		// Bytes hashed so far, and bytes waiting in the staging buffer.
-		uint32_t Length;
+		size_t Length;
 
 		/*
 		**	This holds any partial source block. Partial source blocks are
 		**	a consequence of submitting less than block sized data chunks
 		**	to the SHA Engine.
 		*/
-		uint32_t PartialCount;
+		size_t PartialCount;
 		char Partial[SRC_BLOCK_SIZE];
 };
 
