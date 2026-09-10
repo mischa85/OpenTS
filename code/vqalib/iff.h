@@ -13,6 +13,8 @@
 
 #ifndef VQMIFF_H
 #define VQMIFF_H
+
+#include <cstdint>
 /****************************************************************************
 *
 *         C O N F I D E N T I A L --- W E S T W O O D   S T U D I O S

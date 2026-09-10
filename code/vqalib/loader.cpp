@@ -303,10 +303,10 @@ VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags)
  */
 #pragma pack(push,1)
 struct VQASN2J {
-	short index;
-	long  predicted;
-	short index2;
-	long  predicted2;
+	short   index;
+	int32_t predicted;
+	short   index2;
+	int32_t predicted2;
 };
 static_assert(sizeof(VQASN2J) == 12, "the SN2J chunk is 12 bytes on disk");
 #pragma pack(pop)
