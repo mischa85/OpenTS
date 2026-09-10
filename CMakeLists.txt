@@ -15,6 +15,10 @@ option(OPENTS_OFFICIAL_BUILD "Build as an official release of the declared versi
 # target needs it asks for. docs/BUILDING.md records which of them are supported.
 message(STATUS "OpenTS: configuring for ${CMAKE_CXX_COMPILER_ID} on ${CMAKE_SYSTEM_NAME}.")
 
+# Lets a target's FOLDER place it in a Visual Studio solution folder. The bgfx submodule sets
+# this as well, so declare it here rather than inherit it from a vendored build.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 if(MSVC AND MSVC_VERSION LESS 1930)
     message(FATAL_ERROR "OpenTS requires MSVC 19.30 or newer for C++20.")
 endif()
@@ -54,6 +58,11 @@ if(WIN32)
     enable_language(RC)
 endif()
 
+string(TOLOWER "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" OPENTS_ARCH)
+if(NOT OPENTS_ARCH)
+    set(OPENTS_ARCH "unknown")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -82,6 +91,7 @@ set(OPENTS_STAMP_ARGS
     "-DOPENTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
     "-DOPENTS_VERSION_HEADER=${OPENTS_VERSION_HEADER}"
     "-DOPENTS_STAMP_HEADER=${OPENTS_STAMP_HEADER}"
+    "-DOPENTS_ARCH=${OPENTS_ARCH}"
     -P "${CMAKE_SOURCE_DIR}/cmake/GitStamp.cmake"
 )
 

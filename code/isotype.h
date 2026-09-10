@@ -104,6 +104,7 @@ struct IsoTileRecord
 	RGBStruct LowColor;
 	RGBStruct HighColor;
 };
+static_assert(sizeof(IsoTileRecord) == 52, "a TMP tile record is 52 bytes on disk");
 #pragma pack()
 
 #pragma pack(4)
@@ -189,6 +190,7 @@ class IsoTileSet
 		IsoTileSet(IsoTileSet const & rvalue);
 		IsoTileSet const & operator = (IsoTileSet const & rvalue);
 };
+static_assert(sizeof(IsoTileSet) == 20, "the TMP header is 16 bytes on disk, followed by the four-byte tile offsets");
 #pragma pack()
 
 
@@ -206,7 +208,7 @@ class IsometricTileTypeClass : public ObjectTypeClass
 		IsometricTileTypeClass(IsometricTileType type = ISOTILE_CLEAR, int unknown1 = 0, unsigned char unknown2 = 0, char const *ininame = NULL, bool skip_registration = false);
 		virtual ~IsometricTileTypeClass(void) override;
 
-		virtual HRESULT STDMETHODCALLTYPE GetClassID(CLSID * retval) override;
+		virtual ClassID Class_ID(void) const override;
 
 		virtual void Serialize(SaveStreamClass & stream) override;
 		virtual void Post_Load(void) override;

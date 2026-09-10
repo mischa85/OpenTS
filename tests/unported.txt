@@ -6,7 +6,6 @@
 # only as long as it is true: porting a subsystem means deleting the line, and a harness that
 # breaks without being listed makes the check fail.
 Autosave autosave
-CStreamContract cstream
 CpuDetect cpudetect
 DeploymentConfig deploymentconfig
 GameDirs gamedirs
@@ -15,6 +14,7 @@ LcwBlock lcwblock
 LogStress logstress
 LzoBlock lzoblock
 NetContract netpacket
+SaveTest save
 ScenFile scenfile
 SocketUdp socketudp
 SoundIni soundini

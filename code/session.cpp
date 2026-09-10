@@ -48,6 +48,7 @@
 
 #include "session.h"
 
+#include "_deploymentconfig.h"
 #include "_keyboar.h"
 #include "_map.h"
 #include "_rules.h"
@@ -56,6 +57,7 @@
 #include "conquer.h"
 #include "data.h"
 #include "dbgprint.h"
+#include "deploymentconfig.h"
 #include "gamedirs.h"		// for Search_Files.
 #include "globals.h"
 #include "hostclock.h"
@@ -640,7 +642,7 @@ bool SessionClass::Log_To_File(FILE *out)
  *=========================================================================*/
 void SessionClass::Write_MultiPlayer_Settings(void)
 {
-	CDFileClass file(CONFIG_FILE_NAME);
+	CDFileClass file(DeploymentConfig.SettingsFile.c_str());
 	{
 		// Save the player's last-used Handle & Color
 		ConfigINI.Put_Int("MultiPlayer", "Color", (int)PrefColor);
@@ -1332,15 +1334,11 @@ void SessionClass::Init_Fixed_Alliances(void)
 /// Saves the game options to a save game.
 /// </summary>
 /// <returns>bool; Were the options written successfully?</returns>
-bool GameOptionsType::Save(IStream * stream)
+bool GameOptionsType::Save(SaveStreamClass & stream)
 {
-	if (stream == NULL) {
-		return(false);
-	}
 
-	SaveStreamClass savestream(stream, SaveStreamClass::MODE_SAVE);
-	Serialize(savestream);
-	return(SUCCEEDED(savestream.Result()));
+	Serialize(stream);
+	return(!stream.Was_Error());
 }
 
 
@@ -1350,17 +1348,13 @@ bool GameOptionsType::Save(IStream * stream)
 /// scenario with it.
 /// </summary>
 /// <returns>bool; Were the options read back successfully?</returns>
-bool GameOptionsType::Load(IStream * stream)
+bool GameOptionsType::Load(SaveStreamClass & stream)
 {
-	if (stream == NULL) {
-		return(false);
-	}
 
-	SaveStreamClass savestream(stream, SaveStreamClass::MODE_LOAD);
-	savestream.Set_Context("GameOptionsType");
-	Serialize(savestream);
+	stream.Set_Context("GameOptionsType");
+	Serialize(stream);
 	ScenarioIndex = -1;
-	return(SUCCEEDED(savestream.Result()));
+	return(!stream.Was_Error());
 }
 
 

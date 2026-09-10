@@ -61,6 +61,7 @@
 #include "_bench.h"
 #include "_command.h"
 #include "_convert.h"
+#include "_deploymentconfig.h"
 #include "_font.h"
 #include "_keyboar.h"
 #include "_logic.h"
@@ -102,6 +103,7 @@
 #include "conquer.h"
 #include "data.h"
 #include "dbgprint.h"
+#include "deploymentconfig.h"
 #include "dialog.h"
 #include "audio/audioengine.h"
 #include "dsurface.h"
@@ -479,19 +481,19 @@ int Init_Game(int , char * [])
 		return(-1);
 	}
 
-	DebugString("Reading UI.INI\n");
-	if (!UIControls.Read_INI_File("UI.INI", true)) {
-		DebugString("UI.INI not found, using the defaults.\n");
+	DebugString("Reading %s\n", DeploymentConfig.UIFile.c_str());
+	if (!UIControls.Read_INI_File(DeploymentConfig.UIFile.c_str(), true)) {
+		DebugString("%s not found, using the defaults.\n", DeploymentConfig.UIFile.c_str());
 	}
 
 	/*
 	**
 	*/
-	DebugString("Reading SOUND.INI\n");
+	DebugString("Reading %s\n", DeploymentConfig.SoundFile.c_str());
 
 	CCINIClass voc_ini;
-	if (!Read_INI_And_Expansion(voc_ini, "SOUND.INI", "SOUND01.INI")) {
-		DebugString("Failed to read SOUND.INI or SOUND01.INI!\n");
+	if (!Read_INI_And_Expansion(voc_ini, DeploymentConfig.SoundFile.c_str(), DeploymentConfig.SoundExpansionFile.c_str())) {
+		DebugString("Failed to read %s or %s!\n", DeploymentConfig.SoundFile.c_str(), DeploymentConfig.SoundExpansionFile.c_str());
 		return(-1);
 	}
 
@@ -514,11 +516,11 @@ int Init_Game(int , char * [])
 	// A score's Side= names a side the rules declare, so the roster is built before the scores are read.
 	Prepare_Side_Roster();
 
-	DebugString("Reading THEME.INI\n");
+	DebugString("Reading %s\n", DeploymentConfig.ThemeFile.c_str());
 
 	CCINIClass theme_ini;
-	if (!Read_INI_And_Expansion(theme_ini, "THEME.INI", "THEME01.INI")) {
-		DebugString("Failed to read THEME.INI or THEME01.INI!\n");
+	if (!Read_INI_And_Expansion(theme_ini, DeploymentConfig.ThemeFile.c_str(), DeploymentConfig.ThemeExpansionFile.c_str())) {
+		DebugString("Failed to read %s or %s!\n", DeploymentConfig.ThemeFile.c_str(), DeploymentConfig.ThemeExpansionFile.c_str());
 		return(-1);
 	}
 
@@ -638,7 +640,7 @@ void Init_Campaigns(void)
 		CCINIClass * ini = new CCINIClass;
 		ini->Load(file, false);
 
-		if (stricmp(name.c_str(), "BATTLE.INI") == 0) {
+		if (stricmp(name.c_str(), DeploymentConfig.BattleFile.c_str()) == 0) {
 			found = true;
 		}
 
@@ -647,7 +649,7 @@ void Init_Campaigns(void)
 	}
 
 	if (!found) {
-		CCFileClass file("BATTLE.INI");
+		CCFileClass file(DeploymentConfig.BattleFile.c_str());
 		CCINIClass * ini = new CCINIClass;
 
 		if (ini != NULL) {
@@ -657,7 +659,7 @@ void Init_Campaigns(void)
 		}
 	}
 
-	CCFileClass file("BATTLEFS.INI");
+	CCFileClass file(DeploymentConfig.BattleExpansionFile.c_str());
 	if (file.Is_Available() == true) {
 		CCINIClass * ini = new CCINIClass;
 
@@ -913,7 +915,7 @@ static bool Init_Rules(void)
 
 		rule->Load(file, false);
 
-		if (stricmp(name.c_str(), "RULES.INI") == 0) {
+		if (stricmp(name.c_str(), DeploymentConfig.RulesFile.c_str()) == 0) {
 			found = true;
 			Rules.Add_Head(rule);
 		} else {
@@ -922,7 +924,7 @@ static bool Init_Rules(void)
 	}
 
 	if (!found) {
-		CCFileClass file("RULES.INI");
+		CCFileClass file(DeploymentConfig.RulesFile.c_str());
 		CCINIClass * rule = new CCINIClass;
 		rule->Load(file, false);
 		Rules.Add_Head(rule);
@@ -934,26 +936,26 @@ static bool Init_Rules(void)
 		return(false);
 	}
 
-	CCFileClass art_file("ART.INI");
+	CCFileClass art_file(DeploymentConfig.ArtFile.c_str());
 
 	if (!ArtINI.Load(art_file, false)) {
-		DebugString("Failed to load ART.INI!\n");
+		DebugString("Failed to load %s!\n", DeploymentConfig.ArtFile.c_str());
 		return(false);
 	}
 
 	CCINIClass art_ini;
-	CCFileClass art_fs_file("ARTFS.INI");
+	CCFileClass art_fs_file(DeploymentConfig.ArtExpansionFile.c_str());
 
 	if (art_fs_file.Is_Available() == true) {
 		art_ini.Load(art_fs_file, false);
 	}
 
 	if (Addon_Installed(ADDON_FIRESTORM)) {
-		CCFileClass rules_fs_file("FIRESTRM.INI");
+		CCFileClass rules_fs_file(DeploymentConfig.RulesExpansionFile.c_str());
 		if (rules_fs_file.Is_Available() == true) {
 			CCINIClass rule_fs;
 			if (!FSRuleINI.Load(rules_fs_file, false)) {
-				DebugString("Failed to load FIRESTRM.INI!\n");
+				DebugString("Failed to load %s!\n", DeploymentConfig.RulesExpansionFile.c_str());
 				return(false);
 			}
 		}
@@ -990,7 +992,7 @@ static bool Init_Rules(void)
 	Session.Options.AIPlayers = 0;
 	Session.Options.AIDifficulty = DIFF_NORMAL;
 
-	CCFileClass lang_file("LANGRULE.INI");
+	CCFileClass lang_file(DeploymentConfig.LanguageRulesFile.c_str());
 
 	if (lang_file.Is_Available() == true) {
 		CCINIClass lang_ini;
@@ -1008,15 +1010,15 @@ static bool Init_Rules(void)
 		}
 	}
 
-	CCFileClass ai_file("AI.INI");
+	CCFileClass ai_file(DeploymentConfig.AIFile.c_str());
 	AIINI.Load(ai_file, true);
 
 	if (Addon_Installed(ADDON_FIRESTORM)) {
-		CCFileClass ai_fs_file("AIFS.INI");
+		CCFileClass ai_fs_file(DeploymentConfig.AIExpansionFile.c_str());
 		if (ai_fs_file.Is_Available() == true) {
 			CCINIClass ai_fs_ini;
 			if (!FSAIINI.Load(ai_fs_file, false)) {
-				DebugString("Failed to load AIFS.INI!\n");
+				DebugString("Failed to load %s!\n", DeploymentConfig.AIExpansionFile.c_str());
 				return(false);
 			}
 		}
@@ -2341,6 +2343,31 @@ static void Init_Patch_Mixfiles(void)
 }
 
 
+/// <summary>
+/// Reads a palette out of the mounted archives and expands it to the game's colour range.
+/// </summary>
+/// <param name="palette">The palette to fill, left unchanged if the file is not there.</param>
+/// <param name="name">The palette file to read.</param>
+static void Read_Palette(PaletteClass & palette, char const * name)
+{
+	void const * data = MFCD::Retrieve(name);
+
+	if (data == NULL) {
+		DebugString("%s not found; leaving that palette unchanged.\n", name);
+		return;
+	}
+
+	memmove(&palette[0], data, sizeof(palette));
+
+	for (int index = 0; index < PaletteClass::COLOR_COUNT; index++) {
+		palette[index] = RGBClass(
+				(unsigned char)(palette[index].Get_Red()<<2),
+				(unsigned char)(palette[index].Get_Green()<<2),
+				(unsigned char)(palette[index].Get_Blue()<<2));
+	}
+}
+
+
 /***********************************************************************************************
  * Init_Bootstrap_Mixfiles -- Registers and caches any mixfiles needed for bootstrapping.      *
  *                                                                                             *
@@ -2547,8 +2574,6 @@ static bool Init_Secondary_Mixfiles(void)
  *=============================================================================================*/
 static bool Bootstrap(void)
 {
-	int index;
-
 	/*
 	**	Process the message loop until we are in focus. We need to be in focus to read pixels from
 	**	the screen.
@@ -2597,39 +2622,18 @@ static bool Bootstrap(void)
 	/*
 	 * House specific scheme palette initialization.
 	 */
-	memmove((unsigned char *)&SchemePalette[0], (void *)MFCD::Retrieve("UNITSNO.PAL"), sizeof(SchemePalette));
-
-	for (index = 0; index < 256; index++) {
-		SchemePalette[index] = RGBClass(
-				(unsigned char)(SchemePalette[index].Get_Red()<<2),
-				(unsigned char)(SchemePalette[index].Get_Green()<<2),
-				(unsigned char)(SchemePalette[index].Get_Blue()<<2));
-	}
+	Read_Palette(SchemePalette, DeploymentConfig.SchemePaletteFile.c_str());
 
 	/*
 	**	Default palette initialization.
 	*/
-	memmove((unsigned char *)&GamePalette[0], (void *)MFCD::Retrieve("TEMPERAT.PAL"), sizeof(GamePalette));
-
-	for (index = 0; index < 256; index++) {
-		GamePalette[index] = RGBClass(
-				(unsigned char)(GamePalette[index].Get_Red()<<2),
-				(unsigned char)(GamePalette[index].Get_Green()<<2),
-				(unsigned char)(GamePalette[index].Get_Blue()<<2));
-	}
+	Read_Palette(GamePalette, DeploymentConfig.GamePaletteFile.c_str());
 
 	OriginalPalette = GamePalette;
 	CCPalette = GamePalette;
 	WhitePalette[0] = BlackPalette[0];
 
-	memmove((unsigned char *)&WaypointPalette[0], (void *)MFCD::Retrieve("WAYPOINT.PAL"), sizeof(WaypointPalette));
-
-	for (index = 0; index < 256; index++) {
-		WaypointPalette[index] = RGBClass(
-				(unsigned char)(WaypointPalette[index].Get_Red()<<2),
-				(unsigned char)(WaypointPalette[index].Get_Green()<<2),
-				(unsigned char)(WaypointPalette[index].Get_Blue()<<2));
-	}
+	Read_Palette(WaypointPalette, "WAYPOINT.PAL");
 
 	/*
 	 * Voxel system initialization.
@@ -2655,54 +2659,21 @@ static bool Bootstrap(void)
 	 */
 	TerrainDrawer = new ConvertClass(GamePalette, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
-	PaletteClass pal;
+	PaletteClass pal = BlackPalette;
 
-	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("ANIM.PAL"), sizeof(pal));
-	for (index = 0; index < 256; index++) {
-		pal[index] = RGBClass(
-				(unsigned char)(pal[index].Get_Red()<<2),
-				(unsigned char)(pal[index].Get_Green()<<2),
-				(unsigned char)(pal[index].Get_Blue()<<2));
-	}
-
+	Read_Palette(pal, "ANIM.PAL");
 	AnimDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
-	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("PALETTE.PAL"), sizeof(pal));
-	for (index = 0; index < 256; index++) {
-		pal[index] = RGBClass(
-				(unsigned char)(pal[index].Get_Red()<<2),
-				(unsigned char)(pal[index].Get_Green()<<2),
-				(unsigned char)(pal[index].Get_Blue()<<2));
-	}
-
+	Read_Palette(pal, "PALETTE.PAL");
 	NormalDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
-	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("UNITSNO.PAL"), sizeof(pal));
-	for (index = 0; index < 256; index++) {
-		pal[index] = RGBClass(
-				(unsigned char)(pal[index].Get_Red()<<2),
-				(unsigned char)(pal[index].Get_Green()<<2),
-				(unsigned char)(pal[index].Get_Blue()<<2));
-	}
-
+	Read_Palette(pal, DeploymentConfig.SchemePaletteFile.c_str());
 	VoxelDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
-	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("CAMEO.PAL"), sizeof(pal));
-	for (index = 0; index < 256; index++) {
-		pal[index] = RGBClass(
-				(unsigned char)(pal[index].Get_Red()<<2),
-				(unsigned char)(pal[index].Get_Green()<<2),
-				(unsigned char)(pal[index].Get_Blue()<<2));
-	}
+	Read_Palette(pal, "CAMEO.PAL");
 	CameoDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
-	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("MOUSEPAL.PAL"), sizeof(pal));
-	for (index = 0; index < 256; index++) {
-		pal[index] = RGBClass(
-				(unsigned char)(pal[index].Get_Red()<<2),
-				(unsigned char)(pal[index].Get_Green()<<2),
-				(unsigned char)(pal[index].Get_Blue()<<2));
-	}
+	Read_Palette(pal, "MOUSEPAL.PAL");
 	MouseDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface);
 
 	TiberiumDrawer = VoxelDrawer;
@@ -2802,7 +2773,7 @@ static bool Init_Bulk_Data(void)
 	**	Fetch the tutorial message data.
 	*/
 	INIClass ini;
-	CCFileClass file("TUTORIAL.INI");
+	CCFileClass file(DeploymentConfig.TutorialFile.c_str());
 	ini.Load(file);
 	TutorialText.Read_Base(ini);
 
@@ -6055,7 +6026,7 @@ void Delete_All_Objects(void)
 	}
 	Process_Deferred_Deletion();
 	while (Bullets.Count()) {
-		Bullets[0]->Release();
+		delete Bullets[0];
 	}
 	Process_Deferred_Deletion();
 	while (Objects.Count()) {
@@ -6395,7 +6366,7 @@ bool Prep_For_Side(SideType side)
 	}
 
 	sprintf(name, "SIDENC%02d.MIX", id);
-	DebugString("     Initilizing %s\n", name);
+	DebugString("     Initializing %s\n", name);
 
 	if (CCFileClass(name).Is_Available()) {
 		SideNCMix = new MFCD(name, &FastKey);
@@ -6409,7 +6380,7 @@ bool Prep_For_Side(SideType side)
 			sprintf(name, "E%02dSCD%02d.MIX", Get_Required_Addon(), id);
 		}
 
-		DebugString("     Initilizing %s\n", name);
+		DebugString("     Initializing %s\n", name);
 		if (CCFileClass(name).Is_Available()) {
 			SideCDMix = new MFCD(name, &FastKey);
 		}
@@ -6420,7 +6391,7 @@ bool Prep_For_Side(SideType side)
 	}
 
 	// A side archive may carry its own copy of the file.
-	UIControls.Read_INI_File("UI.INI", true);
+	UIControls.Read_INI_File(DeploymentConfig.UIFile.c_str(), true);
 
 	Map.Init_For_House();
 
@@ -6473,7 +6444,7 @@ bool Prep_Speech_For_Side(SideType side)
 	}
 
 	sprintf(name, "SPEECH%02d.MIX", id);
-	DebugString("     Initilizing %s\n", name);
+	DebugString("     Initializing %s\n", name);
 	if (CCFileClass(name).Is_Available()) {
 		SpeechMix = new MFCD(name, &FastKey);
 	}
