@@ -13,6 +13,8 @@
 
 #ifndef VQMIFF_H
 #define VQMIFF_H
+
+#include <cstdint>
 /****************************************************************************
 *
 *         C O N F I D E N T I A L --- W E S T W O O D   S T U D I O S
@@ -96,10 +98,10 @@ typedef struct _IFFHandle {
 #define IFFERR_NOMEM -4
 
 /* Macros to make things easier. */
-#define REVERSE_LONG(id) (unsigned long)((((unsigned long)(id)>>24) \
-		&0x000000FFL)|(((unsigned long)(id)>>8) \
-		&0x0000FF00L)|(((unsigned long)(id)<<8) \
-		&0x00FF0000L)|(((unsigned long)(id)<<24)&0xFF000000L))
+#define REVERSE_LONG(id) (uint32_t)((((uint32_t)(id)>>24) \
+		&0x000000FFU)|(((uint32_t)(id)>>8) \
+		&0x0000FF00U)|(((uint32_t)(id)<<8) \
+		&0x00FF0000U)|(((uint32_t)(id)<<24)&0xFF000000U))
 
 #define REVERSE_WORD(id) ((unsigned short)((((unsigned short)(id)<<8) \
 		&0x00FF00)|(((unsigned short)(id)>>8)&0x0FF)))

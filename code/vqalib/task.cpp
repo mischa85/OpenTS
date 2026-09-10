@@ -63,46 +63,46 @@
 #include "vqadebug.h"
 
 
-long VQA_ResetLastFrameNum(VQAHandle *vqa);
+VQAErrorType VQA_ResetLastFrameNum(VQAHandle *vqa);
 void VQA_DispatchFrameChunks(VQAHandleP *vqap, long frame);
 void VQA_ResetCache(VQAHandleP *vqap);
-long VQA_Configure_Buffer(VQAHandleP *vqap);
+VQAErrorType VQA_Configure_Buffer(VQAHandleP *vqap);
 void VQA_SetTimer(VQAHandleP *vqap, long time);
 unsigned long VQA_GetTime(VQAHandleP *vqap);
 void VQA_StartAudio(VQAHandleP *vqap);
 void VQA_StopAudio(VQAHandleP *vqap);
-long VQA_LoadFrame(VQAHandleP *vqap, long flags);
+VQAErrorType VQA_LoadFrame(VQAHandleP *vqap, uint32_t flags);
 long User_Update(VQAHandle *vqa);
-long VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
-long VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode);
+VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode);
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, uint32_t start, uint32_t end, int iterations, int mode);
 void VQA_Reset(VQAHandle *vqap);
-long VQA_Configure_Drawer(VQAHandleP *vqap);
+VQAErrorType VQA_Configure_Drawer(VQAHandleP *vqap);
 long VQA_NumFramesWithPalettes(VQAHandleP *vqap);
 
-long VQA_ReloadPalette(VQAHandleP *vqap, long framenum, int force);
-VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, long framenum);
-long VQA_SeekGroup(VQAHandleP *vqap, long framenum, long groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
+VQAErrorType VQA_ReloadPalette(VQAHandleP *vqap, uint32_t framenum, int force);
+VQABool VQA_IsFrameStartOfLoop(VQAHandleP *vqap, uint32_t framenum);
+VQAErrorType VQA_SeekGroup(VQAHandleP *vqap, uint32_t framenum, int32_t groupsize, VQABool preloadaudio, VQABool reset_state, VQABool &skipcodebook);
 
 
 /*---------------------------------------------------------------------------
  * PRIVATE DECLARATIONS
  *-------------------------------------------------------------------------*/
 
-long PrimeBuffers(VQAHandle *vqa);
+VQAErrorType PrimeBuffers(VQAHandle *vqa);
 
-long Load_FINF(VQAHandleP *vqap, unsigned long iffsize);
+VQAErrorType Load_FINF(VQAHandleP *vqap, uint32_t iffsize);
 
-long Load_CINF(VQAHandleP *vqap);
-long Load_PINF(VQAHandleP *vqap);
-long Load_LINF(VQAHandleP *vqap);
-long Load_CLIP(VQAHandleP *vqap, unsigned long iffsize);
-long Load_MFCI(VQAHandleP *vqap);
-long Load_MSCI(VQAHandleP *vqap);
+VQAErrorType Load_CINF(VQAHandleP *vqap);
+VQAErrorType Load_PINF(VQAHandleP *vqap);
+VQAErrorType Load_LINF(VQAHandleP *vqap);
+VQAErrorType Load_CLIP(VQAHandleP *vqap, uint32_t iffsize);
+VQAErrorType Load_MFCI(VQAHandleP *vqap);
+VQAErrorType Load_MSCI(VQAHandleP *vqap);
 
 intptr_t __cdecl VQA_Memory_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 intptr_t __cdecl Disk_VQA_Stream_Handler(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
-long VQA_LargestLoop(VQAHandleP *vqap, long);
+uint32_t VQA_LargestLoop(VQAHandleP *vqap, uint32_t);
 
 extern void __cdecl UnVQ_Nop(uint8_t *codebook, uint8_t *pointers,
 		uint8_t *buffer, size_t blocksperrow,
@@ -116,7 +116,7 @@ extern void __cdecl UnVQ_Nop(uint8_t *codebook, uint8_t *pointers,
 * SYNOPSIS
 *     Error = VQA_Open(VQA, Name, Config)
 *
-*     long VQA_Open(VQAHandle *, char *, VQAConfig *);
+*     VQAErrorType VQA_Open(VQAHandle *, char *, VQAConfig *);
 *
 * FUNCTION
 *     - Open a VQA file for reading.
@@ -143,7 +143,7 @@ extern void __cdecl UnVQ_Nop(uint8_t *codebook, uint8_t *pointers,
 #define OPEN_CAPTIONS (1<<2)
 #define OPEN_EVA      (1<<3)
 
-long VQA_Open(char const *filename, VQAConfig *_config, VQAHandle **handle)
+VQAErrorType VQA_Open(char const *filename, VQAConfig *_config, VQAHandle **handle)
 {
 	VQAHandle   *vqa;
 	VQAHandleP  *vqap;
@@ -1074,7 +1074,7 @@ long VQA_Play(VQAHandle *vqa, long mode, int flags)
 * SYNOPSIS
 *     Frame = VQA_SeekFrame(VQA, Frame, FromWhere)
 *
-*     long VQA_SeekFrame(VQAHandle *, long, long);
+*     int32_t VQA_SeekFrame(VQAHandle *, uint32_t, int32_t);
 *
 * FUNCTION
 *     This function sets the movie stream to the new frame specified by
@@ -1090,14 +1090,14 @@ long VQA_Play(VQAHandle *vqa, long mode, int flags)
 *     Frame - New frame position or -1 if error.
 *
 ****************************************************************************/
-long VQA_SeekFrame(VQAHandle *vqa, long framenum, long fromwhere)
+int32_t VQA_SeekFrame(VQAHandle *vqa, uint32_t framenum, int32_t fromwhere)
 {
 	VQAHandleP   *vqap;
 	VQALoader    *loader;
 	VQAHeader    *header;
 	VQAFrameNode *frame;
 	VQAConfig    *config;
-	long         rc = VQAERR_NONE;
+	int32_t      rc = VQAERR_NONE;
 
 	#if(VQAAUDIO_ON)
 	VQAAudio     *audio;
@@ -1194,7 +1194,7 @@ long VQA_SeekFrame(VQAHandle *vqa, long framenum, long fromwhere)
 }
 
 
-long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2)
+VQAErrorType VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 
@@ -1241,7 +1241,7 @@ long VQA_SetUnVQ(VQAHandle *vqa, UNVQ_FUNC unvq1, UNVQ_FUNC unvq2)
 *
 ****************************************************************************/
 
-long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long width, unsigned long height, long xpos, long ypos)
+VQAErrorType VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, uint32_t width, uint32_t height, int32_t xpos, int32_t ypos)
 {
 	long origin;
 	VQAHeader *header;
@@ -1335,7 +1335,7 @@ long VQA_Set_DrawBuffer(VQAHandle *vqa, unsigned char *buffer, unsigned long wid
 }
 
 
-long VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode)
+VQAErrorType VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config = &vqap->Config;
@@ -1353,7 +1353,7 @@ long VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode)
 	int start = data->StartFrame;
 	int end = data->EndFrame;
 	vqap->LoopID = id;
-	long rc = VQA_SetLoop_Internal(vqa, start, end, iterations, mode);
+	VQAErrorType rc = VQA_SetLoop_Internal(vqa, start, end, iterations, mode);
 	if (rc == VQAERR_NONE) {
 		vqap->LoopID = id;
 	}
@@ -1374,11 +1374,11 @@ long VQA_SetLoop(VQAHandle *vqa, int id, int iterations, int mode)
 /// <param name="iterations">Number of times to repeat the loop. A negative value loops forever.</param>
 /// <param name="mode">One of the VQALOOP_ modes.</param>
 /// <returns>Returns with VQAERR_NONE, or VQAERR_SETLOOP if the loop could not be set.</returns>
-long VQA_SetLoop_Internal(VQAHandle *vqa, int start, int end, int iterations, int mode)
+VQAErrorType VQA_SetLoop_Internal(VQAHandle *vqa, uint32_t start, uint32_t end, int iterations, int mode)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 
-	long rc = VQAERR_NONE;
+	VQAErrorType rc = VQAERR_NONE;
 
 	if (start < vqap->NumFrames && end < vqap->NumFrames && start < end && mode >= VQALOOP_NORMAL && mode < VQALOOP_3) {
 
@@ -1467,7 +1467,7 @@ void VQA_Reset(VQAHandle *vqa)
 	header = &vqap->Header;
 
 
-	int stop;
+	uint32_t stop;
 	int frames = header->Frames;
 
 	vqap->LoadedFrames = 0;
@@ -1585,7 +1585,7 @@ char const *VQA_Version(void)
 }
 
 
-long VQA_GetClipping(VQAHandleP *vqap, int & clipw, long & cliph)
+VQAErrorType VQA_GetClipping(VQAHandleP *vqap, int & clipw, int32_t & cliph)
 {
 	if (vqap->Clipper.Width > 0) {
 		clipw = vqap->Clipper.Width;
@@ -1598,7 +1598,7 @@ long VQA_GetClipping(VQAHandleP *vqap, int & clipw, long & cliph)
 }
 
 
-long VQA_GetBlockInfo(VQAHandle *vqa, long & blockw, long & blockh, long & clrmode)
+VQAErrorType VQA_GetBlockInfo(VQAHandle *vqa, int32_t & blockw, int32_t & blockh, int32_t & clrmode)
 {
 	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAHeader *header;
@@ -1670,7 +1670,7 @@ long User_Update(VQAHandle *vqa)
 	VQAFrameNode *curframe;
 	VQADrawer *drawer;
 	VQAConfig *config;
-	long    rc = 0;
+	VQAErrorType    rc = VQAERR_OK;
 
 	/* Dereference data members for quicker access. */
 	vqap = (VQAHandleP *)vqa;
@@ -1718,7 +1718,7 @@ long User_Update(VQAHandle *vqa)
 long VQA_NumFramesWithPalettes(VQAHandleP *vqap)
 {
 	long num = 0;
-	for (int i = 0; i < vqap->NumFrames; i++) {
+	for (uint32_t i = 0; i < vqap->NumFrames; i++) {
 		if (vqap->Foff[i] & VQAFINF_PAL) {
 			num++;
 		}
@@ -1727,7 +1727,7 @@ long VQA_NumFramesWithPalettes(VQAHandleP *vqap)
 }
 
 
-long VQA_GetXYPos(VQAHandleP *vqap, int & x, long & y)
+VQAErrorType VQA_GetXYPos(VQAHandleP *vqap, int & x, int32_t & y)
 {
 	VQAHeader *header;
 
@@ -1749,7 +1749,7 @@ long VQA_GetXYPos(VQAHandleP *vqap, int & x, long & y)
 /// </summary>
 /// <param name="streamsize">Total size of the stream in bytes, or 0 if it is not known.</param>
 /// <returns>Returns with the size in bytes of the largest loop.</returns>
-long VQA_LargestLoop(VQAHandleP *vqap, long streamsize)
+uint32_t VQA_LargestLoop(VQAHandleP *vqap, uint32_t streamsize)
 {
 	VQALoopInfo::HEADER *infohdr = &vqap->LoopInfo.Header;
 	long largest = 0;
@@ -1757,14 +1757,14 @@ long VQA_LargestLoop(VQAHandleP *vqap, long streamsize)
 	int count = infohdr->Count;
 	for (int i = 0; i < count; i++) {
 		VQALoopInfo::DATA *data = &vqap->LoopInfo.Data[i];
-		int start = data->StartFrame;
-		int stop = data->EndFrame;
+		uint32_t start = data->StartFrame;
+		uint32_t stop = data->EndFrame;
 
 		long start_offset;
 		long end_offset;
 
 		long loopsize = 0;
-		if (stop != vqap->NumFrames - 1) {
+		if (stop + 1 != vqap->NumFrames) {
 			end_offset = VQAFRAME_OFFSET(vqap->Foff[stop + 1]);
 			start_offset = VQAFRAME_OFFSET(vqap->Foff[start]);
 			loopsize = end_offset - start_offset;
